@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+backups/
+*.sql.gz
+*.log
+.DS_Store
+coverage/

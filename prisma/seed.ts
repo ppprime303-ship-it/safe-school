@@ -1,0 +1,136 @@
+// 데모 데이터 넣기: `npm run db:seed`
+//
+// 안전 원칙
+// - is_demo = true 인 "SAFE SCHOOL 데모초등학교"만 만들거나 갱신합니다. 실제 학교 데이터는 건드리지 않습니다.
+// - 같은 slug의 학교가 이미 있는데 데모 학교가 아니면 아무것도 하지 않고 멈춥니다.
+// - 여러 번 실행해도 결과가 같습니다(중복 생성 없음). 기존 데이터를 지우지 않습니다.
+// - 테스트 계정 비밀번호는 환경변수 DEMO_PASSWORD(12자 이상)에서 읽습니다. 코드에 적지 않습니다.
+// - 실제 학생·학부모 개인정보는 넣지 않습니다(반별 인원수만).
+
+import { PrismaClient, type AssignmentDuty, type MemberRole } from "@prisma/client";
+import { hashPassword } from "../server/src/security/password.js";
+
+const prisma = new PrismaClient();
+
+const DEMO_SLUG = "demo-school";
+const DEMO_NAME = "SAFE SCHOOL 데모초등학교";
+const GRADES = [1, 2, 3];
+const CLASSES_PER_GRADE = 5;
+const ENROLLED_PER_CLASS = 28;
+const EMAIL_DOMAIN = "demo.safeschool.invalid"; // 실제로 메일이 가지 않는 예약 도메인
+
+type DemoAccount = {
+  email: string;
+  name: string;
+  role: MemberRole;
+  assignments: { grade: number; classNo: number; duty: AssignmentDuty }[];
+};
+
+const ACCOUNTS: DemoAccount[] = [
+  { email: `admin@${EMAIL_DOMAIN}`, name: "데모 관리자(교감)", role: "admin", assignments: [] },
+  { email: `teacher11@${EMAIL_DOMAIN}`, name: "데모 1학년1반 담임", role: "homeroom", assignments: [{ grade: 1, classNo: 1, duty: "homeroom" }] },
+  { email: `teacher12@${EMAIL_DOMAIN}`, name: "데모 1학년2반 담임", role: "homeroom", assignments: [{ grade: 1, classNo: 2, duty: "homeroom" }] },
+  { email: `teacher21@${EMAIL_DOMAIN}`, name: "데모 2학년1반 담임", role: "homeroom", assignments: [{ grade: 2, classNo: 1, duty: "homeroom" }] },
+  { email: `staff@${EMAIL_DOMAIN}`, name: "데모 보건교사", role: "staff", assignments: [{ grade: 1, classNo: 3, duty: "assist" }] },
+];
+
+async function main() {
+  const demoPassword = process.env.DEMO_PASSWORD ?? "";
+  if (demoPassword.length < 12) {
+    throw new Error("DEMO_PASSWORD(12자 이상)를 Replit Secrets에 먼저 넣어 주세요.");
+  }
+
+  const existing = await prisma.school.findUnique({ where: { slug: DEMO_SLUG } });
+  if (existing && !existing.isDemo) {
+    throw new Error(`slug '${DEMO_SLUG}' 학교가 데모 학교가 아닙니다. 실제 데이터 보호를 위해 중단합니다.`);
+  }
+
+  const school = await prisma.school.upsert({
+    where: { slug: DEMO_SLUG },
+    update: { name: DEMO_NAME },
+    create: { slug: DEMO_SLUG, name: DEMO_NAME, isDemo: true },
+  });
+
+  // 학급: 1~3학년 × 5반 × 28명
+  const classIdByKey = new Map<string, string>();
+  for (const grade of GRADES) {
+    for (let classNo = 1; classNo <= CLASSES_PER_GRADE; classNo++) {
+      const cls = await prisma.schoolClass.upsert({
+        where: { schoolId_grade_classNo: { schoolId: school.id, grade, classNo } },
+        update: {},
+        create: {
+          schoolId: school.id,
+          grade,
+          classNo,
+          label: `${grade}학년 ${classNo}반`,
+          enrolledCount: ENROLLED_PER_CLASS,
+        },
+      });
+      classIdByKey.set(`${grade}-${classNo}`, cls.id);
+    }
+  }
+
+  // 테스트 계정: 명단 일괄 승인(roster) 방식으로 승인된 상태
+  const passwordHash = await hashPassword(demoPassword);
+  let adminId: string | null = null;
+  for (const account of ACCOUNTS) {
+    const user = await prisma.user.upsert({
+      where: { email: account.email },
+      update: { displayName: account.name, passwordHash },
+      create: { email: account.email, displayName: account.name, passwordHash, emailVerifiedAt: new Date() },
+    });
+    if (account.role === "admin") adminId = user.id;
+
+    await prisma.userIdentity.upsert({
+      where: { provider_providerSubject: { provider: "password", providerSubject: user.id } },
+      update: {},
+      create: { userId: user.id, provider: "password", providerSubject: user.id },
+    });
+
+    const membership = await prisma.schoolMembership.upsert({
+      where: { schoolId_userId: { schoolId: school.id, userId: user.id } },
+      update: { role: account.role },
+      create: {
+        schoolId: school.id,
+        userId: user.id,
+        role: account.role,
+        status: "approved",
+        approvalMethod: account.role === "admin" ? "bootstrap" : "roster",
+        approvedAt: new Date(),
+      },
+    });
+
+    for (const a of account.assignments) {
+      const classId = classIdByKey.get(`${a.grade}-${a.classNo}`);
+      if (!classId) continue;
+      await prisma.classAssignment.upsert({
+        where: { membershipId_classId_duty: { membershipId: membership.id, classId, duty: a.duty } },
+        update: {},
+        create: { membershipId: membership.id, classId, duty: a.duty },
+      });
+    }
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      schoolId: school.id,
+      actorUserId: adminId,
+      action: "demo.seed",
+      targetType: "school",
+      targetId: school.id,
+      after: { classes: classIdByKey.size, accounts: ACCOUNTS.length },
+    },
+  });
+
+  const classCount = await prisma.schoolClass.count({ where: { schoolId: school.id } });
+  const enrolled = await prisma.schoolClass.aggregate({ where: { schoolId: school.id }, _sum: { enrolledCount: true } });
+  console.log(`[seed] ${DEMO_NAME}: 학급 ${classCount}개, 재적 합계 ${enrolled._sum.enrolledCount ?? 0}명, 테스트 계정 ${ACCOUNTS.length}개`);
+  console.log(`[seed] 테스트 계정 이메일: ${ACCOUNTS.map((a) => a.email).join(", ")}`);
+}
+
+main()
+  .catch((error) => {
+    console.error("[seed] 실패:", error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  })
+  .finally(() => prisma.$disconnect());

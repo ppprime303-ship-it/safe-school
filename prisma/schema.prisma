@@ -1,0 +1,395 @@
+// SAFE SCHOOL 데이터베이스 스키마 (STEP 1)
+//
+// 주의: CHECK 제약과 "학교당 진행 중 상황 1건" 부분 UNIQUE 인덱스는 Prisma 스키마로 표현할 수 없어
+// prisma/migrations/*/migration.sql 에 직접 작성되어 있습니다.
+// 새 마이그레이션은 반드시 `npx prisma migrate dev --create-only` 로 만든 뒤 SQL을 검토하고,
+// 위 제약을 지우는 문장(DROP INDEX, DROP CONSTRAINT)이 없는지 확인한 다음 적용하세요.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  active
+  disabled
+}
+
+enum IdentityProvider {
+  password
+  epki
+}
+
+enum VerificationPurpose {
+  signup
+  invite
+  password_reset
+}
+
+enum DeviceKind {
+  personal
+  shared
+}
+
+enum MemberRole {
+  admin
+  homeroom
+  staff
+}
+
+enum MembershipStatus {
+  pending
+  approved
+  rejected
+  revoked
+}
+
+enum ApprovalMethod {
+  roster
+  manual
+  bootstrap
+}
+
+enum AssignmentDuty {
+  homeroom
+  assist
+  inspection
+}
+
+enum DisasterType {
+  fire
+  earthquake
+  storm_flood
+  heatwave
+  fine_dust
+  gas_leak
+  intruder
+  other
+}
+
+enum EventMode {
+  real
+  drill
+}
+
+enum EventStatus {
+  active
+  closed
+}
+
+enum EnrolledChangeReason {
+  transfer_out
+  transfer_in
+  other
+}
+
+model School {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String
+  slug          String   @unique
+  neisCode      String?  @unique @map("neis_code")
+  eduOfficeCode String?  @map("edu_office_code")
+  joinCodeHash  String?  @unique @map("join_code_hash")
+  isDemo        Boolean  @default(false) @map("is_demo")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  memberships       SchoolMembership[]
+  classes           SchoolClass[]
+  invitations       StaffInvitation[]
+  events            DisasterEvent[]
+  evacuationReports EvacuationReport[]
+  auditLogs         AuditLog[]
+  activeSessions    Session[]
+
+  @@map("schools")
+}
+
+model User {
+  id              String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email           String     @unique
+  displayName     String     @map("display_name")
+  passwordHash    String?    @map("password_hash")
+  emailVerifiedAt DateTime?  @map("email_verified_at") @db.Timestamptz(6)
+  status          UserStatus @default(active)
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  identities         UserIdentity[]
+  verifications      EmailVerification[]
+  sessions           Session[]
+  memberships        SchoolMembership[]           @relation("MembershipUser")
+  approvedMembers    SchoolMembership[]           @relation("MembershipApprover")
+  invitationsCreated StaffInvitation[]
+  eventsCreated      DisasterEvent[]              @relation("EventCreator")
+  eventsClosed       DisasterEvent[]              @relation("EventCloser")
+  eventTypesAdded    DisasterEventType[]
+  reports            EvacuationReport[]
+  reportRevisions    EvacuationReportRevision[]
+  auditLogs          AuditLog[]
+
+  @@map("users")
+}
+
+model UserIdentity {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String           @map("user_id") @db.Uuid
+  provider        IdentityProvider
+  providerSubject String           @map("provider_subject")
+  linkedAt        DateTime         @default(now()) @map("linked_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubject], map: "user_identities_provider_subject_key")
+  @@index([userId])
+  @@map("user_identities")
+}
+
+model EmailVerification {
+  id         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String              @map("user_id") @db.Uuid
+  purpose    VerificationPurpose
+  codeHash   String              @map("code_hash")
+  expiresAt  DateTime            @map("expires_at") @db.Timestamptz(6)
+  attempts   Int                 @default(0)
+  consumedAt DateTime?           @map("consumed_at") @db.Timestamptz(6)
+  createdAt  DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose], map: "email_verifications_user_purpose_idx")
+  @@map("email_verifications")
+}
+
+model Session {
+  id             String     @id // 세션 토큰의 해시값
+  userId         String     @map("user_id") @db.Uuid
+  activeSchoolId String?    @map("active_school_id") @db.Uuid
+  deviceKind     DeviceKind @map("device_kind")
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt     DateTime   @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  expiresAt      DateTime   @map("expires_at") @db.Timestamptz(6)
+  idleExpiresAt  DateTime?  @map("idle_expires_at") @db.Timestamptz(6)
+  reauthAt       DateTime?  @map("reauth_at") @db.Timestamptz(6)
+  userAgent      String?    @map("user_agent")
+  ip             String?
+
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeSchool School? @relation(fields: [activeSchoolId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model SchoolMembership {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId       String           @map("school_id") @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  role           MemberRole
+  status         MembershipStatus @default(pending)
+  approvalMethod ApprovalMethod?  @map("approval_method")
+  approvedById   String?          @map("approved_by_id") @db.Uuid
+  approvedAt     DateTime?        @map("approved_at") @db.Timestamptz(6)
+  revokedAt      DateTime?        @map("revoked_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  school      School            @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  user        User              @relation("MembershipUser", fields: [userId], references: [id], onDelete: Cascade)
+  approvedBy  User?             @relation("MembershipApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  assignments ClassAssignment[]
+
+  @@unique([schoolId, userId], map: "school_memberships_school_user_key")
+  @@index([schoolId, status], map: "school_memberships_school_status_idx")
+  @@map("school_memberships")
+}
+
+model SchoolClass {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId      String   @map("school_id") @db.Uuid
+  grade         Int
+  classNo       Int      @map("class_no")
+  label         String
+  enrolledCount Int      @map("enrolled_count")
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  school                School                 @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  assignments           ClassAssignment[]
+  invitationAssignments InvitationAssignment[]
+  reports               EvacuationReport[]
+
+  @@unique([schoolId, grade, classNo], map: "classes_school_grade_class_key")
+  @@map("classes")
+}
+
+model ClassAssignment {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  membershipId String         @map("membership_id") @db.Uuid
+  classId      String         @map("class_id") @db.Uuid
+  duty         AssignmentDuty
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  membership SchoolMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  schoolClass SchoolClass     @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, classId, duty], map: "class_assignments_member_class_duty_key")
+  @@index([classId])
+  @@map("class_assignments")
+}
+
+model StaffInvitation {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId    String     @map("school_id") @db.Uuid
+  email       String
+  displayName String     @map("display_name")
+  role        MemberRole
+  tokenHash   String     @unique @map("token_hash")
+  expiresAt   DateTime   @map("expires_at") @db.Timestamptz(6)
+  acceptedAt  DateTime?  @map("accepted_at") @db.Timestamptz(6)
+  revokedAt   DateTime?  @map("revoked_at") @db.Timestamptz(6)
+  createdById String?    @map("created_by_id") @db.Uuid
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  school      School                 @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  createdBy   User?                  @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  assignments InvitationAssignment[]
+
+  @@unique([schoolId, email], map: "staff_invitations_school_email_key")
+  @@map("staff_invitations")
+}
+
+model InvitationAssignment {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  invitationId String         @map("invitation_id") @db.Uuid
+  classId      String         @map("class_id") @db.Uuid
+  duty         AssignmentDuty
+
+  invitation  StaffInvitation @relation(fields: [invitationId], references: [id], onDelete: Cascade)
+  schoolClass SchoolClass     @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([invitationId, classId, duty], map: "invitation_assignments_inv_class_duty_key")
+  @@map("invitation_assignments")
+}
+
+model DisasterEvent {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId    String       @map("school_id") @db.Uuid
+  primaryType DisasterType @map("primary_type")
+  mode        EventMode
+  status      EventStatus  @default(active)
+  location    String?
+  evacPlace   String?      @map("evac_place")
+  message     String?
+  startedAt   DateTime     @default(now()) @map("started_at") @db.Timestamptz(6)
+  closedAt    DateTime?    @map("closed_at") @db.Timestamptz(6)
+  createdById String?      @map("created_by_id") @db.Uuid
+  closedById  String?      @map("closed_by_id") @db.Uuid
+  drillPlanId String?      @map("drill_plan_id") @db.Uuid
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  school    School              @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  createdBy User?               @relation("EventCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  closedBy  User?               @relation("EventCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  types     DisasterEventType[]
+  reports   EvacuationReport[]
+
+  // 부분 UNIQUE 인덱스 disaster_events_one_active_per_school 은 migration.sql 에 있습니다.
+  @@index([schoolId, startedAt(sort: Desc)], map: "disaster_events_school_started_idx")
+  @@map("disaster_events")
+}
+
+model DisasterEventType {
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId   String       @map("event_id") @db.Uuid
+  type      DisasterType
+  note      String?
+  addedById String?      @map("added_by_id") @db.Uuid
+  addedAt   DateTime     @default(now()) @map("added_at") @db.Timestamptz(6)
+
+  event   DisasterEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  addedBy User?         @relation(fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@unique([eventId, type], map: "disaster_event_types_event_type_key")
+  @@map("disaster_event_types")
+}
+
+model EvacuationReport {
+  id                   String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId              String                @map("event_id") @db.Uuid
+  schoolId             String                @map("school_id") @db.Uuid
+  classId              String                @map("class_id") @db.Uuid
+  enrolledSnapshot     Int                   @map("enrolled_snapshot")
+  enrolledCount        Int                   @map("enrolled_count")
+  enrolledChangeReason EnrolledChangeReason? @map("enrolled_change_reason")
+  absentKnown          Int                   @default(0) @map("absent_known")
+  evacuated            Int
+  unconfirmed          Int
+  injured              Int                   @default(0)
+  note                 String?
+  version              Int                   @default(1)
+  reportedById         String?               @map("reported_by_id") @db.Uuid
+  reportedAt           DateTime              @default(now()) @map("reported_at") @db.Timestamptz(6)
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  event       DisasterEvent              @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  school      School                     @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  schoolClass SchoolClass                @relation(fields: [classId], references: [id], onDelete: Restrict)
+  reportedBy  User?                      @relation(fields: [reportedById], references: [id], onDelete: SetNull)
+  revisions   EvacuationReportRevision[]
+
+  @@unique([eventId, classId], map: "evacuation_reports_event_class_key")
+  @@index([schoolId, eventId], map: "evacuation_reports_school_event_idx")
+  @@map("evacuation_reports")
+}
+
+model EvacuationReportRevision {
+  id                   String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportId             String                @map("report_id") @db.Uuid
+  version              Int
+  enrolledCount        Int                   @map("enrolled_count")
+  enrolledChangeReason EnrolledChangeReason? @map("enrolled_change_reason")
+  absentKnown          Int                   @map("absent_known")
+  evacuated            Int
+  unconfirmed          Int
+  injured              Int
+  note                 String?
+  changeReason         String?               @map("change_reason")
+  idempotencyKey       String                @unique(map: "evacuation_report_revisions_idempotency_key") @map("idempotency_key")
+  changedById          String?               @map("changed_by_id") @db.Uuid
+  changedAt            DateTime              @default(now()) @map("changed_at") @db.Timestamptz(6)
+
+  report    EvacuationReport @relation(fields: [reportId], references: [id], onDelete: Restrict)
+  changedBy User?            @relation(fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@unique([reportId, version], map: "evacuation_report_revisions_report_version_key")
+  @@map("evacuation_report_revisions")
+}
+
+// 추가만 가능(수정·삭제는 DB 트리거가 거부)
+model AuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId    String?  @map("school_id") @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String
+  targetType  String?  @map("target_type")
+  targetId    String?  @map("target_id")
+  before      Json?
+  after       Json?
+  ip          String?
+  at          DateTime @default(now()) @db.Timestamptz(6)
+
+  school School? @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  actor  User?   @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([schoolId, at(sort: Desc)], map: "audit_logs_school_at_idx")
+  @@map("audit_logs")
+}

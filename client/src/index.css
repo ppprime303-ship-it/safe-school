@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+/* 공공기관 업무시스템 색상: 네이비·화이트·청록, 긴급 상태에만 빨강·주황 */
+@theme {
+  --color-navy-900: #0b2545;
+  --color-navy-700: #13315c;
+  --color-teal-600: #0f8b8d;
+  --color-alert-real: #c81e1e;
+  --color-alert-drill: #d97706;
+  --font-sans: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
