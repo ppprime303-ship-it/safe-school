@@ -136,6 +136,8 @@ model School {
   externalIds       SchoolExternalId[]
   registrations     SchoolRegistration[]
   publicSnapshots   SchoolPublicDataSnapshot[]
+  region            SchoolRegion?
+  alertMatches      SchoolAlertMatch[]
 
   @@map("schools")
 }
@@ -240,6 +242,8 @@ model User {
   auditLogs          AuditLog[]
   registrations      SchoolRegistration[]
   classesConfirmed   SchoolClass[]                @relation("ClassEnrolledConfirmer")
+  confirmedRegions   SchoolRegion[]               @relation("RegionConfirmer")
+  alertReads         AlertRead[]
 
   @@map("users")
 }
@@ -508,4 +512,144 @@ model AuditLog {
 
   @@index([schoolId, at(sort: Desc)], map: "audit_logs_school_at_idx")
   @@map("audit_logs")
+}
+
+// ───────────── STEP 3-B 공식 경보 ─────────────
+// 마이그레이션 20261021000000_official_alerts 에 CHECK 제약과 원문 수정·삭제 금지 트리거가 있습니다.
+
+enum AlertProvider {
+  mock
+  mois_cbs
+}
+
+enum AlertKind {
+  disaster_text
+  weather
+  air_quality
+  other
+}
+
+enum AlertSeverity {
+  info
+  advisory
+  warning
+  emergency
+}
+
+enum AlertMsgType {
+  new
+  update
+  cancel
+}
+
+enum AlertMatchResult {
+  target
+  non_target
+  undetermined
+}
+
+enum RegionSource {
+  address_parsed
+  admin
+}
+
+enum CollectionStatus {
+  success
+  failed
+  skipped
+}
+
+/// 공식 경보 원문(받은 그대로, 수정·삭제 불가)
+model OfficialAlert {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider      AlertProvider
+  externalId    String        @map("external_id")
+  isMock        Boolean       @map("is_mock")
+  kind          AlertKind
+  severity      AlertSeverity
+  msgType       AlertMsgType  @default(new) @map("msg_type")
+  refExternalId String?       @map("ref_external_id")
+  issuer        String
+  title         String?
+  body          String
+  areasRaw      String        @map("areas_raw")
+  /// [{ sido: string, sigungu: string | null }] — sido "전국"은 모든 지역
+  areas         Json
+  issuedAt      DateTime      @map("issued_at") @db.Timestamptz(6)
+  expiresAt     DateTime?     @map("expires_at") @db.Timestamptz(6)
+  receivedAt    DateTime      @default(now()) @map("received_at") @db.Timestamptz(6)
+  contentHash   String        @map("content_hash")
+  raw           Json
+
+  matches        SchoolAlertMatch[] @relation("MatchAlert")
+  duplicatesOf   SchoolAlertMatch[] @relation("MatchDuplicateOf")
+
+  @@unique([provider, externalId], map: "official_alerts_provider_external_key")
+  @@index([contentHash, issuedAt], map: "official_alerts_content_issued_idx")
+  @@index([issuedAt(sort: Desc)], map: "official_alerts_issued_idx")
+  @@map("official_alerts")
+}
+
+model AlertCollectionRun {
+  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider           AlertProvider
+  status             CollectionStatus
+  startedAt          DateTime         @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt         DateTime?        @map("finished_at") @db.Timestamptz(6)
+  attempts           Int              @default(1)
+  fetchedCount       Int              @default(0) @map("fetched_count")
+  newCount           Int              @default(0) @map("new_count")
+  duplicateCount     Int              @default(0) @map("duplicate_count")
+  matchedSchoolCount Int              @default(0) @map("matched_school_count")
+  cursor             String?
+  errorMessage       String?          @map("error_message")
+
+  @@index([provider, startedAt(sort: Desc)], map: "alert_collection_runs_provider_started_idx")
+  @@map("alert_collection_runs")
+}
+
+model SchoolRegion {
+  schoolId      String       @id @map("school_id") @db.Uuid
+  sido          String
+  sigungu       String?
+  source        RegionSource
+  confirmedAt   DateTime?    @map("confirmed_at") @db.Timestamptz(6)
+  confirmedById String?      @map("confirmed_by_id") @db.Uuid
+  updatedAt     DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  school      School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  confirmedBy User?  @relation("RegionConfirmer", fields: [confirmedById], references: [id], onDelete: SetNull)
+
+  @@map("school_regions")
+}
+
+model SchoolAlertMatch {
+  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId           String           @map("school_id") @db.Uuid
+  alertId            String           @map("alert_id") @db.Uuid
+  result             AlertMatchResult
+  reason             String
+  duplicateOfAlertId String?          @map("duplicate_of_alert_id") @db.Uuid
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  school      School         @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  alert       OfficialAlert  @relation("MatchAlert", fields: [alertId], references: [id], onDelete: Restrict)
+  duplicateOf OfficialAlert? @relation("MatchDuplicateOf", fields: [duplicateOfAlertId], references: [id], onDelete: Restrict)
+  reads       AlertRead[]
+
+  @@unique([schoolId, alertId], map: "school_alert_matches_school_alert_key")
+  @@index([schoolId, createdAt(sort: Desc)], map: "school_alert_matches_school_created_idx")
+  @@map("school_alert_matches")
+}
+
+model AlertRead {
+  userId  String   @map("user_id") @db.Uuid
+  matchId String   @map("match_id") @db.Uuid
+  readAt  DateTime @default(now()) @map("read_at") @db.Timestamptz(6)
+
+  user  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  match SchoolAlertMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@id([userId, matchId])
+  @@map("alert_reads")
 }
