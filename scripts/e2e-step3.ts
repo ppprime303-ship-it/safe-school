@@ -61,10 +61,10 @@ async function waitForServer() {
 }
 
 const reportBody = (over: Record<string, unknown> = {}) => ({
-  evacuated: 26,
+  evacuated: 23,
   absentKnown: 1,
   injured: 0,
-  enrolledCount: 28,
+  enrolledCount: 25,
   enrolledChangeReason: null,
   note: null,
   expectedVersion: null,
@@ -95,9 +95,11 @@ async function main() {
   const mTeacher = await member(schoolA.id, uTeacher.id, "homeroom");
   await member(schoolA.id, uStaff.id, "staff");
   await member(schoolB.id, uAdminB.id, "admin");
+  const uPending = await user("pending-a@e2e3.test", "A승인대기");
+  await prisma.schoolMembership.create({ data: { schoolId: schoolA.id, userId: uPending.id, role: "homeroom", status: "pending" } });
   const cls = (schoolId: string, classNo: number, enrolledCount: number | null) =>
     prisma.schoolClass.create({ data: { schoolId, schoolYear: year, grade: 1, classNo, label: `1학년 ${classNo}반`, enrolledCount } });
-  const c11 = await cls(schoolA.id, 1, 28);
+  const c11 = await cls(schoolA.id, 1, 25); // 10/23 시연 기준: 1학년 1반 재적 25명
   const c12 = await cls(schoolA.id, 2, 30);
   await cls(schoolA.id, 3, null);
   await cls(schoolB.id, 1, 25);
@@ -120,6 +122,8 @@ async function main() {
     await teacher.login("teacher-a@e2e3.test");
     await staff.login("staff-a@e2e3.test");
     await adminB.login("admin-b@e2e3.test");
+    const pending = new Agent();
+    await pending.login("pending-a@e2e3.test");
     const A = `/schools/${schoolA.id}`;
 
     console.log("\n1. 평상시·권한");
@@ -128,6 +132,8 @@ async function main() {
     check("평상시 담임 조회 → 진행 중 상황 없음", idle.status === 200 && idle.body.event === null, idle.body);
     const tIssue = await teacher.call("POST", `${A}/events`, { primaryType: "fire", mode: "drill" });
     check("담임은 발령할 수 없음 → 403", tIssue.status === 403, tIssue.body);
+    const pend = await pending.call("GET", `${A}/events/active`);
+    check("승인 대기 교직원은 재난 정보 접근 불가 → 403 membership_pending", pend.status === 403 && pend.body.code === "membership_pending", pend.body);
     const bIssue = await adminB.call("POST", `${A}/events`, { primaryType: "fire", mode: "drill" });
     check("다른 학교 관리자는 발령할 수 없음 → 404", bIssue.status === 404, bIssue.body);
 
@@ -154,15 +160,15 @@ async function main() {
     check("요청 번호 없는 보고 거부 → 400", noKey.status === 400 && noKey.body.code === "idempotency_key_required", noKey.body);
     const other = await teacher.call("PUT", `${E}/reports/${c12.id}`, reportBody({ enrolledCount: 30 }), { "Idempotency-Key": "e2e3-other-0001" });
     check("배정되지 않은 학급 보고 → 403", other.status === 403 && other.body.code === "class_not_assigned", other.body);
-    const bad = await teacher.call("PUT", `${E}/reports/${c11.id}`, reportBody({ evacuated: 28 }), { "Idempotency-Key": "e2e3-bad-00001" });
+    const bad = await teacher.call("PUT", `${E}/reports/${c11.id}`, reportBody({ evacuated: 25 }), { "Idempotency-Key": "e2e3-bad-00001" });
     check("합계가 재적 초과 → 422 sum_mismatch", bad.status === 422 && bad.body.code === "sum_mismatch", bad.body);
     const r1 = await teacher.call("PUT", `${E}/reports/${c11.id}`, reportBody(), { "Idempotency-Key": "e2e3-first-0001" });
     check("담임 보고 저장 → 미확인 1명 서버 계산, 보고자 이름", r1.status === 200 && r1.body.report?.unconfirmed === 1 && r1.body.report?.reporterName === "A담임", r1.body);
     const replay = await teacher.call("PUT", `${E}/reports/${c11.id}`, reportBody(), { "Idempotency-Key": "e2e3-first-0001" });
     check("같은 요청 재전송 → 중복 저장 없음", replay.status === 200 && replay.body.replayed === true && replay.body.report?.version === 1, replay.body);
-    const proxy = await admin.call("PUT", `${E}/reports/${c11.id}`, reportBody({ evacuated: 27, expectedVersion: 1 }), { "Idempotency-Key": "e2e3-proxy-0001" });
+    const proxy = await admin.call("PUT", `${E}/reports/${c11.id}`, reportBody({ evacuated: 24, expectedVersion: 1 }), { "Idempotency-Key": "e2e3-proxy-0001" });
     check("관리자 대리 수정 → 버전 2", proxy.status === 200 && proxy.body.report?.version === 2, proxy.body);
-    const stale = await teacher.call("PUT", `${E}/reports/${c11.id}`, reportBody({ evacuated: 25, expectedVersion: 1 }), { "Idempotency-Key": "e2e3-stale-0001" });
+    const stale = await teacher.call("PUT", `${E}/reports/${c11.id}`, reportBody({ evacuated: 22, expectedVersion: 1 }), { "Idempotency-Key": "e2e3-stale-0001" });
     check("이전 버전 기준 수정 → 409 version_conflict(최신 보고 포함)", stale.status === 409 && stale.body.code === "version_conflict" && stale.body.details?.current?.version === 2, stale.body);
     const revisions = await prisma.evacuationReportRevision.count({ where: { report: { eventId } } });
     check("수정 이력 2건 보존", revisions === 2, { revisions });
@@ -198,6 +204,34 @@ async function main() {
     check("실제 상황 종료는 확인 없이 불가 → 400", rNo.status === 400 && rNo.body.code === "confirm_required", rNo.body);
     const rYes = await admin.call("POST", `${R}/close`, { confirmClose: true });
     check("실제 상황 종료(확인 포함) → 200", rYes.status === 200 && rYes.body.event?.status === "closed", rYes.body);
+
+    console.log("\n7. 10/23 시연 시나리오(지진 훈련, 1학년 1반 재적 25명)");
+    const quake = await admin.call("POST", `${A}/events`, { primaryType: "earthquake", mode: "drill", evacPlace: "운동장" });
+    check("관리자 지진 모의훈련 발령", quake.status === 201 && quake.body.event?.types?.[0] === "earthquake" && quake.body.event?.mode === "drill", quake.body);
+    const Q = `${A}/events/${quake.body.event?.id}`;
+    const tSee = await teacher.call("GET", `${A}/events/active`);
+    check("담임 화면에 훈련이 바로 표시됨", tSee.body.event?.id === quake.body.event?.id, tSee.body);
+    const auto = await teacher.call("GET", `${Q}/my-classes`);
+    check("담임 1학년 1반·재적 25명 자동 표시", auto.body.classes?.length === 1 && auto.body.classes[0].label === "1학년 1반" && auto.body.classes[0].enrolledCount === 25, auto.body);
+    const q1 = await teacher.call("PUT", `${Q}/reports/${c11.id}`, reportBody({ evacuated: 24, absentKnown: 0 }), { "Idempotency-Key": "e2e3-demo-0001" });
+    check("24명 대피 보고 → 미확인 1명", q1.status === 200 && q1.body.report?.unconfirmed === 1, q1.body);
+    const qb1 = await admin.call("GET", `${Q}/board`);
+    const row1 = qb1.body.classes?.find((c: any) => c.classId === c11.id);
+    check(
+      "상황판: 1-1 미확인 1명, 나머지 2개 학급 미보고",
+      row1?.report?.unconfirmed === 1 && qb1.body.summary?.unconfirmed === 1 && qb1.body.summary?.unreportedClasses === 2,
+      qb1.body.summary,
+    );
+    const q2 = await teacher.call("PUT", `${Q}/reports/${c11.id}`, reportBody({ evacuated: 25, absentKnown: 0, expectedVersion: 1 }), { "Idempotency-Key": "e2e3-demo-0002" });
+    check("재보고: 25명 전원 대피 → 미확인 0명, 버전 2", q2.status === 200 && q2.body.report?.unconfirmed === 0 && q2.body.report?.version === 2, q2.body);
+    const qb2 = await admin.call("GET", `${Q}/board`);
+    check("상황판 수치 갱신: 대피 25명·미확인 0명", qb2.body.summary?.evacuated === 25 && qb2.body.summary?.unconfirmed === 0, qb2.body.summary);
+    const qc = await admin.call("POST", `${Q}/close`, { confirmClose: true });
+    check("훈련 종료", qc.status === 200 && qc.body.event?.status === "closed", qc.body);
+    const qEdit = await teacher.call("PUT", `${Q}/reports/${c11.id}`, reportBody({ evacuated: 24, absentKnown: 0, expectedVersion: 2 }), { "Idempotency-Key": "e2e3-demo-0003" });
+    check("종료 후 수정 보고 차단 → 409 event_closed", qEdit.status === 409 && qEdit.body.code === "event_closed", qEdit.body);
+    const closeLog = await prisma.auditLog.findFirst({ where: { action: "event.closed", targetId: quake.body.event?.id } });
+    check("종료 감사 기록(최종 집계 포함)", (closeLog?.after as any)?.summary?.evacuated === 25, closeLog?.after);
 
     const actions = await prisma.auditLog.findMany({ where: { schoolId: schoolA.id }, select: { action: true } });
     const set = new Set(actions.map((a) => a.action));

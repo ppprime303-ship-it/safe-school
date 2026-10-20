@@ -118,5 +118,8 @@ npm 패키지 설치가 막힌 환경이라 PostgreSQL 16과 Node.js 22로 할 �
 | --- | --- | --- |
 | 타입 검사(스텁 타입, `--noImplicitAny false`) | 오류 0 | Prisma·Express 타입은 스텁이라 약한 검사. **Replit `npm run typecheck` 필요** |
 | 브라우저: 발령 폼 → 실제 상황 확인("실제" 입력) → 상황판 → 종료 확인("종료" 입력) | 7/7 통과 | 모의 서버(Playwright, 390px). 요청 본문에 `confirmReal:true`, `confirmClose:true` 확인 |
-| `tests/events.test.ts`(17건) | **미검증** | 이 작업공간에서 npm 설치 불가. Replit `npm test` 필요 |
-| `npm run e2e:step3` | **미검증** | Replit에서 실행 필요(safeschool_test 초기화, 시연 스키마와 혼용 금지) |
+| Replit `npm run typecheck`(10/20) | 오류 0 | 실제 Prisma 타입 기준 |
+| Replit `npm test`(10/20 1차) | 52 통과 / 17 실패 | 새 테스트의 학교 slug("a")가 DB 형식 제약(3자 이상) 위반 → 테스트 준비 데이터 수정, **재실행 필요** |
+| Replit `npm run e2e:step2`(10/20) | 40/40 | STEP 2 회귀 없음 |
+| Replit `npm run e2e:step3`(10/20 1차) | 30/30 | 이후 10/23 시연 시나리오·미승인 계정 검사 추가 → **재실행 필요** |
+| 브라우저(모의 서버): 담임 화면 자동 열림·종료 반영 | 5/5 | 새로 고침 없이 5초 주기로 발령·종료 반영 |

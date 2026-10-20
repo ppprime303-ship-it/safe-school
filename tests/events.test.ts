@@ -50,8 +50,8 @@ async function approvedMember(schoolId: string, userId: string, role: "admin" | 
 beforeEach(async () => {
   await resetTestData(prisma);
   const now = new Date();
-  schoolA = (await prisma.school.create({ data: { name: "A학교", slug: "a", status: "active", activatedAt: now } })).id;
-  schoolB = (await prisma.school.create({ data: { name: "B학교", slug: "b", status: "active", activatedAt: now } })).id;
+  schoolA = (await prisma.school.create({ data: { name: "A학교", slug: "test-a", status: "active", activatedAt: now } })).id;
+  schoolB = (await prisma.school.create({ data: { name: "B학교", slug: "test-b", status: "active", activatedAt: now } })).id;
   adminUser = (await prisma.user.create({ data: { email: "admin@a.kr", displayName: "관리자", emailVerifiedAt: now } })).id;
   teacherUser = (await prisma.user.create({ data: { email: "t@a.kr", displayName: "담임", emailVerifiedAt: now } })).id;
   adminMembership = await approvedMember(schoolA, adminUser, "admin");

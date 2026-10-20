@@ -24,6 +24,7 @@ interface Pending {
   input: ReportInput;
   savedAt: string;
 }
+const EVENT_POLL_MS = 5000;
 const pendingKey = (eventId: string, classId: string) => `ss.pending.${eventId}.${classId}`;
 
 export function ReportPage({ schoolId }: { schoolId: string }) {
@@ -48,6 +49,27 @@ export function ReportPage({ schoolId }: { schoolId: string }) {
   useEffect(() => {
     void fetchAll();
   }, [fetchAll]);
+
+  // 발령·종료를 새로 고침 없이 반영: 5초마다 진행 중 상황만 가볍게 확인하고, 바뀌었을 때만 다시 불러옴
+  // (입력 중인 보고 양식은 건드리지 않음)
+  const currentEventId = load.kind === "ready" ? load.event.id : null;
+  const watching = load.kind === "ready" || load.kind === "none";
+  useEffect(() => {
+    if (!watching) return;
+    const id = window.setInterval(async () => {
+      try {
+        const { event } = await api<{ event: ActiveEvent | null }>("GET", `/schools/${schoolId}/events/active`);
+        if ((event?.id ?? null) !== currentEventId) {
+          setSelected(null);
+          setSaveState({ kind: "idle" });
+          void fetchAll();
+        }
+      } catch {
+        /* 통신 실패: 화면은 그대로 두고 다음 주기에 다시 확인 */
+      }
+    }, EVENT_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [watching, currentEventId, schoolId, fetchAll]);
 
   const send = useCallback(
     async (event: ActiveEvent, classId: string, pending: Pending) => {
