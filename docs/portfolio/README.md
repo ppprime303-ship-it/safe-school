@@ -15,7 +15,7 @@
 | 표시 | 의미 |
 | --- | --- |
 | **Claude** | Claude 대화 기록(사용자가 입력한 메시지·첨부, Claude 응답, Claude가 만든 문서) |
-| **ChatGPT** | 사용자가 ChatGPT에서 만든 정리본·프롬프트 초안(사용자 첨부 ZIP). 전체 대화 내보내기 아님 |
+| **ChatGPT** | ChatGPT 대화의 사용자 입력 원문(ChatGPT가 대화에서 글자 그대로 발췌해 제공), ChatGPT 작성 프롬프트 원문, ChatGPT 정리글. 정리글은 원문과 구분 |
 | **GitHub** | 저장소 커밋 기록(작성자·시각·변경 파일) |
 | **Replit** | 사용자가 Replit Shell에서 실행해 붙여넣은 콘솔 출력 또는 실행 결과 보고 |
 
