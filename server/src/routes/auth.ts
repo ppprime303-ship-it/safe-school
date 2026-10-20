@@ -35,11 +35,14 @@ authRouter.post("/auth/signup", authLimiter, async (req, res) => {
   const input = parse(signupSchema, req.body);
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
   if (existing?.emailVerifiedAt) throw conflict("email_in_use", "이미 가입된 이메일입니다. 로그인하세요.");
+  // 이메일을 아직 인증하지 않은 기존 계정이라도, 새 가입 요청만으로 비밀번호를 바꿀 수 없어야 합니다.
+  // 기존 계정 소유자는 '인증코드 다시 받기'를 이용하고, 비밀번호 변경은 별도 검증 절차에서 처리합니다.
+  if (existing) {
+    throw conflict("email_pending_verification", "이미 가입 신청한 이메일입니다. 인증코드를 다시 받아 인증을 완료하세요.");
+  }
 
   const passwordHash = await hashPassword(input.password);
-  const user = existing
-    ? await prisma.user.update({ where: { id: existing.id }, data: { displayName: input.displayName, passwordHash } })
-    : await prisma.user.create({ data: { email: input.email, displayName: input.displayName, passwordHash } });
+  const user = await prisma.user.create({ data: { email: input.email, displayName: input.displayName, passwordHash } });
 
   const sent = await sendSignupCode(user.id, user.email);
   res.status(201).json({ ok: true, email: user.email, ...sent });
