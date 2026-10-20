@@ -8,7 +8,8 @@
 // 흐름: 학교 검색 → 최초 등록 신청 → (승인 전 차단) → 운영자 자격 확인 → 관리자 활성화 → 학급 생성·재적 저장
 //       → 교직원 가입·이메일 인증 → 중복 등록 거부·가입 신청 → (승인 전 차단) → 관리자 일괄 승인 → 학급 배정
 //       → 로그아웃 → 로그인 → 담당 학급 확인 → 세션 없는 요청 차단
-import { spawn, execSync, type ChildProcess } from "node:child_process";
+import { execSync } from "node:child_process";
+import { startTestServer } from "./e2e-server.js";
 import { createTestClient, getTestDatabaseUrl, resetTestData } from "../tests/test-db.js";
 import { reviewSchoolRegistration } from "../server/src/services/schoolRegistration.js";
 
@@ -45,19 +46,6 @@ class Agent {
   }
 }
 
-async function waitForServer() {
-  for (let i = 0; i < 60; i++) {
-    try {
-      const r = await fetch(`${BASE}/health`);
-      if (r.ok) return;
-    } catch {
-      /* 아직 시작 중 */
-    }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  throw new Error("테스트 서버가 30초 안에 시작되지 않았습니다.");
-}
-
 async function signupAndVerify(agent: Agent, email: string, name: string) {
   const s = await agent.call("POST", "/auth/signup", { email, displayName: name, password: "test-password-1234" });
   check(`${name} 가입 요청(모의 발송, 코드는 테스트에서만 반환)`, s.status === 201 && s.body.delivery === "test_console" && /^\d{6}$/.test(s.body.devCode), s.body);
@@ -86,13 +74,9 @@ async function main() {
   });
 
   console.log(`[e2e] 테스트 서버 시작(포트 ${PORT}, NODE_ENV=test, 모의 메일)`);
-  const server: ChildProcess = spawn("npx", ["tsx", "server/src/index.ts"], {
-    env: { ...process.env, DATABASE_URL: testUrl, NODE_ENV: "test", PORT: String(PORT), MAIL_PROVIDER: "console", SCHOOLINFO_API_KEY: "", SCHOOLINFO_GRADE_DATA: "" },
-    stdio: ["ignore", "ignore", "inherit"],
-  });
+  const server = await startTestServer(PORT, { ...process.env, DATABASE_URL: testUrl, NODE_ENV: "test", MAIL_PROVIDER: "console", SCHOOLINFO_API_KEY: "", SCHOOLINFO_GRADE_DATA: "" });
 
   try {
-    await waitForServer();
     const anon = new Agent();
     const admin = new Agent();
     const teacher = new Agent();
@@ -188,7 +172,7 @@ async function main() {
 
     await prisma.$disconnect();
   } finally {
-    server.kill("SIGTERM");
+    await server.stop();
   }
 
   console.log(`\n[e2e] 결과: ${passed}개 통과, ${failed}개 실패`);
