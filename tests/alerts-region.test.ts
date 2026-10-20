@@ -1,0 +1,62 @@
+// 학교 소재지·경보 지역 매칭(순수 함수)
+import { describe, expect, it } from "vitest";
+import { matchRegion, normalizeArea, parseAddress, parseAreas } from "../server/src/alerts/region.js";
+import { contentHash, sanitizeError } from "../server/src/alerts/collector.js";
+
+describe("학교 주소 → 시도·시군구", () => {
+  it("광역시·도·시+구·세종을 해석한다", () => {
+    expect(parseAddress("인천광역시 남동구 안전로 1")).toEqual({ sido: "인천광역시", sigungu: "남동구" });
+    expect(parseAddress("경기도 수원시 장안구 정자로 1")).toEqual({ sido: "경기도", sigungu: "수원시 장안구" });
+    expect(parseAddress("경기도 가평군 가평읍 1")).toEqual({ sido: "경기도", sigungu: "가평군" });
+    expect(parseAddress("강원도 춘천시 1")).toEqual({ sido: "강원특별자치도", sigungu: "춘천시" });
+    expect(parseAddress("세종특별자치시 한누리대로 1")).toEqual({ sido: "세종특별자치시", sigungu: null });
+  });
+  it("확실하지 않으면 추측하지 않는다(null)", () => {
+    expect(parseAddress(null)).toBeNull();
+    expect(parseAddress("가상시 안전로 1")).toBeNull();
+    expect(parseAddress("인천광역시 안전로 1")).toBeNull();
+  });
+});
+
+describe("경보 지역 정규화", () => {
+  it("약칭·전체·여러 지역", () => {
+    expect(normalizeArea("인천 전체")).toMatchObject({ sido: "인천광역시", sigungu: null });
+    expect(parseAreas("인천광역시 남동구, 부산 해운대구").map((a) => [a.sido, a.sigungu])).toEqual([
+      ["인천광역시", "남동구"],
+      ["부산광역시", "해운대구"],
+    ]);
+    expect(normalizeArea("어딘가 일대").sido).toBeNull();
+  });
+});
+
+describe("매칭: 대상 / 비대상 / 미판정", () => {
+  const incheonNamdong = { sido: "인천광역시", sigungu: "남동구" };
+  it("같은 시도 전체·같은 시군구·전국은 대상", () => {
+    expect(matchRegion(incheonNamdong, parseAreas("인천광역시")).result).toBe("target");
+    expect(matchRegion(incheonNamdong, parseAreas("인천광역시 남동구")).result).toBe("target");
+    expect(matchRegion(incheonNamdong, parseAreas("전국")).result).toBe("target");
+    expect(matchRegion({ sido: "경기도", sigungu: "수원시 장안구" }, parseAreas("경기도 수원시")).result).toBe("target");
+  });
+  it("다른 시도·다른 시군구는 비대상", () => {
+    expect(matchRegion(incheonNamdong, parseAreas("부산광역시 해운대구")).result).toBe("non_target");
+    expect(matchRegion(incheonNamdong, parseAreas("인천광역시 연수구")).result).toBe("non_target");
+  });
+  it("학교 소재지 불명·지역 해석 불가는 미판정", () => {
+    expect(matchRegion(null, parseAreas("인천광역시")).result).toBe("undetermined");
+    expect(matchRegion(incheonNamdong, parseAreas("어딘가 일대")).result).toBe("undetermined");
+    expect(matchRegion(incheonNamdong, parseAreas("인천광역시 남동공단 일대")).result).toBe("undetermined");
+    expect(matchRegion(incheonNamdong, []).result).toBe("undetermined");
+    expect(matchRegion({ sido: "경기도", sigungu: null }, parseAreas("경기도 수원시")).result).toBe("undetermined");
+  });
+});
+
+describe("중복 판단용 내용 해시·오류 메시지", () => {
+  it("공백 차이는 같은 내용, 해제(cancel)는 다른 내용", () => {
+    const base = { issuer: "기상청", body: "폭염 경보  발효", areas: parseAreas("인천광역시"), msgType: "new" as const };
+    expect(contentHash(base)).toBe(contentHash({ ...base, body: "폭염 경보 발효" }));
+    expect(contentHash(base)).not.toBe(contentHash({ ...base, msgType: "cancel" }));
+  });
+  it("인증키를 가린다", () => {
+    expect(sanitizeError(new Error("GET https://x/api?serviceKey=ABC123&page=1 실패"))).toBe("GET https://x/api?serviceKey=***&page=1 실패");
+  });
+});

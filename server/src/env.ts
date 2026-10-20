@@ -8,6 +8,9 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL이 없습니다. Replit에서 PostgreSQL을 추가하세요."),
   SESSION_SECRET: z.string().optional(),
   APP_BASE_URL: z.string().url().optional(),
+  // STEP 3-B 경보 수집(기본 꺼짐). 모의 경보 파일은 개발·시연에서만 사용(운영에서는 거부)
+  ALERT_MOCK_FEED: z.string().optional(),
+  ALERT_COLLECT_INTERVAL_SEC: z.coerce.number().int().min(30).max(3600).default(60),
 });
 
 const parsed = schema.safeParse(process.env);
