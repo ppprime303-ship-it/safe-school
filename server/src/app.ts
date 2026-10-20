@@ -9,6 +9,7 @@ import { requireJsonForMutations } from "./middleware/security.js";
 import { healthRouter } from "./routes/health.js";
 import { authRouter } from "./routes/auth.js";
 import { schoolsRouter } from "./routes/schools.js";
+import { eventsRouter } from "./routes/events.js";
 
 export { AppError } from "./errors.js";
 
@@ -19,7 +20,7 @@ export function createApiRouter() {
   api.use(loadSession(prisma));
   api.use(authRouter);
   api.use(schoolsRouter);
-  // STEP 3 이후 라우터(재난 발령·보고 등)를 여기에 추가합니다.
+  api.use(eventsRouter); // STEP 3-A 재난 발령·보고·상황판
   api.use((_req, _res, next) => next(new AppError(404, "not_found", "요청한 API가 없습니다.")));
   return api;
 }
