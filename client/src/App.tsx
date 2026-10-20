@@ -11,6 +11,7 @@ import { DesignPreviewPage } from "./pages/DesignPreviewPage";
 import { StatusPage } from "./pages/StatusPage";
 import { MembersPage } from "./pages/admin/MembersPage";
 import { ClassesPage } from "./pages/admin/ClassesPage";
+import { AlertsPage } from "./pages/alerts/AlertsPage";
 import { AppShell } from "./components/layout/AppShell";
 
 function Redirect({ to }: { to: string }) {
@@ -48,6 +49,7 @@ function Routes() {
     const membership = usableMemberships.find((m) => m.school.id === school.schoolId);
     if (!membership) return <Redirect to="/schools" />;
     if (school.screen === "report") return <ReportPage schoolId={school.schoolId!} />;
+    if (school.screen === "alerts") return <AlertsPage schoolId={school.schoolId!} isAdmin={membership.role === "admin"} />;
     // 관리자 전용 화면: 화면에서도 막고, 서버 API에서도 다시 검사합니다.
     const adminScreens: Record<string, (id: string) => ReactElement> = {
       board: (id) => <BoardPage schoolId={id} />,

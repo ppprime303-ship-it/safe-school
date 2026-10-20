@@ -127,7 +127,7 @@ npm 패키지 설치가 막힌 환경이라 PostgreSQL 16과 Node.js 22로 할 �
 
 ### STEP 3-A 최종 검증(2026-10-20, Replit, 사용자 실행) — **핵심 기능 검증 완료**
 
-검증 코드: `step-3-dev` 43d7d5d (태그 `step-3a-verified`)
+검증 코드: `step-3-dev` 43d7d5d (보존 브랜치 `step-3a-verified`)
 
 | 항목 | 결과 |
 | --- | --- |
@@ -146,3 +146,13 @@ npm 패키지 설치가 막힌 환경이라 PostgreSQL 16과 Node.js 22로 할 �
 - 감사 로그 4건(발령·보고 생성·보고 수정·종료) 확인
 
 남은 확인(STEP 3-A 범위 밖 또는 후속): 실제 상황 모드 브라우저 시연은 하지 않음(자동 테스트로만 확인), 통신 장애 재전송은 11/3 작업.
+
+## STEP 3-B ①~④ (step-3b-alerts) — 작업공간 검증(2026-10-20)
+
+| 항목 | 결과 | 비고 |
+| --- | --- | --- |
+| 마이그레이션 3개를 빈 로컬 PostgreSQL에 순서대로 적용 | 성공 | 새 마이그레이션에 DROP·ALTER TABLE 없음 |
+| 새 DB 제약(원문 수정·삭제 거부, 모의 표시 일치, 경보 ID 중복, 해제 시 원경보 참조, 지역 배열, 실패 사유 필수) | 7/7 거부 확인 | 로컬 PostgreSQL SQL |
+| `tests/alerts-region.test.ts`(순수 함수) | 8/8 | vitest 대체 실행기 |
+| 브라우저(모의 서버, 390px): 관리자 9 · 교직원 6 | 15/15 | 경보함·읽음·미판정·소재지 확인 |
+| `tests/alerts.test.ts`(12건), `npm run e2e:step3b`, typecheck | **미검증** | Replit 실행 필요 |

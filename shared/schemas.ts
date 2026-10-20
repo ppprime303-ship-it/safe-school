@@ -101,3 +101,9 @@ export const reportInputSchema = z.object({
 export const idempotencyKeySchema = z.string().regex(/^[A-Za-z0-9_-]{8,80}$/, "요청 번호(Idempotency-Key) 형식이 올바르지 않습니다.");
 
 export const closeEventSchema = z.object({ confirmClose: z.boolean().optional() });
+
+// ───────────── STEP 3-B 경보·학교 소재지 ─────────────
+export const regionSchema = z.object({
+  sido: z.string().trim().min(2).max(20),
+  sigungu: z.string().trim().max(30).nullable(),
+});

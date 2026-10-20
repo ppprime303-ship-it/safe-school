@@ -10,6 +10,7 @@ import { healthRouter } from "./routes/health.js";
 import { authRouter } from "./routes/auth.js";
 import { schoolsRouter } from "./routes/schools.js";
 import { eventsRouter } from "./routes/events.js";
+import { alertsRouter } from "./routes/alerts.js";
 
 export { AppError } from "./errors.js";
 
@@ -21,6 +22,7 @@ export function createApiRouter() {
   api.use(authRouter);
   api.use(schoolsRouter);
   api.use(eventsRouter); // STEP 3-A 재난 발령·보고·상황판
+  api.use(alertsRouter); // STEP 3-B 경보함·학교 소재지
   api.use((_req, _res, next) => next(new AppError(404, "not_found", "요청한 API가 없습니다.")));
   return api;
 }
