@@ -2,30 +2,35 @@ import express, { type ErrorRequestHandler, type Express } from "express";
 import path from "node:path";
 import fs from "node:fs";
 import type { Server } from "node:http";
+import { prisma } from "./db.js";
+import { AppError } from "./errors.js";
+import { loadSession } from "./auth/session.js";
+import { requireJsonForMutations } from "./middleware/security.js";
 import { healthRouter } from "./routes/health.js";
+import { authRouter } from "./routes/auth.js";
+import { schoolsRouter } from "./routes/schools.js";
 
-// 오류 응답 형식은 { code, message } 로 통일합니다(설계서 E절).
-export class AppError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly code: string,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+export { AppError } from "./errors.js";
 
 export function createApiRouter() {
   const api = express.Router();
   api.use(healthRouter);
-  // STEP 2 이후 라우터(인증, 학교, 재난 등)를 여기에 추가합니다.
+  api.use(requireJsonForMutations);
+  api.use(loadSession(prisma));
+  api.use(authRouter);
+  api.use(schoolsRouter);
+  // STEP 3 이후 라우터(재난 발령·보고 등)를 여기에 추가합니다.
   api.use((_req, _res, next) => next(new AppError(404, "not_found", "요청한 API가 없습니다.")));
   return api;
 }
 
 const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof AppError) {
-    res.status(err.status).json({ code: err.code, message: err.message });
+    res.status(err.status).json({ code: err.code, message: err.message, ...(err.details ? { details: err.details } : {}) });
+    return;
+  }
+  if (err?.type === "entity.parse.failed") {
+    res.status(400).json({ code: "invalid_json", message: "요청 형식(JSON)이 올바르지 않습니다." });
     return;
   }
   console.error("[server] 처리하지 못한 오류", err);

@@ -14,6 +14,8 @@ const prisma = new PrismaClient();
 
 const DEMO_SLUG = "demo-school";
 const DEMO_NAME = "SAFE SCHOOL 데모초등학교";
+// 학년도(한국 시간 기준 올해)
+const SCHOOL_YEAR = Number(new Intl.DateTimeFormat("en", { timeZone: "Asia/Seoul", year: "numeric" }).format(new Date()));
 const GRADES = [1, 2, 3];
 const CLASSES_PER_GRADE = 5;
 const ENROLLED_PER_CLASS = 28;
@@ -48,7 +50,7 @@ async function main() {
   const school = await prisma.school.upsert({
     where: { slug: DEMO_SLUG },
     update: { name: DEMO_NAME },
-    create: { slug: DEMO_SLUG, name: DEMO_NAME, isDemo: true },
+    create: { slug: DEMO_SLUG, name: DEMO_NAME, isDemo: true, schoolKindCode: "02", status: "active", activatedAt: new Date() },
   });
 
   // 학급: 1~3학년 × 5반 × 28명
@@ -56,14 +58,16 @@ async function main() {
   for (const grade of GRADES) {
     for (let classNo = 1; classNo <= CLASSES_PER_GRADE; classNo++) {
       const cls = await prisma.schoolClass.upsert({
-        where: { schoolId_grade_classNo: { schoolId: school.id, grade, classNo } },
-        update: {},
+        where: { schoolId_schoolYear_grade_classNo: { schoolId: school.id, schoolYear: SCHOOL_YEAR, grade, classNo } },
+        update: {}, // 이미 있으면 그대로 둠(관리자가 고친 재적을 덮어쓰지 않음)
         create: {
           schoolId: school.id,
+          schoolYear: SCHOOL_YEAR,
           grade,
           classNo,
           label: `${grade}학년 ${classNo}반`,
           enrolledCount: ENROLLED_PER_CLASS,
+          enrolledConfirmedAt: new Date(),
         },
       });
       classIdByKey.set(`${grade}-${classNo}`, cls.id);
@@ -122,8 +126,8 @@ async function main() {
     },
   });
 
-  const classCount = await prisma.schoolClass.count({ where: { schoolId: school.id } });
-  const enrolled = await prisma.schoolClass.aggregate({ where: { schoolId: school.id }, _sum: { enrolledCount: true } });
+  const classCount = await prisma.schoolClass.count({ where: { schoolId: school.id, schoolYear: SCHOOL_YEAR } });
+  const enrolled = await prisma.schoolClass.aggregate({ where: { schoolId: school.id, schoolYear: SCHOOL_YEAR }, _sum: { enrolledCount: true } });
   console.log(`[seed] ${DEMO_NAME}: 학급 ${classCount}개, 재적 합계 ${enrolled._sum.enrolledCount ?? 0}명, 테스트 계정 ${ACCOUNTS.length}개`);
   console.log(`[seed] 테스트 계정 이메일: ${ACCOUNTS.map((a) => a.email).join(", ")}`);
 }

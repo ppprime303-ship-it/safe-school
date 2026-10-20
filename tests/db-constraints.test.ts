@@ -16,7 +16,7 @@ beforeEach(async () => {
   schoolB = (await prisma.school.create({ data: { name: "B학교", slug: "school-b" } })).id;
   classA11 = (
     await prisma.schoolClass.create({
-      data: { schoolId: schoolA, grade: 1, classNo: 1, label: "1학년 1반", enrolledCount: 28 },
+      data: { schoolId: schoolA, schoolYear: 2026, grade: 1, classNo: 1, label: "1학년 1반", enrolledCount: 28 },
     })
   ).id;
   adminUser = (await prisma.user.create({ data: { email: "admin@a.kr", displayName: "관리자" } })).id;
@@ -37,16 +37,16 @@ describe("학교·학급", () => {
 
   it("학급 재적은 0~60명만 허용한다", async () => {
     await expect(
-      prisma.schoolClass.create({ data: { schoolId: schoolA, grade: 1, classNo: 2, label: "1-2", enrolledCount: 61 } }),
+      prisma.schoolClass.create({ data: { schoolId: schoolA, schoolYear: 2026, grade: 1, classNo: 2, label: "1-2", enrolledCount: 61 } }),
     ).rejects.toThrow();
   });
 
   it("같은 학교의 같은 학년·반은 중복될 수 없지만, 다른 학교는 가능하다", async () => {
     await expect(
-      prisma.schoolClass.create({ data: { schoolId: schoolA, grade: 1, classNo: 1, label: "1-1", enrolledCount: 20 } }),
+      prisma.schoolClass.create({ data: { schoolId: schoolA, schoolYear: 2026, grade: 1, classNo: 1, label: "1-1", enrolledCount: 20 } }),
     ).rejects.toThrow();
     await expect(
-      prisma.schoolClass.create({ data: { schoolId: schoolB, grade: 1, classNo: 1, label: "1-1", enrolledCount: 20 } }),
+      prisma.schoolClass.create({ data: { schoolId: schoolB, schoolYear: 2026, grade: 1, classNo: 1, label: "1-1", enrolledCount: 20 } }),
     ).resolves.toBeTruthy();
   });
 

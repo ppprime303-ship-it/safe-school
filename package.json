@@ -19,7 +19,9 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:summary": "tsx scripts/db-summary.ts",
     "db:backup": "bash scripts/backup.sh",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "operator": "tsx scripts/operator.ts",
+    "directory:sync": "tsx scripts/sync-school-directory.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.10.0",
