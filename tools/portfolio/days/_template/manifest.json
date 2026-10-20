@@ -1,0 +1,60 @@
+{
+ "date": "YYYY-MM-DD",
+ "session_jsonl": null,
+ "uploads_dir": null,
+ "attachments": [
+  {
+   "glob": "xxxxxxxx-*.txt",
+   "title": "첨부_제목",
+   "kind": "사용자 입력 원문(긴 입력 저장본)"
+  }
+ ],
+ "claude_docs": [],
+ "chatgpt_messages": [
+  {
+   "group": "묶음 이름",
+   "time": "~HH:MM",
+   "sort": "HH:MM",
+   "text": "사용자가 ChatGPT에 입력한 원문",
+   "source": "ChatGPT 대화 PDF"
+  }
+ ],
+ "chatgpt_replies": [
+  {
+   "time": "~HH:MM",
+   "sort": "HH:MM",
+   "text": "ChatGPT 응답 원문"
+  }
+ ],
+ "chatgpt_prompts": [
+  {
+   "title": "프롬프트 이름",
+   "used": "HH:MM Claude 입력과 글자 일치 / 입력 기록 없음",
+   "time": "~HH:MM",
+   "sort": "HH:MM",
+   "text": "원문"
+  }
+ ],
+ "chatgpt_files": [],
+ "replit_outputs": [
+  {
+   "label": "무엇의 출력",
+   "via": "ChatGPT대화",
+   "prefix": "HHMM",
+   "time": "HH:MM",
+   "sort": "HH:MM",
+   "text": "콘솔 원문"
+  }
+ ],
+ "report_files": [
+  "../../../../docs/portfolio/YYYY-MM-DD/*"
+ ],
+ "quick": [
+  {
+   "label": "단추 이름",
+   "match": "파일 경로 일부",
+   "tool": "Claude"
+  }
+ ],
+ "footer_note": "시각 추정·누락 범위 안내"
+}
