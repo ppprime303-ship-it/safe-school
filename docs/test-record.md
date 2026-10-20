@@ -155,4 +155,4 @@ npm 패키지 설치가 막힌 환경이라 PostgreSQL 16과 Node.js 22로 할 �
 | 새 DB 제약(원문 수정·삭제 거부, 모의 표시 일치, 경보 ID 중복, 해제 시 원경보 참조, 지역 배열, 실패 사유 필수) | 7/7 거부 확인 | 로컬 PostgreSQL SQL |
 | `tests/alerts-region.test.ts`(순수 함수) | 8/8 | vitest 대체 실행기 |
 | 브라우저(모의 서버, 390px): 관리자 9 · 교직원 6 | 15/15 | 경보함·읽음·미판정·소재지 확인 |
-| `tests/alerts.test.ts`(12건), `npm run e2e:step3b`, typecheck | **미검증** | Replit 실행 필요 |
+| `tests/alerts.test.ts`(11건), `npm run e2e:step3b`, typecheck | **미검증** | Replit 실행 필요 |
