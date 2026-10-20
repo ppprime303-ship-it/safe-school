@@ -18,7 +18,11 @@ export function navItemsFor(schoolId: string | null, role: "admin" | "homeroom" 
   const items: NavItem[] = [];
   if (role === "admin") items.push({ href: `/s/${schoolId}/board`, label: "상황판", icon: "dashboard" });
   items.push({ href: `/s/${schoolId}/report`, label: "학급 보고", icon: "clipboard" });
-  items.push({ href: "/schools", label: "학교", icon: "school" });
+  if (role === "admin") {
+    items.push({ href: `/s/${schoolId}/members`, label: "교직원", icon: "users" });
+    items.push({ href: `/s/${schoolId}/classes`, label: "학급", icon: "school" });
+  }
+  items.push({ href: "/schools", label: role === "admin" ? "학교" : "학교 선택", icon: "home" });
   return items;
 }
 

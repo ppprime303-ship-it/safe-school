@@ -19,7 +19,8 @@
 | `APP_BASE_URL` | 선택 | 배포 주소 |
 | `SCHOOLINFO_API_KEY` | 학교 검색 시 | 학교알리미 인증키. 없으면 저장된 목록으로만 검색 |
 | `SCHOOLINFO_GRADE_DATA` | 선택 | `enabled`일 때만 학년별 공시자료(apiType 09) 사용. **실제 응답 필드 확인 전에는 설정하지 않음** |
-| `MAIL_PROVIDER`, `MAIL_API_KEY`, `MAIL_FROM` | 운영 필수 | 인증코드 메일. 없으면 운영 환경에서 가입이 503으로 멈춤 |
+| `MAIL_PROVIDER`, `MAIL_API_KEY`, `MAIL_FROM` | 운영 필수 | `resend` + 키 + 보내는 주소: 실제 발송. 미설정이면 가입이 503으로 멈춤(보낸 것처럼 표시하지 않음) |
+| `MAIL_PROVIDER=console` | 개발·테스트만 | 모의 발송(메일 미발송, 화면에 '테스트 전용 코드'로 표시). 운영(`NODE_ENV=production`)에서는 무시되어 인증 불가 |
 | `ALLOW_DEMO_SEED` | 선택 | 운영 환경에서 데모 시드를 허용할 때만 `true` |
 | `VITE_ENABLE_DESIGN_PREVIEW` | 선택 | 운영 빌드에서 `/design`을 보이게 할 때만 `true` |
 | `TEST_DATABASE_URL` | 선택 | 비우면 `DATABASE_URL`의 `safeschool_test` 스키마 사용 |
@@ -49,6 +50,7 @@ npm run db:status
 npm run db:migrate
 npm run db:seed
 npm test
+npm run e2e:step2                                 # 실제 서버+DB 전체 흐름(테스트 스키마 전용)
 npm run schoolinfo:verify -- --kind 02 --sido 11   # SCHOOLINFO_API_KEY 설정 후
 npm run dev                                       # /status, /login, /design 확인
 ```
@@ -57,8 +59,8 @@ npm run dev                                       # /status, /login, /design 확
 
 | 기능 | 운영 동작 |
 | --- | --- |
-| 인증코드 화면 표시(`devCode`) | `NODE_ENV=production`이면 응답에 넣지 않음 |
-| 메일 미설정 시 콘솔 출력 | 운영에서는 503 오류. 메일 설정 없이 인증 완료 불가 |
+| 인증코드 화면 표시(`devCode`) | `MAIL_PROVIDER=console` + 비운영에서만 반환. 운영에서는 항상 미반환 |
+| 모의 메일(`console`) | 운영에서는 비활성. 실제 메일 설정 없이는 인증 완료 불가 |
 | 데모 시드 | 운영에서는 `ALLOW_DEMO_SEED=true` 없이는 실행 거부 |
 | `/design` 미리보기 | 운영 빌드에서 숨김(`VITE_ENABLE_DESIGN_PREVIEW=true`일 때만) |
 | 데모 학교·테스트 계정 | 실제 운영 DB에는 시드하지 않음(시연 배포와 분리 권장) |

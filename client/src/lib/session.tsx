@@ -1,6 +1,6 @@
 // 로그인 사용자와 선택한 학교. 로그인 후 소속이 하나면 자동으로 그 학교를 선택합니다(재선택 불필요).
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api, ApiError, storage } from "./api";
+import { api, ApiError, SESSION_EXPIRED_EVENT, storage } from "./api";
 
 export type MemberRole = "admin" | "homeroom" | "staff";
 export type MembershipStatus = "pending" | "approved" | "rejected" | "revoked";
@@ -9,7 +9,7 @@ export interface Membership {
   id: string;
   role: MemberRole;
   status: MembershipStatus;
-  school: { id: string; name: string; status: "pending_verification" | "active" | "suspended"; isDemo: boolean };
+  school: { id: string; name: string; status: "pending_verification" | "active" | "suspended"; isDemo: boolean; schoolKindCode: string | null };
   assignments: { duty: "homeroom" | "assist" | "inspection"; class: { id: string; label: string; schoolYear: number } }[];
 }
 
@@ -30,6 +30,9 @@ interface SessionValue {
   current: Membership | null;
   selectSchool: (schoolId: string) => void;
   usableMemberships: Membership[];
+  /** 로그인 화면에 보여 줄 안내(세션 만료 등) */
+  notice: string | null;
+  clearNotice: () => void;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -40,6 +43,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
   const [schoolId, setSchoolId] = useState<string | null>(() => storage.get(SCHOOL_KEY));
+  const [notice, setNotice] = useState<string | null>(null);
+  const clearNotice = useCallback(() => setNotice(null), []);
 
   const refresh = useCallback(async () => {
     try {
@@ -60,6 +65,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // 업무 중 세션이 만료되거나 권한이 회수되면 로그인 화면으로(입력 중이던 화면 대신 이유를 알려 줌)
+  useEffect(() => {
+    const onExpired = () => {
+      setMe((prev) => {
+        if (prev) setNotice("로그인이 만료되었거나 권한이 바뀌었습니다. 다시 로그인하세요.");
+        return null;
+      });
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, []);
 
   const logout = useCallback(async () => {
     await api("POST", "/auth/logout").catch(() => undefined);
@@ -84,8 +101,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ me, loading, error, refresh, logout, current, selectSchool, usableMemberships }),
-    [me, loading, error, refresh, logout, current, selectSchool, usableMemberships],
+    () => ({ me, loading, error, refresh, logout, current, selectSchool, usableMemberships, notice, clearNotice }),
+    [me, loading, error, refresh, logout, current, selectSchool, usableMemberships, notice, clearNotice],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

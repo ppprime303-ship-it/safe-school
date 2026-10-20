@@ -10,9 +10,10 @@ import { Icon } from "../components/ui/Icon";
 
 type Mode = "login" | "signup" | "verify";
 type DeviceKind = "personal" | "shared";
+type SendResult = { delivery?: "email" | "test_console"; devCode?: string };
 
 export function LoginPage() {
-  const { refresh } = useSession();
+  const { refresh, notice, clearNotice } = useSession();
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -43,7 +44,20 @@ export function LoginPage() {
     }
   };
 
+  // 실제로 메일을 보낸 경우에만 '보냈습니다'라고 안내합니다(모의 발송은 명확히 구분).
+  const applySendResult = (res: SendResult, when: "first" | "again") => {
+    setDevCode(res.devCode ?? null);
+    if (res.delivery === "email") {
+      setInfo(`${email.trim().toLowerCase()} 으로 인증코드를 ${when === "again" ? "다시 " : ""}보냈습니다. 10분 안에 입력하세요.`);
+    } else if (res.delivery === "test_console") {
+      setInfo(null);
+    } else {
+      setInfo("인증코드 요청을 접수했습니다. 메일이 오지 않으면 이메일 주소를 확인하세요.");
+    }
+  };
+
   const afterLogin = async () => {
+    clearNotice();
     await refresh();
     navigate("/", { replace: true });
   };
@@ -57,9 +71,8 @@ export function LoginPage() {
       });
     } else if (mode === "signup") {
       void run(async () => {
-        const res = await api<{ devCode?: string }>("POST", "/auth/signup", { email, password, displayName });
-        setDevCode(res.devCode ?? null);
-        setInfo(`${email.trim().toLowerCase()} 으로 인증코드를 보냈습니다. 10분 안에 입력하세요.`);
+        const res = await api<SendResult>("POST", "/auth/signup", { email, password, displayName });
+        applySendResult(res, "first");
         setMode("verify");
       });
     } else {
@@ -72,9 +85,8 @@ export function LoginPage() {
 
   const resend = () =>
     void run(async () => {
-      const res = await api<{ devCode?: string }>("POST", "/auth/resend-code", { email });
-      setDevCode(res.devCode ?? null);
-      setInfo("인증코드를 다시 보냈습니다.");
+      const res = await api<SendResult>("POST", "/auth/resend-code", { email });
+      applySendResult(res, "again");
     });
 
   const titles: Record<Mode, string> = { login: "로그인", signup: "교직원 가입", verify: "이메일 인증" };
@@ -92,6 +104,11 @@ export function LoginPage() {
         <form onSubmit={onSubmit} className="rounded-card border border-line bg-card p-5 shadow-card" noValidate>
           <h1 className="text-2xl font-bold">{titles[mode]}</h1>
 
+          {notice && !error && (
+            <p role="status" className="mt-3 flex gap-2 rounded-control border-2 border-warning bg-warning-soft p-3 text-base font-semibold text-warning-strong">
+              <Icon name="clock" size={22} /> {notice}
+            </p>
+          )}
           {info && (
             <p role="status" className="mt-3 flex gap-2 rounded-control border-2 border-success bg-success-soft p-3 text-base font-semibold text-success">
               <Icon name="check-circle" size={22} /> {info}
@@ -99,7 +116,8 @@ export function LoginPage() {
           )}
           {devCode && (
             <p className="mt-2 rounded-control border-2 border-dashed border-warning bg-warning-soft p-3 text-base font-semibold text-warning-strong">
-              개발 모드(메일 미설정) 인증코드: <strong className="tabular text-xl">{devCode}</strong>
+              <span className="block">테스트 환경 모의 발송 — 메일이 실제로 보내지지 않았습니다.</span>
+              테스트 전용 인증코드: <strong className="tabular text-xl">{devCode}</strong>
             </p>
           )}
           {error && (

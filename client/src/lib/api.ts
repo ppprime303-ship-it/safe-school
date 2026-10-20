@@ -14,6 +14,8 @@ export class ApiError extends Error {
   }
 }
 
+export const SESSION_EXPIRED_EVENT = "safe-school:session-expired";
+
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export async function api<T>(
@@ -44,6 +46,10 @@ export async function api<T>(
   const data = text ? safeJson(text) : null;
   if (!response.ok) {
     const err = (data ?? {}) as { code?: string; message?: string; details?: Record<string, unknown> };
+    // 로그인 세션이 만료·회수된 경우: 화면 전체에 알려 로그인 화면으로 보냅니다(로그인·인증 요청 자체는 제외).
+    if (response.status === 401 && !path.startsWith("/auth/")) {
+      window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+    }
     throw new ApiError(response.status, err.code ?? "http_error", err.message ?? `요청을 처리하지 못했습니다(${response.status}).`, err.details);
   }
   return data as T;
@@ -86,3 +92,24 @@ export const storage = {
     }
   },
 };
+
+/** 오류를 화면 안내용 제목·문구로 바꿉니다(권한·승인 대기·통신 장애를 구분). */
+export function describeError(e: unknown): { title: string; message: string; retryable: boolean } {
+  if (!(e instanceof ApiError)) return { title: "문제가 발생했습니다", message: "잠시 후 다시 시도하세요.", retryable: true };
+  if (e.isNetwork) return { title: "서버에 연결할 수 없습니다", message: e.message, retryable: true };
+  switch (e.code) {
+    case "membership_pending":
+      return { title: "가입 승인 대기 중", message: e.message, retryable: false };
+    case "school_not_active":
+      return { title: "학교 등록 확인 대기 중", message: e.message, retryable: false };
+    case "membership_inactive":
+    case "forbidden":
+      return { title: "접근 권한이 없습니다", message: e.message, retryable: false };
+    case "reauth_required":
+      return { title: "비밀번호 재확인이 필요합니다", message: e.message, retryable: false };
+    case "unauthenticated":
+      return { title: "로그인이 필요합니다", message: e.message, retryable: false };
+    default:
+      return { title: e.status >= 500 ? "서버 오류" : "처리하지 못했습니다", message: e.message, retryable: e.status >= 500 };
+  }
+}

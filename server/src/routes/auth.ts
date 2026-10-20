@@ -27,8 +27,8 @@ async function sendSignupCode(userId: string, email: string) {
     subject: "[SAFE SCHOOL] 이메일 인증코드",
     text: `SAFE SCHOOL 인증코드: ${code}\n10분 안에 입력해 주세요. 본인이 요청하지 않았다면 이 메일을 무시하세요.`,
   });
-  // 개발 환경에서 메일 설정이 없을 때만 화면 확인용으로 코드를 돌려줍니다(운영에서는 절대 반환하지 않음).
-  return result.delivered === "console" && process.env.NODE_ENV !== "production" ? code : undefined;
+  // 모의 발송(개발·테스트 전용)일 때만 화면 확인용 코드를 돌려줍니다. 실제 메일 발송이나 운영 환경에서는 절대 반환하지 않습니다.
+  return result.delivered === "test_console" ? { delivery: result.delivered, devCode: code } : { delivery: result.delivered };
 }
 
 authRouter.post("/auth/signup", authLimiter, async (req, res) => {
@@ -41,8 +41,8 @@ authRouter.post("/auth/signup", authLimiter, async (req, res) => {
     ? await prisma.user.update({ where: { id: existing.id }, data: { displayName: input.displayName, passwordHash } })
     : await prisma.user.create({ data: { email: input.email, displayName: input.displayName, passwordHash } });
 
-  const devCode = await sendSignupCode(user.id, user.email);
-  res.status(201).json({ ok: true, email: user.email, ...(devCode ? { devCode } : {}) });
+  const sent = await sendSignupCode(user.id, user.email);
+  res.status(201).json({ ok: true, email: user.email, ...sent });
 });
 
 authRouter.post("/auth/resend-code", authLimiter, async (req, res) => {
@@ -50,8 +50,7 @@ authRouter.post("/auth/resend-code", authLimiter, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { email: input.email } });
   // 가입 여부를 드러내지 않도록 항상 같은 응답
   if (!user || user.emailVerifiedAt) return res.json({ ok: true });
-  const devCode = await sendSignupCode(user.id, user.email);
-  res.json({ ok: true, ...(devCode ? { devCode } : {}) });
+  res.json({ ok: true, ...(await sendSignupCode(user.id, user.email)) });
 });
 
 authRouter.post("/auth/verify-email", authLimiter, async (req, res) => {
@@ -126,7 +125,7 @@ authRouter.get("/auth/me", requireAuth, async (req, res) => {
     include: {
       memberships: {
         include: {
-          school: { select: { id: true, name: true, status: true, isDemo: true } },
+          school: { select: { id: true, name: true, status: true, isDemo: true, schoolKindCode: true } },
           assignments: { include: { schoolClass: { select: { id: true, label: true, schoolYear: true } } } },
         },
       },

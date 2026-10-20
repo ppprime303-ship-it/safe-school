@@ -1,5 +1,5 @@
 // 화면 연결: 로그인 → (소속이 하나면 자동 선택) → 관리자는 상황판, 교직원은 학급 보고
-import { useEffect } from "react";
+import { useEffect, type ReactElement } from "react";
 import { matchPath, navigate, usePath } from "./lib/router";
 import { SessionProvider, useSession } from "./lib/session";
 import { LoadingState, ErrorState, EmptyState } from "./components/ui/States";
@@ -9,6 +9,8 @@ import { ReportPage } from "./pages/report/ReportPage";
 import { BoardPage } from "./pages/board/BoardPage";
 import { DesignPreviewPage } from "./pages/DesignPreviewPage";
 import { StatusPage } from "./pages/StatusPage";
+import { MembersPage } from "./pages/admin/MembersPage";
+import { ClassesPage } from "./pages/admin/ClassesPage";
 import { AppShell } from "./components/layout/AppShell";
 
 function Redirect({ to }: { to: string }) {
@@ -46,9 +48,16 @@ function Routes() {
     const membership = usableMemberships.find((m) => m.school.id === school.schoolId);
     if (!membership) return <Redirect to="/schools" />;
     if (school.screen === "report") return <ReportPage schoolId={school.schoolId!} />;
-    if (school.screen === "board") {
+    // 관리자 전용 화면: 화면에서도 막고, 서버 API에서도 다시 검사합니다.
+    const adminScreens: Record<string, (id: string) => ReactElement> = {
+      board: (id) => <BoardPage schoolId={id} />,
+      members: (id) => <MembersPage schoolId={id} />,
+      classes: (id) => <ClassesPage schoolId={id} />,
+    };
+    const adminScreen = adminScreens[school.screen!];
+    if (adminScreen) {
       if (membership.role !== "admin") return <Redirect to={`/s/${school.schoolId}/report`} />;
-      return <BoardPage schoolId={school.schoolId!} />;
+      return adminScreen(school.schoolId!);
     }
   }
 
