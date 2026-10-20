@@ -5,6 +5,7 @@ import {
   API_TYPE_BASIC_INFO,
   API_TYPE_GRADE_CLASS_STUDENTS,
   hashPayload,
+  isGradeDataEnabled,
   parseBasicInfo,
   parseGradeClassStudents,
   SchoolinfoError,
@@ -98,6 +99,9 @@ export async function refreshGradeClassData(
     warning,
   });
 
+  if (!isGradeDataEnabled()) {
+    return fallback("학년별 공시자료 연동은 실제 응답 필드를 확인한 뒤 활성화됩니다(SCHOOLINFO_GRADE_DATA). 학급과 재적은 직접 입력하세요.");
+  }
   if (!code || !kindCode) return fallback("학교알리미 학교코드가 연결되지 않은 학교입니다.");
   if (!client) return fallback("학교알리미 연동이 설정되지 않았습니다. 저장된 자료를 표시합니다.");
 

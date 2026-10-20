@@ -4,7 +4,9 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import {
   API_TYPE_BASIC_INFO,
+  inspectFields,
   parseBasicInfo,
+  REQUIRED_BASIC_FIELDS,
   SchoolinfoError,
   type SchoolinfoClient,
 } from "../integrations/schoolinfo.js";
@@ -21,6 +23,14 @@ export async function syncDirectory(
     schulKndCode: scope.kindCode,
     sidoCode: scope.sidoCode,
   });
+
+  // 기대한 필드가 없는 응답(명세 변경 등)은 저장하지 않고 형식 오류로 멈춥니다(기존 목록 보존).
+  if (rows.length > 0) {
+    const { missing } = inspectFields(rows, REQUIRED_BASIC_FIELDS);
+    if (missing.length > 0) {
+      throw new SchoolinfoError(`학교알리미 응답 형식이 예상과 다릅니다(없는 필드: ${missing.join(", ")}).`, "format");
+    }
+  }
 
   let upserted = 0;
   let skipped = 0;

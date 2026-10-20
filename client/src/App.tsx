@@ -8,6 +8,7 @@ import { SchoolSelectPage } from "./pages/SchoolSelectPage";
 import { ReportPage } from "./pages/report/ReportPage";
 import { BoardPage } from "./pages/board/BoardPage";
 import { DesignPreviewPage } from "./pages/DesignPreviewPage";
+import { StatusPage } from "./pages/StatusPage";
 import { AppShell } from "./components/layout/AppShell";
 
 function Redirect({ to }: { to: string }) {
@@ -19,8 +20,10 @@ function Routes() {
   const path = usePath();
   const { me, loading, error, refresh, current, usableMemberships } = useSession();
 
-  // 디자인 미리보기는 로그인 없이 볼 수 있음(가상 데이터만 사용)
-  if (path === "/design") return <DesignPreviewPage />;
+  // 디자인 미리보기·시스템 상태는 로그인 없이 볼 수 있음(개인정보 없음)
+  // 운영 빌드에서는 VITE_ENABLE_DESIGN_PREVIEW=true 로 빌드한 경우에만 노출
+  if (path === "/design" && (!import.meta.env.PROD || import.meta.env.VITE_ENABLE_DESIGN_PREVIEW === "true")) return <DesignPreviewPage />;
+  if (path === "/status") return <StatusPage />;
 
   if (loading) return <LoadingState label="SAFE SCHOOL을 여는 중…" />;
   if (error)

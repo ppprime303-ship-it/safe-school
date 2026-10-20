@@ -37,6 +37,10 @@ const ACCOUNTS: DemoAccount[] = [
 ];
 
 async function main() {
+  // 운영 환경에서는 명시적으로 허용한 경우에만 데모 데이터를 넣습니다(실데이터·데모 분리).
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEMO_SEED !== "true") {
+    throw new Error("운영 환경에서는 데모 시드를 실행하지 않습니다. 시연용 배포라면 ALLOW_DEMO_SEED=true 를 일시적으로 설정하세요.");
+  }
   const demoPassword = process.env.DEMO_PASSWORD ?? "";
   if (demoPassword.length < 12) {
     throw new Error("DEMO_PASSWORD(12자 이상)를 Replit Secrets에 먼저 넣어 주세요.");

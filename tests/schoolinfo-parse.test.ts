@@ -3,6 +3,7 @@ import {
   buildSourceUrl,
   createSchoolinfoClient,
   hashPayload,
+  inspectFields,
   parseBasicInfo,
   parseGradeClassStudents,
   SchoolinfoError,
@@ -48,6 +49,19 @@ describe("학교알리미 응답 해석", () => {
 
   it("키 순서가 달라도 같은 내용이면 같은 해시", () => {
     expect(hashPayload({ a: 1, b: 2 })).toBe(hashPayload({ b: 2, a: 1 }));
+  });
+
+  it("응답 필드 이름만 검사하고 기대 필드 누락을 알려 준다", () => {
+    const r = inspectFields([{ SCHUL_CODE: "1", SCHUL_NM: "가" }], ["SCHUL_CODE", "SCHUL_NM", "COL_C1"]);
+    expect(r.present).toEqual(["SCHUL_CODE", "SCHUL_NM"]);
+    expect(r.missing).toEqual(["COL_C1"]);
+  });
+
+  it("연결 오류 메시지에 인증키가 담기지 않는다", async () => {
+    const fakeFetch = (async (u: URL) => { throw new TypeError(`fetch failed ${String(u)}`); }) as unknown as typeof fetch;
+    const error = await createSchoolinfoClient({ apiKey: "SECRET-KEY", fetchImpl: fakeFetch }).fetch({ apiType: "0", schulKndCode: "02" }).catch((e) => e);
+    expect(error.kind).toBe("network");
+    expect(String(error.message)).not.toContain("SECRET-KEY");
   });
 
   it("인증키가 없으면 호출하지 않고 not_configured 오류", async () => {

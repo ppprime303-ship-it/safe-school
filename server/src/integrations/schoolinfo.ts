@@ -50,6 +50,26 @@ export const SIDO_CODES: Record<string, string> = {
 export const API_TYPE_BASIC_INFO = "0";
 export const API_TYPE_GRADE_CLASS_STUDENTS = "09"; // 확인 필요
 
+// 응답 필드 검증: 공식 출력값 정의를 아직 확인하지 못했으므로, 실제 응답에 아래 필드가 있는지 검사합니다.
+// (npm run schoolinfo:verify 로 실제 응답을 확인한 뒤 docs/data-sources.md 에 기록)
+export const EXPECTED_BASIC_FIELDS = ["SCHUL_CODE", "SCHUL_NM", "SCHUL_KND_SC_CODE", "ATPT_OFCDC_ORG_NM", "SCHUL_RDNMA", "ABSCH_YN"] as const;
+export const REQUIRED_BASIC_FIELDS = ["SCHUL_CODE", "SCHUL_NM"] as const;
+export const EXPECTED_GRADE_FIELDS = ["SCHUL_CODE", "COL_C1", "COL_S1", "COL_C_SUM", "COL_S_SUM"] as const;
+
+/** 학년별 학급수·학생수(apiType 09) 연동은 실제 응답으로 필드를 확인한 뒤에만 켭니다(기본 꺼짐). */
+export const isGradeDataEnabled = () => process.env.SCHOOLINFO_GRADE_DATA === "enabled";
+
+/** 응답 행들의 필드 이름(값 제외)과 기대 필드 존재 여부 */
+export function inspectFields(rows: SchoolinfoRow[], expected: readonly string[]) {
+  const keys = new Set<string>();
+  for (const row of rows.slice(0, 20)) Object.keys(row).forEach((k) => keys.add(k));
+  return {
+    fieldNames: [...keys].sort(),
+    present: expected.filter((f) => keys.has(f)),
+    missing: expected.filter((f) => !keys.has(f)),
+  };
+}
+
 export type SchoolinfoRow = Record<string, unknown>;
 
 export interface SchoolinfoQuery {
@@ -104,7 +124,9 @@ export function createSchoolinfoClient(options: {
       try {
         response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs), headers: { Accept: "application/json" } });
       } catch (error) {
-        throw new SchoolinfoError(`학교알리미에 연결할 수 없습니다: ${(error as Error).message}`, "network");
+        // 원본 오류 메시지에는 요청 주소(인증키 포함)가 들어갈 수 있어 오류 종류만 남깁니다.
+        const kind = (error as Error)?.name === "TimeoutError" ? "시간 초과" : "연결 실패";
+        throw new SchoolinfoError(`학교알리미에 연결할 수 없습니다(${kind}).`, "network");
       }
       if (!response.ok) {
         throw new SchoolinfoError(`학교알리미 응답 오류(HTTP ${response.status})`, "http");

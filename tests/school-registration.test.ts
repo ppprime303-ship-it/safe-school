@@ -2,7 +2,8 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestClient, resetTestData } from "./test-db.js";
 import { FakeSchoolinfoClient, gradeClassRow } from "./fixtures/schoolinfo.js";
-import { searchDirectory } from "../server/src/services/schoolDirectory.js";
+import { searchDirectory, syncDirectory } from "../server/src/services/schoolDirectory.js";
+import { buildSourceUrl } from "../server/src/integrations/schoolinfo.js";
 import { applyForSchoolRegistration, reviewSchoolRegistration } from "../server/src/services/schoolRegistration.js";
 import { decideMemberships, requestToJoinSchool, resolveSchoolAccess, revokeMembership, setAssignments } from "../server/src/services/membership.js";
 import { applyClassStructure, confirmEnrollment, getClassStructureProposal, refreshGradeClassData } from "../server/src/services/publicData.js";
@@ -25,6 +26,7 @@ async function registerAndApprove() {
 }
 
 beforeEach(async () => {
+  process.env.SCHOOLINFO_GRADE_DATA = "enabled"; // 학년별 공시자료 테스트용(운영 기본값은 꺼짐)
   await resetTestData(prisma);
   client = new FakeSchoolinfoClient();
   userA = await verifiedUser("a@school.kr", "교직원A");
@@ -139,6 +141,25 @@ describe("후속 교직원 가입", () => {
 });
 
 describe("공시자료와 실제 학급 데이터", () => {
+  it("학년별 공시자료 연동은 기본적으로 꺼져 있고, 꺼져 있으면 호출하지 않는다", async () => {
+    const schoolId = await registerAndApprove();
+    delete process.env.SCHOOLINFO_GRADE_DATA;
+    client.calls = [];
+    const result = await refreshGradeClassData(prisma, client, { schoolId });
+    expect(result.stale).toBe(true);
+    expect(result.warning).toContain("SCHOOLINFO_GRADE_DATA");
+    expect(client.calls.filter((c) => c.apiType === "09")).toHaveLength(0);
+  });
+
+  it("기대 필드가 없는 응답은 저장하지 않고 기존 목록을 지킨다", async () => {
+    await searchDirectory(prisma, client, { q: "안전초", kindCode: "02" });
+    const before = await prisma.schoolDirectoryEntry.count();
+    const broken = new FakeSchoolinfoClient();
+    broken.fetch = async (query) => ({ rows: [{ CODE: "X", NAME: "형식바뀜학교" }], sourceUrl: buildSourceUrl(query) });
+    await expect(syncDirectory(prisma, broken, { kindCode: "02" })).rejects.toMatchObject({ kind: "format" });
+    expect(await prisma.schoolDirectoryEntry.count()).toBe(before);
+  });
+
   it("공시자료로 학급 구조만 만들고, 재적은 관리자가 확인할 때까지 비워 둔다(학년 합계를 나누지 않음)", async () => {
     const schoolId = await registerAndApprove();
     await refreshGradeClassData(prisma, client, { schoolId });
