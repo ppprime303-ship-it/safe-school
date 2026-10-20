@@ -86,7 +86,7 @@ export const updateEventSchema = z
   .object({ location: optionalText(100), evacPlace: optionalText(100), message: optionalText(500) })
   .refine((v) => v.location !== undefined || v.evacPlace !== undefined || v.message !== undefined, "바꿀 항목이 없습니다.");
 
-const headcount = z.number().int().min(0).max(200);
+const headcount = z.number().int().min(0).max(60); // DB 제약(학급 재적 60명 이하)과 같음
 // 학생 이름 등 개인 식별정보는 받지 않습니다(메모 200자 제한, 화면에서 안내).
 export const reportInputSchema = z.object({
   evacuated: headcount,

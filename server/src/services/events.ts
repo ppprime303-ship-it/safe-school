@@ -377,8 +377,13 @@ export async function submitReport(
       return { report: toReportDto(report), replayed: false };
     });
   } catch (error) {
-    // 같은 학급 첫 보고가 동시에 들어온 경우 등
-    if (isUniqueViolation(error)) throw conflict("version_conflict", "다른 사람이 먼저 보고했습니다. 화면을 새로 고친 뒤 다시 보고하세요.");
+    if (isUniqueViolation(error)) {
+      // 같은 요청이 거의 동시에 두 번 도착: 먼저 저장된 결과를 돌려줌
+      const raced = await prisma.evacuationReportRevision.findUnique({ where: { idempotencyKey: key }, include: { report: { include: { reportedBy: { select: { displayName: true } } } } } });
+      if (raced && raced.report.classId === params.classId) return { report: toReportDto(raced.report), replayed: true };
+      // 같은 학급 첫 보고가 동시에 들어온 경우 등
+      throw conflict("version_conflict", "다른 사람이 먼저 보고했습니다. 화면을 새로 고친 뒤 다시 보고하세요.");
+    }
     throw error;
   }
 }

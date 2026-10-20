@@ -23,7 +23,8 @@
     "operator": "tsx scripts/operator.ts",
     "directory:sync": "tsx scripts/sync-school-directory.ts",
     "schoolinfo:verify": "tsx scripts/verify-schoolinfo.ts",
-    "e2e:step2": "tsx scripts/e2e-step2.ts"
+    "e2e:step2": "tsx scripts/e2e-step2.ts",
+    "e2e:step3": "tsx scripts/e2e-step3.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.10.0",
