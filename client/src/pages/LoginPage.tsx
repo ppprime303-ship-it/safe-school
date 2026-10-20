@@ -164,7 +164,7 @@ export function LoginPage() {
                   {(
                     [
                       ["personal", "내 휴대폰·PC", "30일 로그인 유지"],
-                      ["shared", "공용 기기", "8시간 후 자동 로그아웃"],
+                      ["shared", "공용 기기", "30분 미사용 시 로그아웃"],
                     ] as const
                   ).map(([value, label, desc]) => (
                     <label
