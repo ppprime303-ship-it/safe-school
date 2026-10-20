@@ -65,12 +65,17 @@ export function ReportPage({ schoolId }: { schoolId: string }) {
         if (e instanceof ApiError && e.isNetwork) {
           storage.set(pendingKey(event.id, classId), JSON.stringify(pending));
           setSaveState({ kind: "queued", message: "통신이 연결되면 자동으로 다시 보냅니다. 급하면 구두로도 보고하세요." });
+        } else if (e instanceof ApiError && (e.code === "version_conflict" || e.code === "event_closed")) {
+          // 다른 사람이 먼저 수정했거나 상황이 종료됨: 최신 내용을 다시 불러와 보여 줌(덮어쓰지 않음)
+          storage.remove(pendingKey(event.id, classId));
+          setSaveState({ kind: "failed", message: e.message });
+          void fetchAll();
         } else {
           setSaveState({ kind: "failed", message: e instanceof ApiError ? e.message : "다시 시도하세요." });
         }
       }
     },
-    [schoolId],
+    [schoolId, fetchAll],
   );
 
   // 연결이 돌아오면 미전송 보고를 다시 보냄
@@ -101,9 +106,7 @@ export function ReportPage({ schoolId }: { schoolId: string }) {
         ) : (
           <p className="mt-2 text-base text-ink-muted">배정된 학급이 없습니다. 학교 관리자에게 담당 학급 배정을 요청하세요.</p>
         )}
-        <p className="mt-2 text-sm text-ink-muted">
-          담당 학급은 관리자 배정 정보를 기준으로 표시합니다. 대피 보고 기능은 STEP 3에서 연결됩니다.
-        </p>
+        <p className="mt-2 text-sm text-ink-muted">담당 학급은 관리자 배정 정보를 기준으로 표시합니다.</p>
       </section>
       {load.kind === "loading" && <LoadingState />}
       {load.kind === "error" && <ErrorState message={load.message} onRetry={() => void fetchAll()} />}

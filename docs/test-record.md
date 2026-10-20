@@ -111,3 +111,12 @@ npm 패키지 설치가 막힌 환경이라 PostgreSQL 16과 Node.js 22로 할 �
 | 학교알리미 실제 응답 필드 | `npm run schoolinfo:verify` | 인증키 필요, 공식 출력값 문서 미확인 |
 | 실제 메일 발송 | Resend 설정 후 가입 | 메일 서비스 계정 필요 |
 | 공용 기기 30분 미사용 실제 만료 | 30분 대기 | 시간 경과 필요(만료 시각 계산은 e2e에서 확인) |
+
+## STEP 3-A (step-3-dev, 2026-10-20) — 작업공간 검증 결과
+
+| 항목 | 결과 | 비고 |
+| --- | --- | --- |
+| 타입 검사(스텁 타입, `--noImplicitAny false`) | 오류 0 | Prisma·Express 타입은 스텁이라 약한 검사. **Replit `npm run typecheck` 필요** |
+| 브라우저: 발령 폼 → 실제 상황 확인("실제" 입력) → 상황판 → 종료 확인("종료" 입력) | 7/7 통과 | 모의 서버(Playwright, 390px). 요청 본문에 `confirmReal:true`, `confirmClose:true` 확인 |
+| `tests/events.test.ts`(17건) | **미검증** | 이 작업공간에서 npm 설치 불가. Replit `npm test` 필요 |
+| `npm run e2e:step3` | **미검증** | Replit에서 실행 필요(safeschool_test 초기화, 시연 스키마와 혼용 금지) |

@@ -6,6 +6,7 @@ import { AppShell } from "../../components/layout/AppShell";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { EmptyState, ErrorState, LoadingState } from "../../components/ui/States";
 import { BoardView, type Connection } from "./BoardView";
+import { IssueEventForm } from "./IssueEventForm";
 
 const POLL_MS = 5000;
 
@@ -59,7 +60,8 @@ export function BoardPage({ schoolId }: { schoolId: string }) {
     setClosing(true);
     setCloseError(null);
     try {
-      await api("POST", `/schools/${schoolId}/events/${load.data.event.id}/close`, {});
+      // 확인 창(실제 상황은 "종료" 입력)을 거친 뒤에만 호출되므로 명시적 확인을 함께 보냄
+      await api("POST", `/schools/${schoolId}/events/${load.data.event.id}/close`, { confirmClose: true });
       eventIdRef.current = null;
       setConfirmClose(false);
       await poll();
@@ -77,7 +79,14 @@ export function BoardPage({ schoolId }: { schoolId: string }) {
       {load.kind === "unavailable" && (
         <EmptyState icon="info" title="재난 대응 기능 준비 중" message="재난 발령·상황판 서버 기능은 다음 개발 단계(STEP 3)에서 연결됩니다. 화면 디자인은 /design 에서 미리 볼 수 있습니다." />
       )}
-      {load.kind === "none" && <EmptyState icon="check-circle" title="진행 중인 재난 상황이 없습니다" message="재난이 발령되면 이 화면에 학급별 보고가 실시간으로 모입니다." />}
+      {load.kind === "none" && (
+        <>
+          <EmptyState icon="check-circle" title="진행 중인 재난 상황이 없습니다" message="재난이 발령되면 이 화면에 학급별 보고가 실시간으로 모입니다." />
+          <div className="mt-4">
+            <IssueEventForm schoolId={schoolId} onIssued={() => void poll()} />
+          </div>
+        </>
+      )}
       {load.kind === "error" && <ErrorState message={load.message} onRetry={() => void poll()} />}
       {load.kind === "ready" && <BoardView data={load.data} connection={connection} onCloseEvent={() => setConfirmClose(true)} />}
 
@@ -90,7 +99,7 @@ export function BoardPage({ schoolId }: { schoolId: string }) {
         onConfirm={() => void closeEvent()}
         onCancel={() => setConfirmClose(false)}
       >
-        <p>종료하면 교직원이 더 이상 보고할 수 없고, 지금까지의 보고로 상황 보고서가 만들어집니다. 기록은 삭제되지 않습니다.</p>
+        <p>종료하면 교직원이 더 이상 보고할 수 없고, 종료 시점의 최종 집계가 기록으로 남습니다. 보고 기록은 삭제되지 않습니다.</p>
         {closeError && <p className="mt-2 font-semibold text-danger">{closeError}</p>}
       </ConfirmDialog>
     </AppShell>
