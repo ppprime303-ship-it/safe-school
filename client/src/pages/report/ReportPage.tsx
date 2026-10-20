@@ -88,8 +88,23 @@ export function ReportPage({ schoolId }: { schoolId: string }) {
   const event = load.kind === "ready" ? load.event : null;
   const view = load.kind === "ready" ? load.classes.find((c) => c.classId === selected) ?? null : null;
 
+  const assignedClasses = current?.school.id === schoolId ? current.assignments : [];
+
   return (
     <AppShell title="학급 대피 보고" schoolId={schoolId} event={event}>
+      <section className="mx-auto mb-4 max-w-xl rounded-card border border-line bg-card p-4 shadow-card" aria-label="내 담당 학급">
+        <h2 className="text-lg font-bold">내 담당 학급</h2>
+        {assignedClasses.length > 0 ? (
+          <p className="mt-2 text-xl font-extrabold">
+            {assignedClasses.map((a) => a.class.label).join(", ")}
+          </p>
+        ) : (
+          <p className="mt-2 text-base text-ink-muted">배정된 학급이 없습니다. 학교 관리자에게 담당 학급 배정을 요청하세요.</p>
+        )}
+        <p className="mt-2 text-sm text-ink-muted">
+          담당 학급은 관리자 배정 정보를 기준으로 표시합니다. 대피 보고 기능은 STEP 3에서 연결됩니다.
+        </p>
+      </section>
       {load.kind === "loading" && <LoadingState />}
       {load.kind === "error" && <ErrorState message={load.message} onRetry={() => void fetchAll()} />}
       {load.kind === "unavailable" && (
