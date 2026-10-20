@@ -112,8 +112,9 @@ describe("학급 대피 보고", () => {
   }
 
   it("대피 확인 + 사전 파악 부재 + 미확인 = 보고 재적이어야 한다", async () => {
-    await expect(report({ evacuated: 25, unconfirmed: 2 })).rejects.toThrow(); // 27 ≠ 28
-    await expect(report({ evacuated: 25, absentKnown: 1, unconfirmed: 2 })).resolves.toBeTruthy();
+    const ev = await newEvent(schoolA);
+    await expect(report({ evacuated: 25, unconfirmed: 2 }, ev.id)).rejects.toThrow(); // 27 ≠ 28
+    await expect(report({ evacuated: 25, absentKnown: 1, unconfirmed: 2 }, ev.id)).resolves.toBeTruthy();
   });
 
   it("음수는 저장되지 않는다", async () => {
@@ -129,8 +130,9 @@ describe("학급 대피 보고", () => {
   });
 
   it("재적을 바꾸면 사유가 필요하다", async () => {
-    await expect(report({ enrolledCount: 27, evacuated: 27 })).rejects.toThrow();
-    await expect(report({ enrolledCount: 27, evacuated: 27, enrolledChangeReason: "transfer_out" })).resolves.toBeTruthy();
+    const ev = await newEvent(schoolA);
+    await expect(report({ enrolledCount: 27, evacuated: 27 }, ev.id)).rejects.toThrow();
+    await expect(report({ enrolledCount: 27, evacuated: 27, enrolledChangeReason: "transfer_out" }, ev.id)).resolves.toBeTruthy();
   });
 
   it("같은 상황·같은 학급의 보고는 한 건만 존재한다(수정은 버전으로)", async () => {
