@@ -14,6 +14,7 @@ export default defineConfig({
     allowedHosts: [
       ...(process.env.REPLIT_DEV_DOMAIN?.endsWith(".replit.dev") ? [process.env.REPLIT_DEV_DOMAIN] : []),
       "cf204464-72b6-4125-800a-289e679315f2-00-3dtj3it8yil83.pike.replit.dev",
+      "cf204464-72b6-4125-800a-289e679315f2-00-3dtj3it8yil83.pike.repl.co",
     ],
   },
   resolve: {
