@@ -152,6 +152,30 @@ describe("수정·동시 수정 방지·수정 이력", () => {
   });
 });
 
+describe("저장하기 한 버튼(UI 개선) — 작성 상태 전환과 수정 이력", () => {
+  it("작성 완료 상태에서 본문만 고치면 상태 유지, 상태만 바꾸면 판 +1, 모든 판이 이력에 남는다", async () => {
+    const { id } = await draft(await alertId("N-HEAT-1"));
+    await save(id, 1, { body: "본문 1", status: "completed" }); // 상태만 변경 → 판 2
+    await save(id, 2, { body: "본문 수정", status: "completed" }); // 본문만 변경(상태 유지) → 판 3
+    await save(id, 3, { body: "본문 수정", status: "draft" }); // 작성 중으로 되돌림 → 판 4
+    const n = await getNotice(prisma, { schoolId: incheon, noticeId: id, userId: author, role: "homeroom" });
+    expect(n.notice).toMatchObject({ version: 4, status: "draft", body: "본문 수정" });
+    expect(n.revisions.map((r) => [r.version, r.status, r.body])).toEqual([
+      [4, "draft", "본문 수정"],
+      [3, "completed", "본문 수정"],
+      [2, "completed", "본문 1"],
+      [1, "draft", "본문 1"],
+    ]);
+    expect(await prisma.auditLog.count({ where: { targetId: id, action: { in: ["notice.updated", "notice.completed"] } } })).toBe(3);
+  });
+
+  it("상태를 작성 완료로 바꿔도 공식 결재·발송 기록은 생기지 않는다(처리 이력 0건)", async () => {
+    const { id } = await draft(await alertId("N-HEAT-1"));
+    await save(id, 1, { body: "본문 1", status: "completed" });
+    expect(await prisma.noticeHandlingRecord.count({ where: { noticeId: id } })).toBe(0);
+  });
+});
+
 describe("학교 간 격리", () => {
   it("다른 학교의 안내문·처리 이력 ID로 조회·수정·취소·재사용·이력 입력은 모두 404", async () => {
     const { id } = await draft(await alertId("N-HEAT-1"));
