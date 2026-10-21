@@ -156,3 +156,27 @@ npm 패키지 설치가 막힌 환경이라 PostgreSQL 16과 Node.js 22로 할 �
 | `tests/alerts-region.test.ts`(순수 함수) | 8/8 | vitest 대체 실행기 |
 | 브라우저(모의 서버, 390px): 관리자 9 · 교직원 6 | 15/15 | 경보함·읽음·미판정·소재지 확인 |
 | `tests/alerts.test.ts`(11건), `npm run e2e:step3b`, typecheck | **미검증** | Replit 실행 필요 |
+
+## STEP 3-B 최종 검증(2026-10-21, Replit, 사용자 실행) — **모의 환경 검증 완료**
+
+검증 코드: `step-3b-alerts` 6667a81 → Replit 로컬 병합 `d562eec`(GitHub에는 없음)
+
+| 항목 | 결과 |
+| --- | --- |
+| `npm run typecheck` | 통과 |
+| `npm test` | 97/97(테스트 파일 8개: 12+16+7+18+17+3+15+9) |
+| `npm run e2e:step2` | 40/40 |
+| `npm run e2e:step3` | 41/41 |
+| `npm run e2e:step3b` | 28/28 |
+| 합계 | 206/206, 실패 0 |
+
+브라우저·시연 DB(`safeschool_browser_demo`):
+- 수정 전: 소재지를 나중에 확인하자 같은 폭염경보가 두 번 표시(사용자 발견)
+- 수정 후: `npm run alerts -- regroup --apply`로 중복 1건 정리 → 재점검 0건
+- 폭염경보 '해제됨'과 별도 '해제 안내' 표시 확인
+
+출처: 사용자 보고(Replit 콘솔 출력 원문은 포트폴리오에 추가 필요). 공식 재난경보 API는 미연동, 모의 공급자 기준.
+
+## STEP 3-C 마이그레이션 사전 점검(2026-10-21, Claude 작업공간)
+
+`docs/step3c-sql-check.md` — 빈 임시 PostgreSQL에 마이그레이션 4개 적용 후 35/35 예상대로 동작. **Replit 테스트·시연 스키마에는 미적용(승인 대기).**
