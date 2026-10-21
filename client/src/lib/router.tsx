@@ -11,9 +11,10 @@ export function navigate(to: string, options: { replace?: boolean } = {}) {
 }
 
 export function usePath(): string {
-  const [path, setPath] = useState(() => window.location.pathname);
+  // 검색어(?alert=…)만 바뀌어도 화면이 다시 그려지도록 전체 주소를 기억하고, 경로만 돌려줍니다.
+  const [loc, setLoc] = useState(() => window.location.pathname + window.location.search);
   useEffect(() => {
-    const update = () => setPath(window.location.pathname);
+    const update = () => setLoc(window.location.pathname + window.location.search);
     listeners.add(update);
     window.addEventListener("popstate", update);
     return () => {
@@ -21,7 +22,7 @@ export function usePath(): string {
       window.removeEventListener("popstate", update);
     };
   }, []);
-  return path;
+  return loc.split("?")[0]!;
 }
 
 /** "/schools/:schoolId/board" 같은 패턴과 경로를 비교해 매개변수를 돌려줍니다. */

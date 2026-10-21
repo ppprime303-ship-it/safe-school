@@ -6,6 +6,7 @@ import { AppError, notFound } from "../errors.js";
 import { writeAudit } from "./audit.js";
 import { ensureSchoolRegion } from "../alerts/collector.js";
 import { regroupRebroadcasts } from "../alerts/grouping.js";
+import { noticeCountsByAlert } from "./notices.js";
 import { matchRegion, normalizeSido, NATIONWIDE, type Area } from "../alerts/region.js";
 
 export interface AlertItem {
@@ -16,6 +17,7 @@ export interface AlertItem {
   rebroadcastCount: number;
   cancelled: boolean; // 해제 경보가 뒤따라 옴
   expired: boolean;
+  noticeCount: number; // STEP 3-C 이 경보에 연결된 학교 안내문 수(취소 제외)
   alert: {
     id: string;
     provider: string;
@@ -62,6 +64,7 @@ export async function listSchoolAlerts(prisma: PrismaClient, params: { schoolId:
   const cancelledRefs = new Set(
     matches.filter((m) => m.alert.msgType === "cancel" && m.alert.refExternalId).map((m) => `${m.alert.provider}:${m.alert.refExternalId}`),
   );
+  const noticeCounts = await noticeCountsByAlert(prisma, params.schoolId, ids);
   const now = Date.now();
   const items: AlertItem[] = matches.map((m) => ({
     matchId: m.id,
@@ -71,6 +74,7 @@ export async function listSchoolAlerts(prisma: PrismaClient, params: { schoolId:
     rebroadcastCount: group.get(m.alertId)!.count,
     cancelled: group.get(m.alertId)!.keys.some((k) => cancelledRefs.has(k)),
     expired: m.alert.expiresAt ? m.alert.expiresAt.getTime() < now : false,
+    noticeCount: noticeCounts.get(m.alertId) ?? 0,
     alert: {
       id: m.alert.id,
       provider: m.alert.provider,

@@ -57,6 +57,11 @@ export function AlertsPage({ schoolId, isAdmin }: { schoolId: string; isAdmin: b
     <AppShell title="경보함" schoolId={schoolId}>
       <div className="mx-auto max-w-2xl space-y-4">
         {isAdmin && <RegionCard schoolId={schoolId} onChanged={() => void fetchAlerts()} />}
+        <div className="flex justify-end">
+          <Link href={`/s/${schoolId}/notices`} className="text-base font-bold text-accent underline underline-offset-4">
+            작성한 학교 안내문 보기
+          </Link>
+        </div>
         <p className="rounded-control border border-line bg-card px-3 py-2 text-sm text-ink-muted">
           공식 경보 원문을 그대로 보여 줍니다. 이 앱은 119·112 신고, 공식 비상연락망, 교육청 공문을 대신하지 않습니다.
         </p>
@@ -111,6 +116,7 @@ function AlertCard({ item, open, onToggle, schoolId, isAdmin }: { item: AlertIte
           {msg && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-sm font-bold text-accent">{msg}</span>}
           {item.cancelled && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-sm font-bold text-accent">해제됨</span>}
           {item.expired && <span className="rounded-full bg-neutral-soft px-2 py-0.5 text-sm font-semibold text-neutral">기간 종료</span>}
+          {item.noticeCount > 0 && <span className="rounded-full bg-brand-soft px-2 py-0.5 text-sm font-bold text-brand">안내문 {item.noticeCount}</span>}
         </div>
         <p className={`mt-2 text-lg ${unread ? "font-extrabold" : "font-bold"}`}>{a.title ?? a.body.slice(0, 40)}</p>
         <p className="mt-1 text-sm text-ink-muted">
@@ -149,6 +155,28 @@ function AlertCard({ item, open, onToggle, schoolId, isAdmin }: { item: AlertIte
               "학교 관리자의 안내를 따르세요. 재난이 발령되면 학급 보고 화면이 자동으로 열립니다."
             )}
           </div>
+          {item.result === "target" && (
+            <div className="mt-3 rounded-control border border-line px-3 py-3">
+              <p className="text-base font-bold">학교 안내문</p>
+              <p className="mt-0.5 text-sm text-ink-muted">
+                상황별 예시문으로 학부모·교직원 안내문을 작성하고 복사해, 학교의 기존 채널에서 직접 보내세요(이 앱은 발송하지 않음).
+                {item.cancelled && " 이 경보는 해제되었습니다 — 해제 안내 예시를 먼저 추천합니다."}
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <Link
+                  href={`/s/${schoolId}/notices/new?alert=${a.id}`}
+                  className="inline-flex min-h-touch items-center rounded-control bg-brand px-4 font-bold text-white hover:bg-brand-hover"
+                >
+                  안내문 작성
+                </Link>
+                {item.noticeCount > 0 && (
+                  <Link href={`/s/${schoolId}/notices?alert=${a.id}`} className="font-bold text-accent underline underline-offset-4">
+                    이 경보의 안내문 {item.noticeCount}건 보기
+                  </Link>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </li>
