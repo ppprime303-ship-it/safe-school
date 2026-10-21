@@ -2,11 +2,12 @@
 // - 결재·실제 발송·모의 발송 기능은 없습니다. 처리 이력은 교사가 직접 남기는 기록일 뿐입니다.
 // - 예시 원본은 바뀌지 않으며, 저장되는 것은 교사가 고친 안내문입니다.
 // - 취소된 안내문은 고칠 수 없고, '이 안내문으로 새 초안 만들기'로 새 ID의 초안을 만듭니다(원본·취소 기록 보존).
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, describeError } from "../../lib/api";
 import type { AlertItem } from "../../lib/alerts";
 import { CHANNEL_LABEL, NOTICE_STATUS_META, copyText, type ChannelKey, type NoticeAlertState, type NoticeDetail, type ReuseResult } from "../../lib/notices";
 import { formatDateTime } from "../../lib/format";
+import { isNoticeDirty, planNoticeSave, saveMessage, type EditableStatus, type NoticeDraftState } from "../../lib/noticeSave";
 import { Link, navigate } from "../../lib/router";
 import { useSession } from "../../lib/session";
 import { AppShell } from "../../components/layout/AppShell";
@@ -15,11 +16,9 @@ import { PrimaryButton } from "../../components/ui/PrimaryButton";
 import { FormField } from "../../components/ui/FormField";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import {
-  NOTICE_AUDIENCES,
   NOTICE_DISASTER_TYPES,
   NOTICE_EXAMPLES,
   NOTICE_GUIDE_TEXT,
-  NOTICE_SITUATIONS,
   fillNoticeTemplate,
   findUnfilledGuides,
   noticeFillValuesFrom,
@@ -41,6 +40,9 @@ const toAlertState = (a: AlertItem): NoticeAlertState => ({
   isMock: a.alert.isMock, issuedAt: a.alert.issuedAt, expiresAt: a.alert.expiresAt, cancelled: a.cancelled, expired: a.expired,
 });
 
+// 새 안내문을 처음 저장한 뒤 주소가 바뀌어도 저장 결과 메시지를 한 번 보여 주기 위한 값
+let flashMessage: string | null = null;
+
 export function NoticeEditorPage({ schoolId, noticeId }: { schoolId: string; noticeId: string }) {
   const { usableMemberships } = useSession();
   const schoolName = usableMemberships.find((m) => m.school.id === schoolId)?.school.name ?? null;
@@ -49,11 +51,14 @@ export function NoticeEditorPage({ schoolId, noticeId }: { schoolId: string; not
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [exampleKey, setExampleKey] = useState<string | null>(null);
-  const [baseline, setBaseline] = useState({ title: "", body: "", exampleKey: null as string | null });
+  const [status, setStatus] = useState<EditableStatus>("draft");
+  const [baseline, setBaseline] = useState<NoticeDraftState>({ title: "", body: "", exampleKey: null, status: "draft" });
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false); // 두 번 누르기 방지(상태 반영 전 연속 클릭)
   const [error, setError] = useState<{ message: string; conflict?: boolean } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pendingExample, setPendingExample] = useState<NoticeExample | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [preview, setPreview] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [reuseOpen, setReuseOpen] = useState(false);
@@ -70,17 +75,20 @@ export function NoticeEditorPage({ schoolId, noticeId }: { schoolId: string; not
           return;
         }
         setLoad({ kind: "new", alert: toAlertState(item) });
-        setTitle("");
-        setBody("");
-        setExampleKey(null);
-        setBaseline({ title: "", body: "", exampleKey: null });
+        const empty: NoticeDraftState = { title: "", body: "", exampleKey: null, status: "draft" };
+        setTitle(""); setBody(""); setExampleKey(null); setStatus("draft"); setBaseline(empty);
+        setPickerOpen(true);
       } else {
         const detail = await api<NoticeDetail>("GET", `/schools/${schoolId}/notices/${noticeId}`);
         setLoad({ kind: "ready", detail });
-        setTitle(detail.notice.title);
-        setBody(detail.notice.body);
-        setExampleKey(detail.notice.exampleKey);
-        setBaseline({ title: detail.notice.title, body: detail.notice.body, exampleKey: detail.notice.exampleKey });
+        const st: EditableStatus = detail.notice.status === "completed" ? "completed" : "draft";
+        setTitle(detail.notice.title); setBody(detail.notice.body); setExampleKey(detail.notice.exampleKey); setStatus(st);
+        setBaseline({ title: detail.notice.title, body: detail.notice.body, exampleKey: detail.notice.exampleKey, status: st });
+        setPickerOpen(false);
+      }
+      if (flashMessage) {
+        setNotice(flashMessage);
+        flashMessage = null;
       }
     } catch (e) {
       const d = describeError(e);
@@ -94,8 +102,10 @@ export function NoticeEditorPage({ schoolId, noticeId }: { schoolId: string; not
 
   const detail = load.kind === "ready" ? load.detail : null;
   const alert = load.kind === "ready" ? load.detail.alert : load.kind === "new" ? load.alert : null;
+  const cancelled = detail?.notice.status === "cancelled";
   const editable = load.kind === "new" || (detail?.canEdit ?? false);
-  const dirty = title !== baseline.title || body !== baseline.body || exampleKey !== baseline.exampleKey;
+  const current: NoticeDraftState = { title, body, exampleKey, status };
+  const dirty = isNoticeDirty(baseline, current);
 
   // 저장하지 않은 채 창을 닫으려 하면 브라우저 확인
   useEffect(() => {
@@ -116,37 +126,53 @@ export function NoticeEditorPage({ schoolId, noticeId }: { schoolId: string; not
     setBody(fillNoticeTemplate(ex.body, values));
     setExampleKey(ex.key);
     setPendingExample(null);
-    setNotice(`'${ex.label}' 예시를 불러왔습니다. [ … 입력하세요] 부분을 학교 상황에 맞게 고치세요.`);
+    setNotice(`'${ex.label}' 예시를 불러왔습니다. [ … 입력하세요] 부분을 학교 상황에 맞게 고친 뒤 저장하세요.`);
+    window.setTimeout(() => document.querySelector<HTMLInputElement>('input[name="notice-title"]')?.focus(), 0);
   };
   const chooseExample = (ex: NoticeExample) => {
     if (title.trim() || body.trim()) setPendingExample(ex); // 작성 중인 글이 있으면 덮어쓰기 확인
     else applyExample(ex);
   };
 
-  const save = async (status: "draft" | "completed") => {
-    if (!title.trim() || !body.trim()) {
-      setError({ message: "제목과 본문을 입력하세요." });
+  // '저장하기' 한 버튼: 제목·본문·예시 키와 선택한 작성 상태를 함께 저장(PATCH 한 번 = 판 +1)
+  const save = async () => {
+    if (savingRef.current) return;
+    const plan =
+      load.kind === "new"
+        ? planNoticeSave({ mode: "new", alertId: load.alert.id, current })
+        : detail
+          ? planNoticeSave({ mode: "edit", version: detail.notice.version, baseline, current })
+          : null;
+    if (!plan) return;
+    if (plan.kind === "invalid") {
+      setError({ message: plan.message });
       return;
     }
+    if (plan.kind === "none") {
+      setNotice("바뀐 내용이 없어 저장하지 않았습니다.");
+      return;
+    }
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     setNotice(null);
     try {
-      if (load.kind === "new") {
-        const r = await api<{ id: string }>("POST", `/schools/${schoolId}/notices`, { alertId: load.alert.id, title, body, exampleKey });
-        if (status === "completed") {
-          await api("PATCH", `/schools/${schoolId}/notices/${r.id}`, { title, body, status, expectedVersion: 1 });
+      if (plan.kind === "create") {
+        const r = await api<{ id: string }>("POST", `/schools/${schoolId}/notices`, plan.create);
+        let version = 1;
+        if (plan.thenStatus === "completed") {
+          const u = await api<{ version: number }>("PATCH", `/schools/${schoolId}/notices/${r.id}`, { title, body, status: "completed", expectedVersion: 1 });
+          version = u.version;
         }
-        setBaseline({ title, body, exampleKey });
+        setBaseline(current);
+        flashMessage = saveMessage(version, plan.thenStatus, plan.thenStatus === "completed");
         navigate(`/s/${schoolId}/notices/${r.id}`, { replace: true });
         return;
       }
-      if (!detail) return;
-      const payload: Record<string, unknown> = { title, body, status, expectedVersion: detail.notice.version };
-      if (exampleKey !== baseline.exampleKey) payload.exampleKey = exampleKey;
-      const r = await api<{ version: number; changed: boolean }>("PATCH", `/schools/${schoolId}/notices/${detail.notice.id}`, payload);
+      const r = await api<{ version: number; changed: boolean }>("PATCH", `/schools/${schoolId}/notices/${detail!.notice.id}`, plan.payload);
+      const statusChanged = baseline.status !== status;
       await fetchData();
-      setNotice(r.changed ? `저장했습니다(판 ${r.version}).` : "바뀐 내용이 없어 판 번호를 올리지 않았습니다.");
+      setNotice(r.changed ? saveMessage(r.version, status, statusChanged) : "바뀐 내용이 없어 판 번호를 올리지 않았습니다.");
     } catch (e) {
       if (e instanceof ApiError && e.code === "version_conflict") {
         setError({ message: "다른 사람이 먼저 저장했습니다. 지금 화면의 글을 복사해 두고 최신 내용을 불러오세요.", conflict: true });
@@ -154,152 +180,185 @@ export function NoticeEditorPage({ schoolId, noticeId }: { schoolId: string; not
         setError({ message: describeError(e).message });
       }
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const unfilled = findUnfilledGuides(`${title}\n${body}`);
-  const status = detail?.notice.status ?? "draft";
+  const shownStatus = detail?.notice.status ?? "draft";
 
   return (
     <AppShell title={isNew ? "안내문 작성" : "안내문"} schoolId={schoolId}>
-      <div className="mx-auto max-w-5xl space-y-4">
-        <div className="flex flex-wrap gap-3 text-base font-bold">
+      <div className="mx-auto max-w-3xl space-y-4">
+        <nav aria-label="안내문 이동" className="flex flex-wrap gap-3 text-base font-bold">
           <Link href={`/s/${schoolId}/notices`} className="text-accent underline underline-offset-4">
             안내문 목록
           </Link>
           <Link href={`/s/${schoolId}/alerts`} className="text-accent underline underline-offset-4">
             경보함
           </Link>
-        </div>
-        <p role="note" className="rounded-control border-2 border-brand bg-brand-soft px-3 py-2 text-base font-semibold text-brand">
-          {NOTICE_GUIDE_TEXT.feature}
-        </p>
+        </nav>
 
         {load.kind === "loading" && <LoadingState label="안내문을 불러오는 중…" />}
         {load.kind === "error" && <ErrorState title={load.title} message={load.message} onRetry={() => void fetchData()} />}
 
         {alert && (
           <>
+            {/* 1. 현재 안내문 제목과 작성 상태 */}
+            <section aria-labelledby="notice-heading" className="rounded-card border border-line bg-card p-4 shadow-card">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-2.5 py-0.5 text-sm font-bold ${NOTICE_STATUS_META[shownStatus].badge}`}>
+                  {isNew ? "새 안내문(저장 전)" : NOTICE_STATUS_META[shownStatus].label}
+                </span>
+                {detail && <span className="text-sm text-ink-muted">판 {detail.notice.version} · 작성 {detail.notice.createdByName ?? "(알 수 없음)"}</span>}
+                {dirty && editable && <span className="rounded-full border border-warning bg-warning-soft px-2 py-0.5 text-sm font-bold text-warning-strong">저장 안 된 변경 있음</span>}
+              </div>
+              <h2 id="notice-heading" className="mt-2 break-words text-xl font-extrabold">
+                {(detail?.notice.title ?? title) || "제목 없는 새 안내문"}
+              </h2>
+              <p className="mt-1 text-sm text-ink-muted">{NOTICE_GUIDE_TEXT.feature}</p>
+            </section>
+
+            {/* 2. 필수 주의 문구(해제·취소·과거 정보) + 연결 경보 */}
+            {cancelled && detail && <CancelledPanel detail={detail} onReuse={() => setReuseOpen(true)} schoolId={schoolId} />}
             <AlertContext alert={alert} detail={detail} schoolId={schoolId} />
 
-            {detail?.notice.status === "cancelled" && (
-              <CancelledPanel detail={detail} onReuse={() => setReuseOpen(true)} schoolId={schoolId} />
+            {detail && !detail.canEdit && !cancelled && (
+              <p role="note" className="rounded-control border border-line bg-card px-3 py-2 text-base">
+                작성자와 학교 관리자만 고칠 수 있습니다. 미리보기와 복사는 할 수 있습니다.
+              </p>
             )}
 
-            <div className={`grid gap-4 ${editable ? "lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]" : ""}`}>
-              {editable && <ExamplePicker alert={alert} currentKey={exampleKey} onPick={chooseExample} fillValues={fillValues} />}
+            {/* 3. 예시문 선택 */}
+            {editable && (
+              <ExamplePicker
+                alert={alert}
+                currentKey={exampleKey}
+                onApply={chooseExample}
+                fillValues={fillValues}
+                open={pickerOpen}
+                onToggle={setPickerOpen}
+              />
+            )}
 
-              <section aria-labelledby="editor-title" className="min-w-0 rounded-card border border-line bg-card p-4 shadow-card">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 id="editor-title" className="text-lg font-bold">
-                    {editable ? "안내문 편집" : "안내문 내용"}
-                  </h2>
-                  {detail && (
-                    <span className={`rounded-full px-2 py-0.5 text-sm font-bold ${NOTICE_STATUS_META[detail.notice.status].badge}`}>
-                      {NOTICE_STATUS_META[detail.notice.status].label}
-                    </span>
-                  )}
-                  {detail && <span className="text-sm text-ink-muted">판 {detail.notice.version} · 작성 {detail.notice.createdByName ?? "(알 수 없음)"}</span>}
-                  {dirty && editable && <span className="rounded-full bg-warning-soft px-2 py-0.5 text-sm font-bold text-warning-strong">저장 안 됨</span>}
-                </div>
-                {detail && !detail.canEdit && detail.notice.status !== "cancelled" && (
-                  <p className="mt-2 text-sm text-ink-muted">작성자와 학교 관리자만 고칠 수 있습니다. 미리보기와 복사는 할 수 있습니다.</p>
-                )}
-                <p className="mt-2 text-sm text-ink-muted">{NOTICE_GUIDE_TEXT.example}</p>
-
-                {editable ? (
-                  <div className="mt-3 space-y-3">
-                    <FormField label="제목" value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} required />
-                    <div>
-                      <label htmlFor="notice-body" className="block text-base font-bold">
-                        본문<span className="ml-1 text-danger" aria-hidden>*</span>
-                      </label>
-                      <textarea
-                        id="notice-body"
-                        value={body}
-                        maxLength={5000}
-                        rows={16}
-                        onChange={(e) => setBody(e.target.value)}
-                        className="mt-1.5 block w-full rounded-control border-2 border-line-strong bg-card px-3 py-2 text-base leading-relaxed"
-                      />
-                      <p className="mt-1 text-right text-sm text-ink-muted">{body.length.toLocaleString("ko-KR")} / 5,000자</p>
-                    </div>
+            {/* 4. 제목·본문 편집 / 5. 저장·복사 */}
+            <section aria-labelledby="editor-title" className="rounded-card border border-line bg-card p-4 shadow-card">
+              <h2 id="editor-title" className="text-lg font-bold">
+                {editable ? "제목과 본문" : "안내문 내용"}
+              </h2>
+              {editable ? (
+                <div className="mt-3 space-y-3">
+                  <FormField name="notice-title" label="제목" value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} required />
+                  <div>
+                    <label htmlFor="notice-body" className="block text-base font-bold">
+                      본문<span className="ml-1 text-danger" aria-hidden>*</span>
+                    </label>
+                    <textarea
+                      id="notice-body"
+                      value={body}
+                      maxLength={5000}
+                      rows={14}
+                      onChange={(e) => setBody(e.target.value)}
+                      className="mt-1.5 block w-full rounded-control border-2 border-line-strong bg-card px-3 py-2 text-lg leading-relaxed"
+                    />
+                    <p className="mt-1 text-right text-sm text-ink-muted">{body.length.toLocaleString("ko-KR")} / 5,000자</p>
                   </div>
-                ) : (
-                  <NoticePreview title={title} body={body} className="mt-3" />
-                )}
+                </div>
+              ) : (
+                <NoticePreview title={title} body={body} className="mt-3" />
+              )}
 
-                {unfilled.length > 0 && (
-                  <div className="mt-3 rounded-control border-2 border-warning bg-warning-soft px-3 py-2 text-sm text-warning-strong">
-                    <p className="font-bold">아직 채우지 않은 입력 안내 {unfilled.length}곳 — 복사·발송 전에 확인하세요</p>
-                    <ul className="mt-1 list-disc pl-5">
-                      {unfilled.slice(0, 6).map((g) => (
-                        <li key={g}>{g}</li>
+              {unfilled.length > 0 && (
+                <div className="mt-3 rounded-control border-2 border-warning bg-warning-soft px-3 py-2 text-base text-warning-strong">
+                  <p className="font-bold">⚠ 아직 채우지 않은 입력 안내 {unfilled.length}곳 — 복사·발송 전에 확인하세요</p>
+                  <ul className="mt-1 list-disc pl-5 text-sm">
+                    {unfilled.slice(0, 6).map((g) => (
+                      <li key={g}>{g}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {editable && (
+                <div className="mt-4 rounded-control border-2 border-line bg-page p-3">
+                  <fieldset>
+                    <legend className="text-base font-bold">작성 상태</legend>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {(["draft", "completed"] as const).map((st) => (
+                        <label
+                          key={st}
+                          className={`flex min-h-touch cursor-pointer items-center gap-2 rounded-control border-2 px-3 font-bold focus-within:outline focus-within:outline-3 focus-within:outline-accent ${status === st ? "border-brand bg-brand-soft text-brand" : "border-line-strong bg-card text-ink"}`}
+                        >
+                          <input type="radio" name="notice-status" value={st} checked={status === st} onChange={() => setStatus(st)} className="size-5 accent-[var(--color-brand)]" />
+                          {NOTICE_STATUS_META[st].label}
+                          {status === st && <span className="sr-only">(선택됨)</span>}
+                        </label>
                       ))}
-                    </ul>
-                  </div>
-                )}
+                    </div>
+                    <p className="mt-2 text-sm text-ink-muted">
+                      '작성 완료'는 이 앱에서 문안 작성을 마쳤다는 표시일 뿐입니다. 공식 결재(K-에듀파인)나 실제 발송이 끝났다는 뜻이 아닙니다. 저장하기를 눌러야 반영됩니다.
+                    </p>
+                  </fieldset>
+                  <PrimaryButton
+                    className="mt-3"
+                    size="lg"
+                    fullWidth
+                    icon="check"
+                    loading={saving}
+                    loadingText="저장 중…"
+                    disabled={!isNew && !dirty}
+                    onClick={() => void save()}
+                  >
+                    저장하기
+                  </PrimaryButton>
+                  {!isNew && !dirty && !saving && <p className="mt-1 text-center text-sm text-ink-muted">저장할 변경 사항이 없습니다.</p>}
+                </div>
+              )}
 
-                {notice && (
-                  <p role="status" aria-live="polite" className="mt-3 rounded-control bg-accent-soft px-3 py-2 font-semibold text-accent">
-                    {notice}
-                  </p>
-                )}
-                {error && (
-                  <div role="alert" className="mt-3 rounded-control border-2 border-danger bg-danger-soft px-3 py-2 font-semibold text-danger">
-                    <p>{error.message}</p>
-                    {error.conflict && (
-                      <PrimaryButton className="mt-2" variant="secondary" icon="refresh" onClick={() => void fetchData()}>
-                        최신 내용 불러오기(화면의 글은 사라짐)
-                      </PrimaryButton>
-                    )}
-                  </div>
-                )}
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {editable && (
-                    <>
-                      <PrimaryButton loading={saving} loadingText="저장 중…" onClick={() => void save(status === "completed" ? "completed" : "draft")}>
-                        {isNew ? "저장(작성 중)" : "저장"}
-                      </PrimaryButton>
-                      {status !== "completed" ? (
-                        <PrimaryButton variant="success" icon="check" disabled={saving} onClick={() => void save("completed")}>
-                          작성 완료로 저장
-                        </PrimaryButton>
-                      ) : (
-                        <PrimaryButton variant="secondary" disabled={saving} onClick={() => void save("draft")}>
-                          작성 중으로 바꿔 저장
-                        </PrimaryButton>
-                      )}
-                    </>
-                  )}
-                  {editable && (
-                    <PrimaryButton variant="ghost" onClick={() => setPreview((p) => !p)} aria-expanded={preview}>
-                      {preview ? "미리보기 닫기" : "미리보기"}
+              {notice && (
+                <p role="status" aria-live="polite" className="mt-3 rounded-control border border-accent bg-accent-soft px-3 py-2 font-semibold text-accent">
+                  ✓ {notice}
+                </p>
+              )}
+              {error && (
+                <div role="alert" className="mt-3 rounded-control border-2 border-danger bg-danger-soft px-3 py-2 font-semibold text-danger">
+                  <p>{error.message}</p>
+                  {error.conflict && (
+                    <PrimaryButton className="mt-2" variant="secondary" icon="refresh" onClick={() => void fetchData()}>
+                      최신 내용 불러오기(화면의 글은 사라짐)
                     </PrimaryButton>
                   )}
                 </div>
-                {preview && editable && <NoticePreview title={title} body={body} className="mt-3" />}
+              )}
 
-                <CopyBar title={title} body={body} />
-                <p className="mt-2 text-sm text-ink-muted">
-                  복사한 글은 학교의 기존 발송 채널(학교 알림 앱, 문자, 가정통신문 등)에서 교사가 직접 보내세요. 이 앱은 발송하지 않습니다.
-                </p>
+              <CopyBar title={title} body={body} unsaved={dirty && editable} />
+              {editable && (
+                <PrimaryButton className="mt-2" variant="ghost" onClick={() => setPreview((p) => !p)} aria-expanded={preview}>
+                  {preview ? "미리보기 닫기" : "보내기 전 미리보기"}
+                </PrimaryButton>
+              )}
+              {preview && editable && <NoticePreview title={title} body={body} className="mt-2" />}
+            </section>
 
-                {detail && detail.canEdit && detail.notice.status !== "cancelled" && (
-                  <div className="mt-4 border-t border-line pt-3">
-                    <PrimaryButton variant="ghost" className="text-danger" onClick={() => setCancelOpen(true)}>
-                      이 안내문 취소
-                    </PrimaryButton>
-                    <p className="text-sm text-ink-muted">취소한 안내문은 고치거나 되돌릴 수 없고, 내용을 복사해 새 초안으로 다시 만들 수 있습니다.</p>
-                  </div>
-                )}
-              </section>
-            </div>
-
+            {/* 6. 부가 정보(기본 접힘) */}
             {detail && <RevisionsPanel detail={detail} />}
             {detail && <RecordsPanel detail={detail} schoolId={schoolId} onChanged={() => void fetchData()} />}
+
+            {/* 위험 작업: 일반 저장과 분리 */}
+            {detail && detail.canEdit && !cancelled && (
+              <section aria-labelledby="danger-title" className="rounded-card border-2 border-danger bg-card p-4">
+                <h2 id="danger-title" className="text-base font-bold text-danger">
+                  안내문 취소(되돌릴 수 없음)
+                </h2>
+                <p className="mt-1 text-sm text-ink-muted">
+                  취소한 안내문은 고치거나 되돌릴 수 없고 기록으로 남습니다. 필요하면 취소된 안내문에서 '이 안내문으로 새 초안 만들기'로 다시 쓸 수 있습니다.
+                </p>
+                <PrimaryButton className="mt-3" variant="danger" disabled={saving} onClick={() => setCancelOpen(true)}>
+                  안내문 취소
+                </PrimaryButton>
+              </section>
+            )}
           </>
         )}
       </div>
@@ -312,7 +371,7 @@ export function NoticeEditorPage({ schoolId, noticeId }: { schoolId: string; not
         onConfirm={() => pendingExample && applyExample(pendingExample)}
         onCancel={() => setPendingExample(null)}
       >
-        <p>편집 영역의 제목과 본문이 '{pendingExample?.label}' 예시로 바뀝니다. 저장하기 전까지는 서버의 안내문이 바뀌지 않습니다.</p>
+        <p>편집 영역의 제목과 본문이 '{pendingExample?.label}' 예시로 바뀝니다. 저장하기를 누르기 전까지는 저장된 안내문이 바뀌지 않습니다.</p>
       </ConfirmDialog>
 
       {detail && (
@@ -379,61 +438,87 @@ function AlertContext({ alert, detail, schoolId }: { alert: NoticeAlertState; de
   );
 }
 
-// ───────────── 예시문 선택(7개 유형 × 학부모·교직원·해제) ─────────────
-function ExamplePicker({ alert, currentKey, onPick, fillValues }: { alert: NoticeAlertState; currentKey: string | null; onPick: (ex: NoticeExample) => void; fillValues: NoticeFillValues }) {
+// ───────────── 예시문 선택(유형 → 상황 → 미리보기 → 적용, 21개 모두 유지) ─────────────
+const SITUATION_CHOICES = [
+  { key: "parent.issued", label: "학부모 발령 안내" },
+  { key: "staff.issued", label: "교직원 발령 안내" },
+  { key: "parent.cancelled", label: "해제·안전 확인" },
+] as const;
+
+function ExamplePicker({
+  alert, currentKey, onApply, fillValues, open, onToggle,
+}: {
+  alert: NoticeAlertState; currentKey: string | null; onApply: (ex: NoticeExample) => void; fillValues: NoticeFillValues; open: boolean; onToggle: (open: boolean) => void;
+}) {
   const recommendedType = recommendNoticeType(alert);
-  const recommendedSituation = recommendNoticeSituation(alert);
-  const [type, setType] = useState<NoticeDisasterType>(recommendedType);
-  const list = NOTICE_EXAMPLES.filter((e) => e.disasterType === type);
+  const recommendedSituation = recommendNoticeSituation(alert) === "cancelled" ? "parent.cancelled" : "parent.issued";
+  const current = currentKey ? NOTICE_EXAMPLES.find((e) => e.key === currentKey) : undefined;
+  const [type, setType] = useState<NoticeDisasterType>(current?.disasterType ?? recommendedType);
+  const [situation, setSituation] = useState<string>(current ? `${current.audience}.${current.situation}` : recommendedSituation);
+  const ex = NOTICE_EXAMPLES.find((e) => e.key === `${type}.${situation}`);
+  const values = { ...fillValues, 재난유형: NOTICE_DISASTER_TYPES[type] };
   return (
-    <section aria-labelledby="examples-title" className="min-w-0 rounded-card border border-line bg-card p-4 shadow-card">
-      <h2 id="examples-title" className="text-lg font-bold">
-        상황별 예시문
-      </h2>
-      <p className="mt-1 text-sm text-ink-muted">카드를 누르면 편집 영역에 불러옵니다. 확인된 학교명·경보·발령 시각·지역만 채웁니다.</p>
-      <div role="tablist" aria-label="재난 유형" className="mt-3 flex flex-wrap gap-1.5">
-        {(Object.keys(NOTICE_DISASTER_TYPES) as NoticeDisasterType[]).map((t) => (
-          <button
-            key={t}
-            type="button"
-            role="tab"
-            aria-selected={type === t}
-            onClick={() => setType(t)}
-            className={`min-h-touch rounded-control border-2 px-3 text-base font-bold ${type === t ? "border-brand bg-brand text-white" : "border-line-strong bg-card text-ink"}`}
+    <details
+      open={open}
+      onToggle={(e) => onToggle((e.currentTarget as HTMLDetailsElement).open)}
+      className="rounded-card border border-line bg-card shadow-card"
+    >
+      <summary className="flex min-h-touch cursor-pointer items-center gap-2 p-4 text-lg font-bold">
+        예시문 선택
+        <span className="text-sm font-semibold text-ink-muted">{current ? `· 현재 '${current.label}' 바탕` : "· 직접 작성 중"}</span>
+      </summary>
+      <div className="space-y-4 border-t border-line p-4">
+        <p className="text-sm text-ink-muted">{NOTICE_GUIDE_TEXT.example} 확인된 학교명·경보 제목·발령 시각·지역만 채우고, 학교 조치·문의처는 비워 둡니다.</p>
+        <div>
+          <label htmlFor="example-type" className="block text-base font-bold">
+            ① 재난 유형
+          </label>
+          <select
+            id="example-type"
+            value={type}
+            onChange={(e) => setType(e.target.value as NoticeDisasterType)}
+            className="mt-1.5 block min-h-touch w-full rounded-control border-2 border-line-strong bg-card px-3 text-lg"
           >
-            {NOTICE_DISASTER_TYPES[t]}
-            {t === recommendedType && <span className="sr-only"> 추천</span>}
-            {t === recommendedType && <span aria-hidden> ★</span>}
-          </button>
-        ))}
-      </div>
-      <ul className="mt-3 space-y-2">
-        {list.map((ex) => {
-          const recommended = ex.disasterType === recommendedType && ex.situation === recommendedSituation;
-          const selected = ex.key === currentKey;
-          return (
-            <li key={ex.key}>
-              <button
-                type="button"
-                onClick={() => onPick(ex)}
-                className={`block w-full rounded-control border-2 p-3 text-left hover:border-brand ${selected ? "border-brand bg-brand-soft" : "border-line bg-card"}`}
+            {(Object.keys(NOTICE_DISASTER_TYPES) as NoticeDisasterType[]).map((t) => (
+              <option key={t} value={t}>
+                {NOTICE_DISASTER_TYPES[t]}
+                {t === recommendedType ? " (연결 경보 기준 추천)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        <fieldset>
+          <legend className="text-base font-bold">② 안내 상황</legend>
+          <div className="mt-1.5 grid gap-2 sm:grid-cols-3">
+            {SITUATION_CHOICES.map((c) => (
+              <label
+                key={c.key}
+                className={`flex min-h-touch cursor-pointer items-center gap-2 rounded-control border-2 px-3 py-2 font-bold focus-within:outline focus-within:outline-3 focus-within:outline-accent ${situation === c.key ? "border-brand bg-brand-soft text-brand" : "border-line-strong bg-card text-ink"}`}
               >
-                <span className="flex flex-wrap items-center gap-1.5">
-                  <span className="rounded-full bg-neutral-soft px-2 py-0.5 text-sm font-bold text-neutral">{NOTICE_AUDIENCES[ex.audience]}</span>
-                  <span className="rounded-full bg-neutral-soft px-2 py-0.5 text-sm font-bold text-neutral">{NOTICE_SITUATIONS[ex.situation]}</span>
-                  {recommended && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-sm font-bold text-accent">추천</span>}
-                  {selected && <span className="rounded-full bg-brand px-2 py-0.5 text-sm font-bold text-white">불러옴</span>}
+                <input type="radio" name="example-situation" value={c.key} checked={situation === c.key} onChange={() => setSituation(c.key)} className="size-5" />
+                <span>
+                  {c.label}
+                  {c.key === recommendedSituation && <span className="ml-1 text-sm font-semibold text-accent">(추천)</span>}
                 </span>
-                <span className="mt-1 block font-bold">{ex.label}</span>
-                <span className="mt-0.5 line-clamp-2 block text-sm text-ink-muted">
-                  {fillNoticeTemplate(ex.body, { ...fillValues, 재난유형: NOTICE_DISASTER_TYPES[ex.disasterType] }).split("\n").slice(1, 3).join(" ")}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        {ex && (
+          <div>
+            <p className="text-base font-bold">③ 미리보기 — {ex.label}</p>
+            <div tabIndex={0} aria-label={`${ex.label} 예시 미리보기`} className="mt-1.5 max-h-64 overflow-y-auto rounded-control border-2 border-line bg-page p-3">
+              <p className="font-bold">{fillNoticeTemplate(ex.title, values)}</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">{fillNoticeTemplate(ex.body, values)}</p>
+            </div>
+            <PrimaryButton className="mt-3" variant="secondary" icon="file" onClick={() => onApply(ex)}>
+              이 예시를 편집 영역에 적용
+            </PrimaryButton>
+            <p className="mt-1 text-sm text-ink-muted">작성 중인 글이 있으면 바꾸기 전에 확인합니다. 예시 원본은 바뀌지 않습니다.</p>
+          </div>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -448,7 +533,7 @@ function NoticePreview({ title, body, className = "" }: { title: string; body: s
   );
 }
 
-function CopyBar({ title, body }: { title: string; body: string }) {
+function CopyBar({ title, body, unsaved = false }: { title: string; body: string; unsaved?: boolean }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [manual, setManual] = useState<string | null>(null);
   const copy = async (label: string, text: string) => {
@@ -458,20 +543,22 @@ function CopyBar({ title, body }: { title: string; body: string }) {
     }
     const ok = await copyText(text);
     setManual(ok ? null : text);
-    setMsg(ok ? { ok: true, text: `${label}을(를) 복사했습니다.` } : { ok: false, text: "자동 복사가 되지 않았습니다. 아래 글을 길게 눌러 직접 복사하세요." });
+    setMsg(ok ? { ok: true, text: `✓ ${label} 복사 완료 — 학교 채널에 붙여 넣으세요.` } : { ok: false, text: "자동 복사가 되지 않았습니다. 아래 글을 길게 눌러 직접 복사하세요." });
   };
   return (
     <div className="mt-4 rounded-control border border-line bg-page p-3">
-      <p className="text-base font-bold">복사</p>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <PrimaryButton variant="secondary" icon="copy" onClick={() => void copy("제목", title)}>
+      <p className="text-base font-bold">복사해서 학교 채널로 직접 보내기</p>
+      <p className="mt-0.5 text-sm text-ink-muted">이 앱은 발송하지 않습니다. 복사한 글을 학교 알림 앱·문자·가정통신문 등 기존 채널에서 교사가 직접 보내세요.</p>
+      {unsaved && <p className="mt-1 text-sm font-bold text-warning-strong">⚠ 저장하지 않은 내용도 화면에 보이는 그대로 복사됩니다.</p>}
+      <div className="mt-2 grid gap-2 sm:grid-cols-3">
+        <PrimaryButton variant="secondary" icon="copy" fullWidth onClick={() => void copy("제목", title)}>
           제목 복사
         </PrimaryButton>
-        <PrimaryButton variant="secondary" icon="copy" onClick={() => void copy("본문", body)}>
+        <PrimaryButton variant="secondary" icon="copy" fullWidth onClick={() => void copy("본문", body)}>
           본문 복사
         </PrimaryButton>
-        <PrimaryButton variant="secondary" icon="copy" onClick={() => void copy("제목과 본문", `${title}\n\n${body}`)}>
-          전체 복사
+        <PrimaryButton variant="secondary" icon="copy" fullWidth onClick={() => void copy("전체 안내문", `${title}\n\n${body}`)}>
+          전체 안내문 복사
         </PrimaryButton>
       </div>
       {msg && (
