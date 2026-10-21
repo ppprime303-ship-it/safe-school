@@ -44,4 +44,4 @@ export const SEVERITY_META: Record<AlertItem["alert"]["severity"], { label: stri
   info: { label: "안내", badge: "bg-neutral-soft text-neutral border border-line-strong" },
 };
 
-export const MSG_LABEL: Record<AlertItem["alert"]["msgType"], string | null> = { new: null, update: "정정", cancel: "해제" };
+export const MSG_LABEL: Record<AlertItem["alert"]["msgType"], string | null> = { new: null, update: "정정 안내", cancel: "해제 안내" };

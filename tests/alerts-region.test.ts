@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { matchRegion, normalizeArea, parseAddress, parseAreas } from "../server/src/alerts/region.js";
 import { contentHash, sanitizeError } from "../server/src/alerts/collector.js";
+import { planRegroup, REBROADCAST_SUFFIX } from "../server/src/alerts/grouping.js";
 
 describe("학교 주소 → 시도·시군구", () => {
   it("광역시·도·시+구·세종을 해석한다", () => {
@@ -58,5 +59,28 @@ describe("중복 판단용 내용 해시·오류 메시지", () => {
   });
   it("인증키를 가린다", () => {
     expect(sanitizeError(new Error("GET https://x/api?serviceKey=ABC123&page=1 실패"))).toBe("GET https://x/api?serviceKey=***&page=1 실패");
+  });
+});
+
+describe("재송출 묶음 계획(순수 함수)", () => {
+  const t = (h: number) => new Date(Date.UTC(2026, 9, 21, h));
+  const m = (id: string, hash: string, h: number, dup: string | null = null, provider = "mock") =>
+    ({ id: `m-${id}`, alertId: id, provider, contentHash: hash, issuedAt: t(h), duplicateOfAlertId: dup, reason: "인천 대상" });
+  it("풀려 있는 같은 내용 2건 → 늦게 발령된 쪽을 먼저 발령된 쪽에 묶음", () => {
+    expect(planRegroup([m("b", "H", 2), m("a", "H", 1)])).toEqual([{ id: "m-b", alertId: "b", from: null, to: "a", reason: "인천 대상" + REBROADCAST_SUFFIX }]);
+  });
+  it("이미 올바르면 바꿀 것이 없음(반복 실행 안전)", () => {
+    const ok = { ...m("b", "H", 2, "a"), reason: "인천 대상" + REBROADCAST_SUFFIX };
+    expect(planRegroup([m("a", "H", 1), ok])).toEqual([]);
+  });
+  it("6시간을 넘기거나 공급자·내용이 다르면 묶지 않음, 잘못 묶인 것은 풂", () => {
+    expect(planRegroup([m("a", "H", 1), m("c", "H", 8), m("d", "X", 2), m("e", "H", 2, null, "mois_cbs")])).toEqual([]);
+    expect(planRegroup([m("a", "H", 1), { ...m("c", "H", 8, "a"), reason: "인천 대상" + REBROADCAST_SUFFIX }])).toEqual([
+      { id: "m-c", alertId: "c", from: "a", to: null, reason: "인천 대상" },
+    ]);
+  });
+  it("더 이른 경보가 나중에 대상이 되면 대표가 바뀜", () => {
+    const plan = planRegroup([{ ...m("b", "H", 2) }, m("a", "H", 1)]);
+    expect(plan.map((p) => [p.alertId, p.to])).toEqual([["b", "a"]]);
   });
 });

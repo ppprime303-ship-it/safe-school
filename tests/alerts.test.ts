@@ -2,6 +2,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestClient, resetTestData } from "./test-db.js";
 import { collectOnce } from "../server/src/alerts/collector.js";
+import { regroupRebroadcasts } from "../server/src/alerts/grouping.js";
 import { MockAlertSource, type AlertSource, type MockAlertInput } from "../server/src/alerts/providers.js";
 import { confirmSchoolRegion, getSchoolRegion, listSchoolAlerts, markAlertRead } from "../server/src/services/alerts.js";
 
@@ -139,6 +140,73 @@ describe("③ 중복 방지", () => {
       ["cancel", false],
       ["new", true],
     ]);
+  });
+});
+
+describe("③-2 경보를 먼저 받고 학교 소재지를 나중에 확인한 경우(2026-10-21 시연에서 발견)", () => {
+  const confirmUnknown = () => confirmSchoolRegion(prisma, { schoolId: unknown, actorUserId: adminUser, sido: "인천광역시", sigungu: "남동구" });
+  const list = (role = "staff", userId = staffUser) => listSchoolAlerts(prisma, { schoolId: unknown, userId, role });
+
+  it("재판정 때도 같은 내용 재송출을 한 건으로 묶고, 해제 경보는 대표 경보에 '해제됨'으로 표시된다", async () => {
+    await collect([heat(), heat({ id: "T-HEAT-2", issuedAt: minutesAgo(20) })]);
+    expect((await list("admin", adminUser)).alerts.filter((a) => a.result === "undetermined")).toHaveLength(2);
+    const r = await confirmUnknown();
+    expect(r).toMatchObject({ rematched: 2, regrouped: 1 });
+    const after = await list();
+    expect(after.alerts).toHaveLength(1);
+    expect(after.alerts[0]).toMatchObject({ rebroadcastCount: 1, cancelled: false });
+    const dup = await prisma.schoolAlertMatch.findFirstOrThrow({ where: { schoolId: unknown, duplicateOfAlertId: { not: null } }, include: { alert: true } });
+    expect(dup.alert.externalId).toBe("T-HEAT-2"); // 나중에 발령된 쪽이 재송출
+
+    await collect([heat({ id: "T-HEAT-9", msgType: "cancel", refId: "T-HEAT-1", body: "[모의] 폭염경보 해제", severity: "info", issuedAt: minutesAgo(1) })]);
+    const withCancel = await list();
+    expect(withCancel.alerts.map((a) => [a.alert.msgType, a.cancelled, a.rebroadcastCount])).toEqual([
+      ["cancel", false, 0],
+      ["new", true, 1],
+    ]);
+  });
+
+  it("소재지를 다시 확인하거나 같은 경보를 다시 받아도 중복이 생기지 않는다", async () => {
+    await collect([heat(), heat({ id: "T-HEAT-2", issuedAt: minutesAgo(20) })]);
+    await confirmUnknown();
+    await expect(confirmUnknown()).resolves.toMatchObject({ rematched: 0, regrouped: 0 });
+    const again = await collect([heat(), heat({ id: "T-HEAT-2", issuedAt: minutesAgo(20) })]);
+    expect(again).toMatchObject({ inserted: 0, duplicates: 2 });
+    expect((await list()).alerts).toHaveLength(1);
+    expect(await prisma.auditLog.count({ where: { action: "region.confirmed", schoolId: unknown } })).toBe(2);
+  });
+
+  it("해제 경보가 재송출 쪽 경보를 가리켜도 대표 경보에 '해제됨'이 표시된다", async () => {
+    await collect([heat(), heat({ id: "T-HEAT-2", issuedAt: minutesAgo(20) })]);
+    await confirmUnknown();
+    await collect([heat({ id: "T-HEAT-9", msgType: "cancel", refId: "T-HEAT-2", body: "[모의] 폭염경보 해제", severity: "info", issuedAt: minutesAgo(1) })]);
+    expect((await list()).alerts.find((a) => a.alert.msgType === "new")?.cancelled).toBe(true);
+  });
+
+  it("재송출 경보를 읽어도 묶음 전체가 읽음으로 보인다(사용자별 유지)", async () => {
+    await collect([heat(), heat({ id: "T-HEAT-2", issuedAt: minutesAgo(20) })]);
+    await confirmUnknown();
+    const dup = await prisma.schoolAlertMatch.findFirstOrThrow({ where: { schoolId: unknown, duplicateOfAlertId: { not: null } } });
+    await prisma.alertRead.create({ data: { userId: staffUser, matchId: dup.id } });
+    expect((await list()).unreadCount).toBe(0);
+    expect((await list("admin", adminUser)).unreadCount).toBe(1);
+  });
+
+  it("이미 따로 저장된 기존 데이터도 원문을 바꾸지 않고 정리할 수 있다(점검 → 적용 → 재실행 0건)", async () => {
+    await collect([heat(), heat({ id: "T-HEAT-2", issuedAt: minutesAgo(20) })]);
+    await confirmUnknown();
+    // 수정 전 버전이 남긴 상태 재현: 재송출 묶음이 풀린 채 '대상' 2건
+    await prisma.schoolAlertMatch.updateMany({ where: { schoolId: unknown }, data: { duplicateOfAlertId: null } });
+    expect((await list()).alerts).toHaveLength(2);
+    const alertsBefore = await prisma.officialAlert.findMany({ orderBy: { externalId: "asc" } });
+    expect(await regroupRebroadcasts(prisma, unknown, { dryRun: true })).toHaveLength(1);
+    expect((await list()).alerts).toHaveLength(2); // 점검만으로는 바뀌지 않음
+    expect(await regroupRebroadcasts(prisma, unknown)).toHaveLength(1);
+    expect((await list()).alerts).toHaveLength(1);
+    expect(await regroupRebroadcasts(prisma, unknown)).toHaveLength(0);
+    expect(await prisma.officialAlert.findMany({ orderBy: { externalId: "asc" } })).toEqual(alertsBefore);
+    // 다른 학교 판정은 건드리지 않음
+    expect((await listSchoolAlerts(prisma, { schoolId: incheon, userId: staffUser, role: "staff" })).alerts).toHaveLength(1);
   });
 });
 
