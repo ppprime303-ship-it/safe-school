@@ -47,10 +47,10 @@ args = "Start application"
 name = "Start application"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npm run dev"
-waitForPort = 5000
-
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "DATABASE_URL=\"$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set(\"schema\",\"safeschool_browser_demo\");process.stdout.write(u.toString())')\" MAIL_PROVIDER=console NODE_ENV=development npm run dev"
+waitForPort = 5000
