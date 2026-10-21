@@ -138,6 +138,7 @@ model School {
   publicSnapshots   SchoolPublicDataSnapshot[]
   region            SchoolRegion?
   alertMatches      SchoolAlertMatch[]
+  notices           SchoolNotice[]
 
   @@map("schools")
 }
@@ -244,6 +245,10 @@ model User {
   classesConfirmed   SchoolClass[]                @relation("ClassEnrolledConfirmer")
   confirmedRegions   SchoolRegion[]               @relation("RegionConfirmer")
   alertReads         AlertRead[]
+  noticesCreated     SchoolNotice[]               @relation("NoticeCreator")
+  noticesUpdated     SchoolNotice[]               @relation("NoticeUpdater")
+  noticeRevisions    SchoolNoticeRevision[]
+  noticeRecords      NoticeHandlingRecord[]
 
   @@map("users")
 }
@@ -583,6 +588,7 @@ model OfficialAlert {
 
   matches        SchoolAlertMatch[] @relation("MatchAlert")
   duplicatesOf   SchoolAlertMatch[] @relation("MatchDuplicateOf")
+  notices        SchoolNotice[]
 
   @@unique([provider, externalId], map: "official_alerts_provider_external_key")
   @@index([contentHash, issuedAt], map: "official_alerts_content_issued_idx")
@@ -636,6 +642,7 @@ model SchoolAlertMatch {
   alert       OfficialAlert  @relation("MatchAlert", fields: [alertId], references: [id], onDelete: Restrict)
   duplicateOf OfficialAlert? @relation("MatchDuplicateOf", fields: [duplicateOfAlertId], references: [id], onDelete: Restrict)
   reads       AlertRead[]
+  notices     SchoolNotice[]
 
   @@unique([schoolId, alertId], map: "school_alert_matches_school_alert_key")
   @@index([schoolId, createdAt(sort: Desc)], map: "school_alert_matches_school_created_idx")
@@ -652,4 +659,100 @@ model AlertRead {
 
   @@id([userId, matchId])
   @@map("alert_reads")
+}
+
+// ───────────── STEP 3-C 재난안전 안내문 작성 지원 ─────────────
+// 마이그레이션 20261022000000_school_notices 에 CHECK 제약과 트리거가 있습니다.
+// - 같은 학교의 '대상'·대표 경보에만 연결, 삭제 금지, 취소 후 변경 금지, 판 번호 +1 강제
+// - 수정 이력은 DB 트리거가 자동 기록(앱에서 직접 쓰지 않음)
+// - 재사용(source_notice_id): 같은 학교의 취소된 안내문만 원본, 같은 원본의 작성 중 초안은 1건만
+// 실제 발송·승인·모의 발송·학부모 연락처는 다루지 않습니다.
+
+enum NoticeStatus {
+  draft
+  completed
+  cancelled
+}
+
+/// 처리 이력의 기록용 채널 분류(외부 서비스와 연결 없음)
+enum NoticeChannelLabel {
+  sms
+  school_app
+  kakao
+  other
+}
+
+model SchoolNotice {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId       String       @map("school_id") @db.Uuid
+  alertId        String       @map("alert_id") @db.Uuid
+  exampleKey     String?      @map("example_key")
+  exampleVersion Int?         @map("example_version")
+  title          String
+  body           String
+  status         NoticeStatus @default(draft)
+  version        Int          @default(1)
+  createdById    String?      @map("created_by_id") @db.Uuid
+  updatedById    String?      @map("updated_by_id") @db.Uuid
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @default(now()) @map("updated_at") @db.Timestamptz(6)
+  cancelledAt    DateTime?    @map("cancelled_at") @db.Timestamptz(6)
+  cancelReason   String?      @map("cancel_reason")
+  /// 재사용 원본(같은 학교의 취소된 안내문). 복합 외래키 (source_notice_id, school_id)는 SQL에만 있음
+  sourceNoticeId String?      @map("source_notice_id") @db.Uuid
+
+  match     SchoolAlertMatch       @relation(fields: [schoolId, alertId], references: [schoolId, alertId], onDelete: Restrict, onUpdate: Restrict, map: "school_notices_match_fkey")
+  school    School                 @relation(fields: [schoolId], references: [id], onDelete: Restrict, map: "school_notices_school_fkey")
+  alert     OfficialAlert          @relation(fields: [alertId], references: [id], onDelete: Restrict, map: "school_notices_alert_fkey")
+  createdBy User?                  @relation("NoticeCreator", fields: [createdById], references: [id], onDelete: SetNull, map: "school_notices_creator_fkey")
+  updatedBy User?                  @relation("NoticeUpdater", fields: [updatedById], references: [id], onDelete: SetNull, map: "school_notices_updater_fkey")
+  revisions SchoolNoticeRevision[]
+  records   NoticeHandlingRecord[]
+
+  @@unique([id, schoolId], map: "school_notices_id_school_key")
+  @@index([schoolId, alertId], map: "school_notices_school_alert_idx")
+  @@index([schoolId, updatedAt(sort: Desc)], map: "school_notices_school_updated_idx")
+  @@map("school_notices")
+}
+
+/// 안내문 수정 이력(DB 트리거만 기록, 수정·삭제 불가)
+model SchoolNoticeRevision {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  noticeId    String       @map("notice_id") @db.Uuid
+  version     Int
+  title       String
+  body        String
+  status      NoticeStatus
+  exampleKey  String?      @map("example_key")
+  changedById String?      @map("changed_by_id") @db.Uuid
+  changedAt   DateTime     @default(now()) @map("changed_at") @db.Timestamptz(6)
+
+  notice    SchoolNotice @relation(fields: [noticeId], references: [id], onDelete: Restrict, map: "school_notice_revisions_notice_fkey")
+  changedBy User?        @relation(fields: [changedById], references: [id], onDelete: SetNull, map: "school_notice_revisions_changer_fkey")
+
+  @@unique([noticeId, version], map: "school_notice_revisions_notice_version_key")
+  @@map("school_notice_revisions")
+}
+
+/// 선택적 처리 이력(교직원 직접 입력, 실제 발송·수신 확인·공식 결재 아님, 개인정보 없음)
+model NoticeHandlingRecord {
+  id               String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  noticeId         String              @map("notice_id") @db.Uuid
+  schoolId         String              @map("school_id") @db.Uuid
+  channel          NoticeChannelLabel?
+  channelNote      String?             @map("channel_note")
+  audienceCategory String?             @map("audience_category")
+  sentByTeacher    Boolean             @default(false) @map("sent_by_teacher")
+  sentAt           DateTime?           @map("sent_at") @db.Timestamptz(6)
+  memo             String?
+  recordedById     String?             @map("recorded_by_id") @db.Uuid
+  recordedAt       DateTime            @default(now()) @map("recorded_at") @db.Timestamptz(6)
+  voidedAt         DateTime?           @map("voided_at") @db.Timestamptz(6)
+  voidReason       String?             @map("void_reason")
+
+  notice     SchoolNotice @relation(fields: [noticeId, schoolId], references: [id, schoolId], onDelete: Restrict, onUpdate: Restrict, map: "notice_handling_records_notice_school_fkey")
+  recordedBy User?        @relation(fields: [recordedById], references: [id], onDelete: SetNull, map: "notice_handling_records_recorder_fkey")
+
+  @@index([noticeId, recordedAt], map: "notice_handling_records_notice_idx")
+  @@map("notice_handling_records")
 }

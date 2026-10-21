@@ -12,6 +12,8 @@ import { StatusPage } from "./pages/StatusPage";
 import { MembersPage } from "./pages/admin/MembersPage";
 import { ClassesPage } from "./pages/admin/ClassesPage";
 import { AlertsPage } from "./pages/alerts/AlertsPage";
+import { NoticesPage } from "./pages/notices/NoticesPage";
+import { NoticeEditorPage } from "./pages/notices/NoticeEditorPage";
 import { AppShell } from "./components/layout/AppShell";
 
 function Redirect({ to }: { to: string }) {
@@ -44,12 +46,20 @@ function Routes() {
   }
   if (path === "/schools") return <SchoolSelectPage />;
 
+  // STEP 3-C 안내문 편집(새 안내문은 /s/:schoolId/notices/new?alert=<경보 ID>)
+  const noticeRoute = matchPath("/s/:schoolId/notices/:noticeId", path);
+  if (noticeRoute) {
+    if (!usableMemberships.some((m) => m.school.id === noticeRoute.schoolId)) return <Redirect to="/schools" />;
+    return <NoticeEditorPage key={noticeRoute.noticeId} schoolId={noticeRoute.schoolId!} noticeId={noticeRoute.noticeId!} />;
+  }
+
   const school = matchPath("/s/:schoolId/:screen", path);
   if (school) {
     const membership = usableMemberships.find((m) => m.school.id === school.schoolId);
     if (!membership) return <Redirect to="/schools" />;
     if (school.screen === "report") return <ReportPage schoolId={school.schoolId!} />;
     if (school.screen === "alerts") return <AlertsPage schoolId={school.schoolId!} isAdmin={membership.role === "admin"} />;
+    if (school.screen === "notices") return <NoticesPage key={window.location.search} schoolId={school.schoolId!} />;
     // 관리자 전용 화면: 화면에서도 막고, 서버 API에서도 다시 검사합니다.
     const adminScreens: Record<string, (id: string) => ReactElement> = {
       board: (id) => <BoardPage schoolId={id} />,

@@ -4,6 +4,11 @@
 -- 실제 발송·승인·모의 발송·학부모 연락처 관련 테이블과 열은 만들지 않습니다.
 -- 2차(10:37 검토 반영): 같은 학교 대상 경보만 연결, 처리 이력-안내문 학교 일치, 취소 후 변경 금지,
 --                       수정 이력을 DB가 자동 기록(판 번호 +1 강제), 핵심 연결 값 변경 금지
+-- 최종(10:55 통합 지시 반영): 취소된 안내문으로 새 초안 만들기(재사용)
+--   - 원본은 그대로 두고 새 ID·판 1·작성 중으로 새 행을 만듦(source_notice_id로 원본 연결)
+--   - 원본은 같은 학교의 '취소된' 안내문만, 같은 원본으로 만든 '작성 중' 초안은 동시에 1건만(중복 요청 방지)
+--   - 새 초안의 경보 연결도 ①과 같은 검사(같은 학교·대상·대표 경보)를 받음
+--   - ALTER TABLE 없음: 새 제약은 모두 CREATE TABLE 안에 정의
 
 CREATE TYPE "NoticeStatus" AS ENUM ('draft', 'completed', 'cancelled');
 -- 처리 이력의 발송 채널은 '기록용 분류'일 뿐, 어떤 외부 서비스와도 연결되지 않습니다.
@@ -26,7 +31,14 @@ CREATE TABLE "school_notices" (
   "updated_at"       TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "cancelled_at"     TIMESTAMPTZ(6),
   "cancel_reason"    TEXT,
+  "source_notice_id" UUID,                      -- 재사용: 이 초안을 만든 원본(취소된 안내문). 직접 작성·예시문이면 NULL
   CONSTRAINT "school_notices_pkey" PRIMARY KEY ("id"),
+  -- ② 처리 이력·재사용 원본이 '같은 학교' 안내문만 가리키도록 하는 복합 외래키 대상
+  CONSTRAINT "school_notices_id_school_key" UNIQUE ("id", "school_id"),
+  -- 재사용 원본은 같은 학교 안내문만(다른 학교 안내문 ID로 재사용 차단). 원본 삭제·변경 불가
+  CONSTRAINT "school_notices_source_fkey" FOREIGN KEY ("source_notice_id", "school_id")
+    REFERENCES "school_notices"("id", "school_id") ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT "school_notices_source_not_self" CHECK ("source_notice_id" IS NULL OR "source_notice_id" <> "id"),
   -- ① 같은 학교의 경보 판정 행이 있어야만 연결 가능(다른 학교 경보·판정 없는 경보 차단)
   CONSTRAINT "school_notices_match_fkey" FOREIGN KEY ("school_id", "alert_id")
     REFERENCES "school_alert_matches"("school_id", "alert_id") ON DELETE RESTRICT ON UPDATE RESTRICT,
@@ -42,8 +54,9 @@ CREATE TABLE "school_notices" (
     ("status" = 'cancelled') = ("cancelled_at" IS NOT NULL)
     AND ("status" <> 'cancelled' OR length(trim(coalesce("cancel_reason", ''))) > 0))
 );
--- ② 처리 이력이 '같은 학교' 안내문만 가리키도록 복합 외래키 대상
-CREATE UNIQUE INDEX "school_notices_id_school_key" ON "school_notices" ("id", "school_id");
+-- 같은 원본으로 만든 '작성 중' 초안은 1건만(두 번 누르기·동시 요청 → 기존 초안을 돌려줌)
+CREATE UNIQUE INDEX "school_notices_source_draft_key" ON "school_notices" ("source_notice_id")
+  WHERE "source_notice_id" IS NOT NULL AND "status" = 'draft';
 CREATE INDEX "school_notices_school_alert_idx" ON "school_notices" ("school_id", "alert_id");
 CREATE INDEX "school_notices_school_updated_idx" ON "school_notices" ("school_id", "updated_at" DESC);
 
@@ -107,13 +120,19 @@ BEGIN
   IF NEW."status" <> 'draft' OR NEW."version" <> 1 THEN
     RAISE EXCEPTION '새 안내문은 작성 중(판 번호 1)으로 시작합니다';
   END IF;
+  -- 재사용: 원본은 같은 학교의 취소된 안내문만(취소되지 않은 안내문은 그 안내문을 직접 고침)
+  IF NEW."source_notice_id" IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM "school_notices" s
+        WHERE s."id" = NEW."source_notice_id" AND s."school_id" = NEW."school_id" AND s."status" = 'cancelled') THEN
+    RAISE EXCEPTION '새 초안의 원본은 같은 학교의 취소된 안내문이어야 합니다';
+  END IF;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 CREATE TRIGGER "school_notices_insert_guard" BEFORE INSERT ON "school_notices"
   FOR EACH ROW EXECUTE FUNCTION "school_notices_check_insert"();
 
--- ③④ 수정 규칙: 취소된 안내문은 어떤 변경도 불가, 학교·경보·작성자·작성 시각 변경 불가,
+-- ③④ 수정 규칙: 취소된 안내문은 어떤 변경도 불가, 학교·경보·작성자·작성 시각·재사용 원본 변경 불가,
 --     내용(제목·본문·상태·예시)이 바뀌면 판 번호가 정확히 +1, 삭제 불가
 CREATE FUNCTION "school_notices_check_update"() RETURNS trigger AS $$
 BEGIN
@@ -123,9 +142,9 @@ BEGIN
   IF OLD."status" = 'cancelled' THEN
     RAISE EXCEPTION '취소된 안내문은 수정하거나 되돌릴 수 없습니다';
   END IF;
-  IF (NEW."school_id", NEW."alert_id", NEW."created_by_id", NEW."created_at")
-     IS DISTINCT FROM (OLD."school_id", OLD."alert_id", OLD."created_by_id", OLD."created_at") THEN
-    RAISE EXCEPTION '안내문의 학교·연결 경보·작성자·작성 시각은 바꿀 수 없습니다';
+  IF (NEW."school_id", NEW."alert_id", NEW."created_by_id", NEW."created_at", NEW."source_notice_id")
+     IS DISTINCT FROM (OLD."school_id", OLD."alert_id", OLD."created_by_id", OLD."created_at", OLD."source_notice_id") THEN
+    RAISE EXCEPTION '안내문의 학교·연결 경보·작성자·작성 시각·재사용 원본은 바꿀 수 없습니다';
   END IF;
   IF (NEW."title", NEW."body", NEW."status", NEW."example_key", NEW."example_version")
      IS DISTINCT FROM (OLD."title", OLD."body", OLD."status", OLD."example_key", OLD."example_version") THEN

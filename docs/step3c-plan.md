@@ -1,9 +1,10 @@
 # STEP 3-C 재난안전 안내문 작성 지원 — 설계(승인 요청용)
 
-작성 2026-10-21 · 브랜치 `step-3c-notices`(기준 `step-3b-alerts` `6667a81`) · 상태: **2차 마이그레이션 승인 대기(Replit DB 미적용), 코드 미작성**
+작성 2026-10-21 · 브랜치 `step-3c-notices`(기준 `step-3b-alerts` `6667a81`) · 상태: **최종 마이그레이션·기능 코드·테스트 작성 완료(Replit DB 미적용 — 적용은 별도 승인)**
 
 > 개정 이력
 > - 1차(10:35, `ca10d51`): 최초 설계·SQL 초안
+> - 최종(11:00): 10:55 통합 지시 반영 — 취소된 안내문으로 새 초안 만들기(재사용). `source_notice_id` 추가, 점검 55/55. 기능 코드·테스트 작성
 > - 2차(10:40): 사용자·ChatGPT SQL 검토(10:37) 반영 — 같은 학교 대상 경보만 연결, 처리 이력-안내문 학교 일치, 취소 후 변경 금지, 수정 이력 DB 자동 기록·판 번호 +1 강제, 핵심 연결 값 변경 금지. 1차 SQL은 어느 Replit DB에도 적용되지 않았으므로 같은 마이그레이션 파일을 고쳐 씀
 
 ## 1. 범위
@@ -62,3 +63,34 @@
 
 ## 7. 개발 순서
 C1 예시문 데이터·빈칸 채우기(+순수 테스트) → C2 서비스·API(권한·격리·판 번호·이력·감사) → C3 처리 이력 → C4 화면(예시 카드·덮어쓰기 확인·복사) → C5 `e2e:step3c` + 회귀 206 → C6 브라우저 시연·포트폴리오
+
+## 8. 최종 추가: 취소된 안내문 재사용(10:55 통합 지시)
+| 정책 | 구현 |
+| --- | --- |
+| 원본 수정·삭제·직접 복구 금지, 취소 사유·시각 보존 | 2차 트리거 그대로(취소 후 모든 변경 거부, 삭제 거부) |
+| 조회·복사 허용 | 취소된 안내문도 상세·미리보기·복사 가능(편집 영역만 없음) |
+| 새 초안 생성 | `POST notices/:id/reuse {alertId?}` → 새 ID, `draft`, 판 1, 제목·본문·예시 키 복사, 작성자 = 재사용한 교직원 |
+| 원본-초안 연결 | `school_notices.source_notice_id`(선택 열). (원본, 학교) 복합 외래키 → 다른 학교 안내문 재사용 불가. 원본은 취소된 안내문만(트리거). 연결 변경 금지 |
+| 중복 실행 방지 | 같은 원본의 '작성 중' 초안은 1건만(부분 UNIQUE 인덱스). 두 번째 요청은 기존 초안을 돌려줌(200, `created:false`) |
+| 감사 로그 | `notice.reused`: 재사용자·시각·원본 ID·원본 경보·새 연결 경보 |
+| 경보 상태 | 같은 경보든 다른 경보든 '우리 학교 대상·대표 경보' 검사를 다시 함. 해제된 경보면 경고, 다른 경보면 '본문의 경보 정보 수정' 경고, 언제나 '과거 정보일 수 있음' 경고. 공식 경보 원문은 변경 없음 |
+- 새 테이블 없음(기존 `school_notices`에 열 1개, 제약 3개, 인덱스 1개).
+
+## 9. 구현 파일
+- DB: `prisma/migrations/20261022000000_school_notices/migration.sql`, `prisma/schema.prisma`(모델 3개·열거형 2개)
+- 예시문: `shared/noticeExamples.ts`(21개, 빈칸 채우기·추천), 입력 검증: `shared/schemas.ts`(개인 연락처 형태 거부)
+- 서버: `server/src/services/notices.ts`, `server/src/routes/notices.ts`, `server/src/app.ts`(라우터 등록), `server/src/services/alerts.ts`(경보별 안내문 수 `noticeCount` 추가만)
+- 화면: `client/src/pages/notices/NoticeEditorPage.tsx`, `NoticesPage.tsx`, `client/src/pages/alerts/AlertsPage.tsx`(안내문 작성 진입), `client/src/App.tsx`, `client/src/lib/notices.ts`, `client/src/lib/router.tsx`(검색어 변경 시 다시 그리기), 아이콘 2개
+- 테스트: `tests/notice-examples.test.ts`(순수), `tests/notices.test.ts`(DB), `scripts/e2e-step3c.ts`(HTTP, `npm run e2e:step3c`)
+
+## 10. 테스트 실행 현황(10/21 11:20 기준 — 실행한 것과 안 한 것 구분)
+| 구분 | 내용 | 결과 |
+| --- | --- | --- |
+| 실행함 | SQL 안전성 점검(작업공간 임시 PostgreSQL) | 55/55 예상대로 |
+| 실행함 | `tests/notice-examples.test.ts`(작업공간, vitest 대체 실행기) | 9/9 |
+| 실행함 | 기존 순수 테스트 회귀(`alerts-region` 12, `client-disaster` 7, `schoolinfo-parse` 9) | 28/28 |
+| 실행함 | 타입 검사(작업공간, Prisma·Express 타입은 대체 선언 — 실제 타입 검사 아님) | 오류 0 |
+| 실행함 | 화면 동작 확인(빌드한 화면 + **모의 API**, 모바일·PC) | 29/29 |
+| **미실행** | `tests/notices.test.ts`(DB 서비스 테스트) — 작업공간에 Prisma 엔진 없음 | Replit 승인 후 |
+| **미실행** | `npm run e2e:step3c`, `npm test` 전체 회귀(206 + 신규), `npm run typecheck`, `npx prisma validate`·`generate` | Replit 승인 후 |
+| **미실행** | 실제 서버·시연 DB 브라우저 확인 | 시연 DB 적용 승인 후 |

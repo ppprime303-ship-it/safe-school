@@ -4,11 +4,14 @@ import subprocess, sys
 DB="m3c"
 def psql(sql):
     r=subprocess.run(["psql","-h","localhost","-U","postgres","-d",DB,"-v","ON_ERROR_STOP=1","-q","-c",sql],capture_output=True,text=True)
-    return r.returncode==0, (r.stderr.strip().splitlines() or [""])[-1].replace("ERROR:  ","")
+    err=[l for l in r.stderr.splitlines() if l.startswith("ERROR:")]
+    return r.returncode==0, (err[0] if err else (r.stderr.strip().splitlines() or [""])[-1]).replace("ERROR:  ","")
 A="00000000-0000-0000-0000-00000000000a"; B="00000000-0000-0000-0000-00000000000b"
 AL1="00000000-0000-0000-0000-0000000000a1"; AL2="00000000-0000-0000-0000-0000000000a2"; ALB="00000000-0000-0000-0000-0000000000a3"; ALU="00000000-0000-0000-0000-0000000000a4"
 N="00000000-0000-0000-0000-0000000000b1"; NB="00000000-0000-0000-0000-0000000000b2"; NC="00000000-0000-0000-0000-0000000000b3"
 U="00000000-0000-0000-0000-0000000000e1"
+# 최종(재사용) 점검용
+AL5="00000000-0000-0000-0000-0000000000a5"; R1="00000000-0000-0000-0000-0000000000c1"; R2="00000000-0000-0000-0000-0000000000c2"; R3="00000000-0000-0000-0000-0000000000c3"
 setup=f"""
 insert into users(id,email,display_name) values ('{U}','t@x.kr','교사');
 insert into schools(id,name,slug,status,activated_at) values ('{A}','A','test-a','active',now()),('{B}','B','test-b','active',now());
@@ -16,10 +19,11 @@ insert into official_alerts(id,provider,external_id,is_mock,kind,severity,issuer
  ('{AL1}','mock','m1',true,'weather','warning','기상청','폭염','인천광역시','[]',now()-interval '30 min','h','{{}}'),
  ('{AL2}','mock','m2',true,'weather','warning','기상청','폭염','인천광역시','[]',now()-interval '20 min','h','{{}}'),
  ('{ALB}','mock','m3',true,'weather','warning','부산시','너울','부산광역시','[]',now(),'h2','{{}}'),
- ('{ALU}','mock','m4',true,'other','advisory','가상','불명','어딘가','[]',now(),'h3','{{}}');
+ ('{ALU}','mock','m4',true,'other','advisory','가상','불명','어딘가','[]',now(),'h3','{{}}'),
+ ('{AL5}','mock','m5',true,'weather','warning','기상청','호우','인천광역시','[]',now(),'h5','{{}}');
 insert into school_alert_matches(school_id,alert_id,result,reason,duplicate_of_alert_id) values
  ('{A}','{AL1}','target','r',null),('{A}','{AL2}','target','r','{AL1}'),('{A}','{ALB}','non_target','r',null),('{A}','{ALU}','undetermined','r',null),
- ('{B}','{ALB}','target','r',null);
+ ('{B}','{ALB}','target','r',null),('{A}','{AL5}','target','r',null);
 """
 ok,msg=psql(setup); assert ok,msg
 cases=[
@@ -57,6 +61,27 @@ cases=[
  ("⑥ 공식 경보 원문 수정(기존 보호 유지)", False, f"update official_alerts set body='x'"),
  ("경보 판정 행 삭제(안내문이 참조 중)", False, f"delete from school_alert_matches where school_id='{A}' and alert_id='{AL1}'"),
  ("기존 재판정 동작 유지: 판정 결과·사유 갱신", True, f"update school_alert_matches set reason='재판정' where school_id='{A}' and alert_id='{AL1}'"),
+ # ───── 최종(10:55): 취소된 안내문으로 새 초안 만들기 ─────
+ ("[재사용] 정상: 취소된 안내문 N으로 새 초안(새 ID·판 1·작성 중·같은 경보)", True, f"insert into school_notices(id,school_id,alert_id,example_key,example_version,title,body,source_notice_id,created_by_id,updated_by_id) select '{R1}',school_id,alert_id,example_key,example_version,title,body,id,'{U}','{U}' from school_notices where id='{N}'"),
+ ("[재사용] 새 초안은 별도 수정 이력(판 1)으로 시작", True, f"do $$ begin if (select count(*) from school_notice_revisions where notice_id='{R1}')<>1 or (select version from school_notice_revisions where notice_id='{R1}')<>1 then raise exception 'x'; end if; end $$"),
+ ("[재사용] 원본 내용·취소 정보·이력 3판 그대로", True, f"do $$ begin if not exists (select 1 from school_notices where id='{N}' and status='cancelled' and version=3 and body='본문 수정' and cancel_reason='중복 작성') or (select count(*) from school_notice_revisions where notice_id='{N}')<>3 then raise exception '원본 변경됨'; end if; end $$"),
+ ("[재사용] 원본-새 초안 연결 확인(서로 다른 ID)", True, f"do $$ begin if (select source_notice_id from school_notices where id='{R1}')<>'{N}' or '{R1}'='{N}' then raise exception 'x'; end if; end $$"),
+ ("[재사용] 같은 원본으로 작성 중 초안 또 만들기(중복 요청)", False, f"insert into school_notices(school_id,alert_id,title,body,source_notice_id) values ('{A}','{AL1}','t','b','{N}')"),
+ ("[재사용] 정상: 새 초안 수정·저장(판 1→2)", True, f"update school_notices set body='재사용 후 수정', version=2, updated_by_id='{U}' where id='{R1}'"),
+ ("[재사용] 원본 연결 바꾸기", False, f"update school_notices set source_notice_id=null, body='x', version=3 where id='{R1}'"),
+ ("[재사용] 취소되지 않은 안내문(작성 중)을 원본으로", False, f"insert into school_notices(school_id,alert_id,title,body,source_notice_id) values ('{A}','{AL1}','t','b','{NC}')"),
+ ("[재사용] 다른 학교(B) 안내문으로 A학교 초안", False, f"update school_notices set status='cancelled', cancelled_at=now(), cancel_reason='점검', version=2 where id='{NB}'; insert into school_notices(school_id,alert_id,title,body,source_notice_id) values ('{A}','{AL1}','t','b','{NB}')"),
+ ("[재사용] 다른 학교(B)로 A학교 원본 재사용", False, f"insert into school_notices(school_id,alert_id,title,body,source_notice_id) values ('{B}','{ALB}','t','b','{N}')"),
+ ("[재사용] 없는 안내문 ID를 원본으로", False, f"insert into school_notices(school_id,alert_id,title,body,source_notice_id) values ('{A}','{AL1}','t','b','00000000-0000-0000-0000-0000000000ff')"),
+ ("[재사용] 자기 자신을 원본으로", False, f"insert into school_notices(id,school_id,alert_id,title,body,source_notice_id) values ('{R3}','{A}','{AL1}','t','b','{R3}')"),
+ ("[재사용] 정상: 새 초안 작성 완료(판 2→3)", True, f"update school_notices set status='completed', version=3 where id='{R1}'"),
+ ("[재사용] 새 초안을 비대상 경보에 연결", False, f"insert into school_notices(school_id,alert_id,title,body,source_notice_id) values ('{A}','{ALB}','t','b','{N}')"),
+ ("[재사용] 새 초안을 재송출 경보(대표 아님)에 연결", False, f"insert into school_notices(school_id,alert_id,title,body,source_notice_id) values ('{A}','{AL2}','t','b','{N}')"),
+ ("[재사용] 새 초안을 미판정 경보에 연결", False, f"insert into school_notices(school_id,alert_id,title,body,source_notice_id) values ('{A}','{ALU}','t','b','{N}')"),
+ ("[재사용] 정상: 앞 초안이 작성 완료된 뒤 같은 원본으로 다른 대상 경보(AL5)에 새 초안", True, f"insert into school_notices(id,school_id,alert_id,title,body,source_notice_id) values ('{R2}','{A}','{AL5}','t','b','{N}')"),
+ ("[재사용] 원본 취소 안내문은 여전히 수정 불가", False, f"update school_notices set body='재사용 뒤 원본 수정', version=4 where id='{N}'"),
+ ("[재사용] 원본 삭제(새 초안이 참조 중)", False, f"delete from school_notices where id='{N}'"),
+ ("[재사용] 공식 경보 원문 불변(재사용 후에도)", True, f"do $$ begin if (select body from official_alerts where id='{AL1}')<>'폭염' then raise exception 'x'; end if; end $$"),
  ("테스트 초기화 TRUNCATE와 충돌 없음", True, "truncate notice_handling_records, school_notice_revisions, school_notices cascade"),
 ]
 ok_n=0
@@ -66,3 +91,5 @@ for name, expect, sql in cases:
     ok_n+=good
     print(f"{'✓' if good else '✗'} {name} — {'허용' if ok else '거부: '+msg}")
 print(f"결과: {ok_n}/{len(cases)} 예상대로 동작")
+old=[c for c in cases if not c[0].startswith("[재사용]")]; new=[c for c in cases if c[0].startswith("[재사용]")]
+print(f"  - 기존(2차) 점검 항목 {len(old)}개, 최종 재사용 점검 항목 {len(new)}개")

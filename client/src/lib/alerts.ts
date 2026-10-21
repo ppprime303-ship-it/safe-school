@@ -7,6 +7,7 @@ export interface AlertItem {
   rebroadcastCount: number;
   cancelled: boolean;
   expired: boolean;
+  noticeCount: number; // STEP 3-C 이 경보에 연결된 학교 안내문 수(취소 제외)
   alert: {
     id: string;
     provider: string;

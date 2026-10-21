@@ -107,3 +107,60 @@ export const regionSchema = z.object({
   sido: z.string().trim().min(2).max(20),
   sigungu: z.string().trim().max(30).nullable(),
 });
+
+// ───────────── STEP 3-C 재난안전 안내문 ─────────────
+const noticeTitle = z.string().trim().min(1, "제목을 입력하세요.").max(200, "제목은 200자 이하입니다.");
+const noticeBody = z
+  .string()
+  .max(5000, "본문은 5000자 이하입니다.")
+  .refine((v) => v.trim().length > 0, "본문을 입력하세요.");
+const exampleKey = z.string().regex(/^[a-z_]+\.(parent|staff)\.(issued|cancelled)$/, "예시문 키 형식이 올바르지 않습니다.");
+const expectedVersion = z.number().int().min(1);
+
+export const noticeCreateSchema = z.object({
+  alertId: z.string().uuid(),
+  title: noticeTitle,
+  body: noticeBody,
+  exampleKey: exampleKey.nullable().optional(),
+});
+
+export const noticeUpdateSchema = z.object({
+  title: noticeTitle,
+  body: noticeBody,
+  status: z.enum(["draft", "completed"]),
+  exampleKey: exampleKey.nullable().optional(), // undefined = 그대로, null = 직접 작성으로 표시
+  expectedVersion,
+});
+
+export const noticeCancelSchema = z.object({
+  reason: z.string().trim().min(1, "취소 사유를 입력하세요.").max(200),
+  expectedVersion,
+});
+
+export const noticeReuseSchema = z.object({
+  alertId: z.string().uuid().optional(), // 없으면 원본과 같은 경보(대상·대표 경보 검사는 다시 함)
+});
+
+// 처리 이력에는 개인 연락처를 적지 않습니다(전화번호 형태 거부).
+const PHONE_LIKE = /(01[016789]|0\d{1,2})[-.\s]?\d{3,4}[-.\s]?\d{4}/;
+const noPhone = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .refine((v) => !PHONE_LIKE.test(v), "개인 연락처(전화번호)는 적지 마세요.")
+    .nullable()
+    .optional();
+
+export const handlingRecordSchema = z
+  .object({
+    channel: z.enum(["sms", "school_app", "kakao", "other"]).nullable().optional(),
+    channelNote: noPhone(50),
+    audienceCategory: noPhone(100),
+    sentByTeacher: z.boolean().default(false),
+    sentAt: z.string().datetime({ offset: true }).nullable().optional(),
+    memo: noPhone(500),
+  })
+  .refine((v) => !v.sentAt || v.sentByTeacher, { message: "발송 일시는 '발송 완료'를 선택했을 때만 적습니다.", path: ["sentAt"] });
+
+export const voidRecordSchema = z.object({ reason: z.string().trim().min(1, "무효 처리 사유를 입력하세요.").max(200) });
