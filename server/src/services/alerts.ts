@@ -5,6 +5,7 @@ import type { PrismaClient } from "@prisma/client";
 import { AppError, notFound } from "../errors.js";
 import { writeAudit } from "./audit.js";
 import { ensureSchoolRegion } from "../alerts/collector.js";
+import { regroupRebroadcasts } from "../alerts/grouping.js";
 import { matchRegion, normalizeSido, NATIONWIDE, type Area } from "../alerts/region.js";
 
 export interface AlertItem {
@@ -41,15 +42,23 @@ export async function listSchoolAlerts(prisma: PrismaClient, params: { schoolId:
     take: params.limit ?? 100,
   });
   const ids = matches.map((m) => m.alertId);
-  const rebroadcasts = ids.length
-    ? await prisma.schoolAlertMatch.groupBy({
-        by: ["duplicateOfAlertId"],
+  // 재송출 묶음(대표 경보 + 같은 내용 재송출): 개수, 묶음 안 경보 ID(해제 판단용), 읽음(묶음 중 하나라도 읽으면 읽음)
+  const dups = ids.length
+    ? await prisma.schoolAlertMatch.findMany({
         where: { schoolId: params.schoolId, duplicateOfAlertId: { in: ids } },
-        _count: { _all: true },
+        select: { duplicateOfAlertId: true, alert: { select: { provider: true, externalId: true } }, reads: { where: { userId: params.userId }, select: { readAt: true } } },
       })
     : [];
-  const rebroadcastBy = new Map(rebroadcasts.map((r) => [r.duplicateOfAlertId, r._count._all]));
-  // 해제(cancel) 경보가 가리키는 원래 경보
+  const group = new Map<string, { count: number; keys: string[]; read: boolean }>();
+  for (const m of matches) group.set(m.alertId, { count: 0, keys: [`${m.alert.provider}:${m.alert.externalId}`], read: m.reads.length > 0 });
+  for (const d of dups) {
+    const g = group.get(d.duplicateOfAlertId!);
+    if (!g) continue;
+    g.count++;
+    g.keys.push(`${d.alert.provider}:${d.alert.externalId}`);
+    if (d.reads.length > 0) g.read = true;
+  }
+  // 해제(cancel) 경보가 가리키는 원래 경보: 대표 경보든 재송출 경보든 가리키면 묶음 전체를 '해제됨'으로
   const cancelledRefs = new Set(
     matches.filter((m) => m.alert.msgType === "cancel" && m.alert.refExternalId).map((m) => `${m.alert.provider}:${m.alert.refExternalId}`),
   );
@@ -58,9 +67,9 @@ export async function listSchoolAlerts(prisma: PrismaClient, params: { schoolId:
     matchId: m.id,
     result: m.result as "target" | "undetermined",
     reason: m.reason,
-    read: m.reads.length > 0,
-    rebroadcastCount: rebroadcastBy.get(m.alertId) ?? 0,
-    cancelled: cancelledRefs.has(`${m.alert.provider}:${m.alert.externalId}`),
+    read: group.get(m.alertId)!.read,
+    rebroadcastCount: group.get(m.alertId)!.count,
+    cancelled: group.get(m.alertId)!.keys.some((k) => cancelledRefs.has(k)),
     expired: m.alert.expiresAt ? m.alert.expiresAt.getTime() < now : false,
     alert: {
       id: m.alert.id,
@@ -130,6 +139,8 @@ export async function confirmSchoolRegion(
       await tx.schoolAlertMatch.update({ where: { id: m.id }, data: { result: r.result, reason: `${r.reason} (소재지 확인 후 재판정)` } });
       rematched++;
     }
+    // 재판정으로 '대상'이 된 경보도 수집 때와 같은 기준으로 재송출 묶음 정리(원문 변경 없음, 반복해도 결과 동일)
+    const regrouped = (await regroupRebroadcasts(tx, params.schoolId)).length;
     await writeAudit(tx, {
       schoolId: params.schoolId,
       actorUserId: params.actorUserId,
@@ -137,9 +148,9 @@ export async function confirmSchoolRegion(
       targetType: "school",
       targetId: params.schoolId,
       before: before ? { sido: before.sido, sigungu: before.sigungu, source: before.source } : undefined,
-      after: { sido, sigungu, rematched },
+      after: { sido, sigungu, rematched, regrouped },
       ip: params.ip,
     });
-    return { sido, sigungu, rematched };
+    return { sido, sigungu, rematched, regrouped };
   });
 }

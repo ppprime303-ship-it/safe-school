@@ -9,8 +9,9 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { isUniqueViolation } from "../errors.js";
 import type { AlertSource, NormalizedAlert } from "./providers.js";
 import { matchRegion, parseAddress, type Region } from "./region.js";
+import { regroupRebroadcasts } from "./grouping.js";
 
-export const REBROADCAST_WINDOW_MS = 6 * 60 * 60 * 1000;
+export { REBROADCAST_WINDOW_MS } from "./grouping.js";
 
 export function contentHash(a: Pick<NormalizedAlert, "issuer" | "body" | "areas" | "msgType">): string {
   const areas = a.areas
@@ -50,29 +51,16 @@ async function matchAlertToSchools(prisma: PrismaClient, alertId: string, alert:
   for (const school of schools) {
     const region = await ensureSchoolRegion(prisma, school);
     const { result, reason } = matchRegion(region, alert.areas);
-    let duplicateOfAlertId: string | null = null;
-    if (result === "target") {
-      // 같은 내용이 최근 이 학교에 이미 알려졌으면 재송출로 묶음
-      const earlier = await prisma.schoolAlertMatch.findFirst({
-        where: {
-          schoolId: school.id,
-          result: "target",
-          duplicateOfAlertId: null,
-          alertId: { not: alertId },
-          alert: { contentHash: hash, issuedAt: { gte: new Date(alert.issuedAt.getTime() - REBROADCAST_WINDOW_MS), lte: alert.issuedAt } },
-        },
-        orderBy: { createdAt: "asc" },
-        select: { alertId: true },
-      });
-      duplicateOfAlertId = earlier?.alertId ?? null;
-      if (!duplicateOfAlertId) targets++;
-    }
     try {
-      await prisma.schoolAlertMatch.create({
-        data: { schoolId: school.id, alertId, result, reason: duplicateOfAlertId ? `${reason} · 같은 내용 재송출` : reason, duplicateOfAlertId },
-      });
+      await prisma.schoolAlertMatch.create({ data: { schoolId: school.id, alertId, result, reason } });
     } catch (error) {
       if (!isUniqueViolation(error)) throw error; // 이미 매칭됨(동시 수집)
+    }
+    if (result === "target") {
+      // 같은 내용 재송출 묶음: 소재지 재판정·데이터 정리와 같은 함수(grouping.ts)로 처리
+      await regroupRebroadcasts(prisma, school.id, { contentHashes: [hash] });
+      const mine = await prisma.schoolAlertMatch.findUnique({ where: { schoolId_alertId: { schoolId: school.id, alertId } }, select: { duplicateOfAlertId: true } });
+      if (mine && !mine.duplicateOfAlertId) targets++;
     }
   }
   return targets;

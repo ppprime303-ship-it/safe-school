@@ -65,6 +65,10 @@ async function main() {
   await member(schoolA.id, (await user("admin-a@e2e3b.test", "A관리자")).id, "admin");
   await member(schoolA.id, (await user("staff-a@e2e3b.test", "A교직원")).id, "staff");
   await member(schoolB.id, (await user("admin-b@e2e3b.test", "B관리자")).id, "admin");
+  // 시연 학교처럼 주소로 시군구를 알 수 없는 학교(경보를 먼저 받고 소재지를 나중에 확인)
+  const schoolC = await prisma.school.create({ data: { name: "경보C초등학교", slug: "e2e3b-c", address: "인천광역시 가상 테스트 주소", status: "active", activatedAt: now } });
+  await member(schoolC.id, (await user("admin-c@e2e3b.test", "C관리자")).id, "admin");
+  await member(schoolC.id, (await user("teacher-c@e2e3b.test", "C담임")).id, "homeroom");
 
   const server = await startTestServer(PORT, { ...process.env, DATABASE_URL: testUrl, NODE_ENV: "test", MAIL_PROVIDER: "console", SCHOOLINFO_API_KEY: "", ALERT_MOCK_FEED: "" });
   try {
@@ -74,8 +78,13 @@ async function main() {
     await admin.login("admin-a@e2e3b.test");
     await staff.login("staff-a@e2e3b.test");
     await adminB.login("admin-b@e2e3b.test");
+    const adminC = new Agent();
+    const teacherC = new Agent();
+    await adminC.login("admin-c@e2e3b.test");
+    await teacherC.login("teacher-c@e2e3b.test");
     const A = `/schools/${schoolA.id}`;
     const B = `/schools/${schoolB.id}`;
+    const Cc = `/schools/${schoolC.id}`;
 
     console.log("\n1. 수집 전");
     const empty = await staff.call("GET", `${A}/alerts`);
@@ -128,6 +137,31 @@ async function main() {
     const runs = await prisma.alertCollectionRun.count({ where: { status: "success" } });
     check("수집 실행 기록 4건", runs === 4, { runs });
     check("소재지 확인 감사 로그", (await prisma.auditLog.count({ where: { action: "region.confirmed", schoolId: schoolA.id } })) === 1);
+
+    console.log("\n7. 경보 먼저 수집 → 학교 소재지 나중에 확인 → 재송출 묶음 → 해제(2026-10-21 시연 재현)");
+    const c0 = await adminC.call("GET", `${Cc}/alerts`);
+    check("소재지 미확인 학교: 대상 0건, 미판정 경보만 관리자에게 보임",
+      c0.body.alerts?.every((x: any) => x.result === "undetermined") && c0.body.alerts?.length >= 3, c0.body.alerts?.map((x: any) => x.result));
+    const t0 = await teacherC.call("GET", `${Cc}/alerts`);
+    check("담임에게는 미판정 경보가 보이지 않음", t0.body.alerts?.length === 0, t0.body);
+    const conf = await adminC.call("PUT", `${Cc}/region`, { sido: "인천광역시", sigungu: "남동구" });
+    check("소재지 확인 → 미판정 경보 재판정·재송출 묶음 정리", conf.status === 200 && conf.body.rematched >= 3 && conf.body.regrouped === 1, conf.body);
+    const t1 = await teacherC.call("GET", `${Cc}/alerts`);
+    const heads = (t1.body.alerts ?? []).filter((x: any) => x.alert.msgType === "new");
+    check("같은 폭염경보는 1건만 표시(재송출 1회 묶음)", heads.length === 1 && heads[0].rebroadcastCount === 1, t1.body.alerts?.map((x: any) => [x.alert.msgType, x.rebroadcastCount]));
+    check("해제 경보 1건 + 최초 경보에 '해제됨'", t1.body.alerts?.filter((x: any) => x.alert.msgType === "cancel").length === 1 && heads[0]?.cancelled === true, t1.body.alerts?.map((x: any) => [x.alert.msgType, x.cancelled]));
+    check("부산 경보는 비대상으로 빠짐", !(t1.body.alerts ?? []).some((x: any) => x.alert.areasRaw?.startsWith("부산")));
+    await adminC.call("POST", `${Cc}/alerts/${heads[0]?.matchId}/read`, {});
+    const t2 = await teacherC.call("GET", `${Cc}/alerts`);
+    check("관리자가 읽어도 담임은 읽지 않음 유지", t2.body.unreadCount === 2, { unread: t2.body.unreadCount });
+    const conf2 = await adminC.call("PUT", `${Cc}/region`, { sido: "인천광역시", sigungu: "남동구" });
+    const re = await collectOnce(prisma, new MockAlertSource(MOCK_SCENARIOS["incheon-heatwave"]!), { minIntervalMs: 0 });
+    const t3 = await teacherC.call("GET", `${Cc}/alerts`);
+    check("소재지 재확인·같은 경보 재수집 후에도 중복 없음", conf2.body.rematched === 0 && conf2.body.regrouped === 0 && re.inserted === 0 && t3.body.alerts?.length === t1.body.alerts?.length,
+      { conf2: conf2.body, inserted: re.inserted, n: t3.body.alerts?.length });
+    const crossC = await adminB.call("GET", `${Cc}/alerts`);
+    check("다른 학교 관리자는 C 학교 경보함 접근 불가 → 404", crossC.status === 404, crossC.body);
+    check("소재지 확인 감사 로그 2건(C 학교)", (await prisma.auditLog.count({ where: { action: "region.confirmed", schoolId: schoolC.id } })) === 2);
     await prisma.$disconnect();
   } finally {
     await server.stop();
