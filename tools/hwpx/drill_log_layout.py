@@ -85,8 +85,9 @@ def when_text(event: dict) -> str:
     return s
 
 
-def build_layout(data: dict, class_table: str = "inline") -> Layout:
-    """class_table: inline(PDF 시제품과 같이 본문에) / appendix(본문 1쪽은 원본 형식, 학급별 보고는 붙임) / none"""
+def build_layout(data: dict, class_table: str = "appendix") -> Layout:
+    """class_table: appendix(기본 — 본문 1쪽은 원본 형식, 학급별 보고는 붙임. 2026-10-22 사용자 결정: 학급이 늘어도 본문이 넘치지 않음)
+                / inline(PDF 시제품과 같이 본문에) / none"""
     ev = data["event"]
     mode = "모의훈련" if ev["mode"] == "drill" else "실제 상황"
     L = Layout(title=f"비상대피훈련일지({ev['typeLabel']})", school=data["schoolName"])
@@ -159,7 +160,7 @@ def build_layout(data: dict, class_table: str = "inline") -> Layout:
     for e in evals:
         rr = L.add_row(8.0)
         L.put(row=rr, col=1, colspan=3, text=f"▪ {e}", align="L")
-        L.put(row=rr, col=4, text="□ O    □ X")
+        L.put(row=rr, col=4, text="")  # O/X는 담당 교사가 빈칸에 직접 입력(2026-10-22 사용자 결정)
         L.put(row=rr, col=5, colspan=2, text="", align="L")
 
     r = L.add_row(26.0 if class_table == "inline" else 34.0)

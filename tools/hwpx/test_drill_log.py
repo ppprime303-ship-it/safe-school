@@ -86,6 +86,9 @@ class Structure(unittest.TestCase):
 
 
 class Policy(unittest.TestCase):
+    def test_default_is_appendix(self):
+        self.assertIsNotNone(build_layout(DATA).appendix)
+
     def texts(self, data=DATA, mode="inline"):
         return [c.text for c in build_layout(data, class_table=mode).cells]
 
@@ -97,10 +100,11 @@ class Policy(unittest.TestCase):
         self.assertFalse(any(re.fullmatch(r"총 \d+명", x) for x in t))
 
     def test_manual_fields_blank(self):
-        L = build_layout(DATA)
+        L = build_layout(DATA, class_table="inline")
         cells = {(c.row, c.col): c for c in L.cells}
-        evals = [c for c in L.cells if c.text == "□ O    □ X"]
-        self.assertEqual(len(evals), 6)  # O/X는 선택 표시만, 판정 없음
+        head = next(c for c in L.cells if c.text == "평가결과\n(O, X)")
+        ox = [c for c in L.cells if c.col == head.col and c.row > head.row and c.row <= head.row + 6]
+        self.assertEqual([c.text for c in ox], [""] * 6)  # O/X 빈칸(교사가 직접 입력)
         dur_row = next(c.row for c in L.cells if c.text == "대피소요 시간")
         self.assertEqual(cells[(dur_row, 1)].text, "")  # 소요 시간 계산 안 함
         refl_row = next(c.row for c in L.cells if c.text.startswith("추후 대피훈련"))
@@ -115,7 +119,7 @@ class Policy(unittest.TestCase):
     def test_missing_evac_place_left_blank(self):
         d = copy.deepcopy(DATA)
         d["event"]["evacPlace"] = None
-        L = build_layout(d)
+        L = build_layout(d, class_table="inline")
         row = next(c.row for c in L.cells if "대피(집결)장소" in c.text)
         self.assertEqual(next(c for c in L.cells if c.row == row and c.col == 1).text, "")
 

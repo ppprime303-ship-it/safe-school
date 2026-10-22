@@ -1,5 +1,5 @@
 # 비상대피훈련일지 HWPX + 비교용 PDF 만들기(앱 미연결 도구)
-# 사용: python3 tools/hwpx/build_drill_log.py <데이터.json> <출력폴더> [inline|appendix]
+# 사용: python3 tools/hwpx/build_drill_log.py <데이터.json> <출력폴더> [appendix(기본)|inline]
 #   출력: SAFE_SCHOOL_비상대피훈련일지_개선본[_붙임형].hwpx, ..._비교용.pdf(Playwright가 있을 때), ..._비교용.html
 import json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -7,7 +7,7 @@ from drill_log_layout import build_layout, check_layout
 from hwpx_writer import render_html, write_hwpx
 
 data_path, out_dir = sys.argv[1], sys.argv[2]
-mode = sys.argv[3] if len(sys.argv) > 3 else "inline"
+mode = sys.argv[3] if len(sys.argv) > 3 else "appendix"  # 기본: 붙임형(사용자 결정)
 data = json.load(open(data_path, encoding="utf-8"))
 L = build_layout(data, class_table=mode)
 errs = check_layout(L) + (check_layout(L.appendix) if L.appendix else [])
