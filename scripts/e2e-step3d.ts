@@ -4,6 +4,7 @@
 // 교장·교감 직책은 플랫폼 운영자 도구(서비스 함수)로 등록합니다(앱 API로는 등록 불가 — 그것도 확인).
 // 실제 경보·문자 발송, K-에듀파인 연동은 없습니다.
 import { execSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { inflateRawSync } from "node:zlib";
 import { createTestClient, getTestDatabaseUrl, resetTestData } from "../tests/test-db.js";
 import { hashPassword } from "../server/src/security/password.js";
@@ -209,8 +210,41 @@ async function main() {
     check("교장 HWPX 내려받기: 형식·파일 이름", dl.status === 200 && dl.headers.get("content-type")?.startsWith("application/hwp+zip") === true && (dl.headers.get("content-disposition") ?? "").includes("filename*=UTF-8''"), [dl.status, dl.headers.get("content-type")]);
     check("HWPX: mimetype 첫 항목, 필수 파일", z.names[0] === "mimetype" && ["Contents/section0.xml", "Contents/header.xml", "META-INF/container.xml"].every((n) => z.names.includes(n)), z.names);
     check("HWPX 본문: 학교명·입력값·이스케이프·미보고·O/X 글자", z.section.includes("훈련일지A초등학교") && z.section.includes("방송 &lt;설비&gt; &amp; 사이렌 점검") && z.section.includes("미보고") && z.section.includes("6분 51초") && !z.section.includes("□"));
+    // 한글에서 직접 열어 볼 시험 파일(테스트 DB의 가상 데이터만): e2e-output/
+    mkdirSync("e2e-output", { recursive: true });
+    writeFileSync("e2e-output/step3d_훈련일지_3학급.hwpx", buf);
+    check("3학급: 붙임 1쪽", (z.section.match(/붙임\. 학급별 대피 현황/g) ?? []).length === 1, (z.section.match(/붙임\. 학급별 대피 현황[^<]*/g) ?? []));
+
+    // 32학급 초과: 학급 37개 추가 → 원본 변경 알림 → 다시 불러오기(판 +1) → 붙임 2쪽
+    for (let g = 3; g <= 6; g++) for (let n = 1; n <= (g === 6 ? 10 : 9); n++) await cls(g, n, 25);
+    const changed = await ag.safety1!.call("GET", `${S}/drill-logs/${logId}`);
+    check("학급 추가 후 원본 변경 알림(자동 반영 안 함)", (changed.body.sourceChanges?.length ?? 0) >= 37 && changed.body.snapshot?.classes?.length === 3, changed.body.sourceChanges?.length);
+    const refreshed = await ag.safety1!.call("PATCH", `${S}/drill-logs/${logId}`, { manual: changed.body.manual, status: "completed", expectedVersion: changed.body.log.version, refreshAuto: true });
+    check("다시 불러오기 → 판 +1", refreshed.status === 200 && refreshed.body.version === changed.body.log.version + 1, refreshed.body);
+    const dl40 = await ag.safety1!.raw("GET", `${S}/drill-logs/${logId}/export.hwpx`);
+    const buf40 = Buffer.from(await dl40.arrayBuffer());
+    const z40 = unzipNames(buf40);
+    writeFileSync("e2e-output/step3d_훈련일지_40학급.hwpx", buf40);
+    check("40학급: 붙임 2쪽, 마지막 학급 포함, 미보고 표시", dl40.status === 200 && (z40.section.match(/붙임\. 학급별 대피 현황/g) ?? []).length === 2 && z40.section.includes("6학년 10반") && z40.section.includes("미보고"));
+    console.log("  → 한글 확인용 파일: e2e-output/step3d_훈련일지_3학급.hwpx, step3d_훈련일지_40학급.hwpx (테스트 데이터)");
+
     const tDl = await ag.staff!.raw("GET", `${S}/drill-logs/${logId}/export.hwpx`);
     check("일반 교직원 내려받기 → 403", tDl.status === 403, tDl.status);
+
+    console.log("\n4-1. 동시 요청·직접 API(화면 우회)");
+    const [cg1, cg2] = await Promise.all([
+      ag.admin!.call("POST", `${S}/duties`, { membershipId: mem.staff, duty: "safety_officer" }),
+      ag.operator!.call("POST", `${S}/duties`, { membershipId: mem.staff, duty: "safety_officer" }),
+    ]);
+    check("같은 사람에게 같은 업무 동시 지정 → 1건만(201 + 409)", [cg1.status, cg2.status].sort().join() === "201,409", [cg1.status, cg2.status]);
+    const staffDuty = await prisma.memberDuty.findFirstOrThrow({ where: { membershipId: mem.staff, duty: "safety_officer", endedAt: null } });
+    await ag.admin!.call("POST", `${S}/duties/${staffDuty.id}/end`, { reason: "시험 정리" });
+    const direct = await ag.teacher!.call("POST", `${S}/duties`, { membershipId: mem.teacher, duty: "safety_officer" });
+    check("권한 없는 담임이 업무 지정 API 직접 호출 → 403", direct.status === 403, direct.body);
+    const directLog = await ag.staff!.call("PATCH", `${S}/drill-logs/${logId}`, { manual, status: "draft", expectedVersion: 3 });
+    check("권한 없는 교직원이 훈련일지 수정 API 직접 호출 → 403", directLog.status === 403, directLog.body);
+    const crossMembers = await ag.adminB!.call("GET", `${S}/members`);
+    check("다른 학교 관리자가 A 교직원 목록 → 404", crossMembers.status === 404, crossMembers.status);
 
     console.log("\n5. 권한 해제·회수");
     const dutyRow = await prisma.memberDuty.findFirstOrThrow({ where: { membershipId: mem.safety2, duty: "safety_officer", endedAt: null } });
@@ -227,7 +261,7 @@ async function main() {
     const opDuty = await prisma.memberDuty.findFirstOrThrow({ where: { membershipId: mem.operator, duty: "app_operator", endedAt: null } });
     const endOp = await ag.admin!.call("POST", `${S}/duties/${opDuty.id}/end`, { reason: "전보" });
     check("관리자가 앱 운영담당 해제(다른 운영 권한자 있음)", endOp.status === 200, endOp.body);
-    check("업무 기록은 삭제되지 않고 종료로 남음", (await prisma.memberDuty.count({ where: { schoolId: A.id, endedAt: { not: null } } })) === 2);
+    check("업무 기록은 삭제되지 않고 종료로 남음(4-1 정리 1 + 해제 2)", (await prisma.memberDuty.count({ where: { schoolId: A.id, endedAt: { not: null } } })) === 3);
     await prisma.$disconnect();
   } finally {
     await server.stop();

@@ -43,3 +43,11 @@ export async function countOperators(db: Db, schoolId: string, excludeMembership
   });
   return new Set([...admins.map((a: { id: string }) => a.id), ...ops.map((o: { membershipId: string }) => o.membershipId)]).size;
 }
+
+/**
+ * 학교 단위 운영 권한 변경 잠금(트랜잭션이 끝나면 자동 해제).
+ * 업무 해제·계정 회수가 동시에 들어와도 '마지막 운영 권한자 보호' 검사가 순서대로 실행되게 합니다.
+ */
+export async function lockSchoolOperators(tx: Prisma.TransactionClient, schoolId: string): Promise<void> {
+  await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${"school_operators:" + schoolId}))) AS l`;
+}

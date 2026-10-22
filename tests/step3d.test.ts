@@ -183,6 +183,27 @@ describe("직책·업무 권한(합산·겸임)", () => {
     expect(await prisma.memberDuty.count({ where: { membershipId: M.safety1 } })).toBe(1);
   });
 
+  it("동시 요청으로 제한 우회 불가: 교감 3명 동시 등록 → 2명만, 같은 업무 동시 지정 → 1건, 운영자 2명이 동시에 서로 해제 → 1명은 남음", async () => {
+    const vices = await Promise.allSettled([op("vice1", "vice_principal"), op("vice2", "vice_principal"), op("vice3", "vice_principal")]);
+    expect(vices.filter((r) => r.status === "fulfilled")).toHaveLength(2);
+    const same = await Promise.allSettled([
+      grantDutyInApp(prisma, { schoolId: A, actorUserId: U.admin!, membershipId: M.safety1!, duty: "safety_officer" }),
+      grantDutyInApp(prisma, { schoolId: A, actorUserId: U.admin!, membershipId: M.safety1!, duty: "safety_officer" }),
+    ]);
+    expect(same.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const C = (await prisma.school.create({ data: { name: "C학교", slug: "test-3d-c2", status: "active", activatedAt: new Date() } })).id;
+    await person("opX", C, "staff");
+    await person("opY", C, "staff");
+    const x = await op("opX", "app_operator", null);
+    const y = await op("opY", "app_operator", null);
+    const ends = await Promise.allSettled([
+      endDuty(prisma, { schoolId: C, dutyId: x.id, reason: "전보", actorUserId: U.opY, via: "school_app" }),
+      endDuty(prisma, { schoolId: C, dutyId: y.id, reason: "전보", actorUserId: U.opX, via: "school_app" }),
+    ]);
+    expect(ends.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(await prisma.memberDuty.count({ where: { schoolId: C, duty: "app_operator", endedAt: null } })).toBe(1);
+  });
+
   it("권한 계산은 순수 함수와 서버가 같음", async () => {
     await grantDutyInApp(prisma, { schoolId: A, actorUserId: U.admin!, membershipId: M.safety2!, duty: "safety_officer" });
     expect(await caps("safety2")).toEqual(capabilitiesFor("homeroom", ["safety_officer"]));

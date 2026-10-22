@@ -2,7 +2,7 @@
 import type { AssignmentDuty, MemberRole, PrismaClient } from "@prisma/client";
 import { AppError, badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { writeAudit } from "./audit.js";
-import { countOperators } from "./access.js";
+import { countOperators, lockSchoolOperators } from "./access.js";
 
 // ───────────── 접근 검증(모든 학교 업무 API가 사용) ─────────────
 // 승인된 소속 + 활성 학교 + (필요 시) 역할이 모두 맞아야 통과합니다.
@@ -153,6 +153,7 @@ export async function revokeMembership(
   params: { schoolId: string; actorUserId: string; membershipId: string; actorRole?: MemberRole; ip?: string | null },
 ) {
   return prisma.$transaction(async (tx) => {
+    await lockSchoolOperators(tx, params.schoolId); // 동시 회수로 관리자·운영자가 0명이 되지 않게
     const membership = await tx.schoolMembership.findFirst({ where: { id: params.membershipId, schoolId: params.schoolId } });
     if (!membership) throw notFound("교직원을 찾을 수 없습니다.");
     if (membership.userId === params.actorUserId) throw conflict("cannot_revoke_self", "자기 자신의 권한은 회수할 수 없습니다.");

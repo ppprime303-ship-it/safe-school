@@ -6,7 +6,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { AppError, conflict, forbidden, isUniqueViolation, notFound } from "../errors.js";
 import { writeAudit } from "./audit.js";
-import { countOperators } from "./access.js";
+import { countOperators, lockSchoolOperators } from "./access.js";
 import { APP_GRANTABLE_DUTIES, DUTY_LABEL, type StaffDuty } from "../../../shared/permissions.js";
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -93,6 +93,7 @@ export async function endDuty(
   params: { schoolId: string; dutyId: string; reason: string; actorUserId?: string | null; actorLabel?: string | null; via: "school_app" | "platform_operator"; ip?: string | null },
 ) {
   return prisma.$transaction(async (tx) => {
+    await lockSchoolOperators(tx, params.schoolId); // 동시 해제로 운영자가 0명이 되지 않게
     const d = await tx.memberDuty.findFirst({ where: { id: params.dutyId, schoolId: params.schoolId } });
     if (!d) throw notFound("직책·업무 기록을 찾을 수 없습니다.");
     if (d.endedAt) throw conflict("duty_ended", "이미 종료된 직책·업무입니다.");
