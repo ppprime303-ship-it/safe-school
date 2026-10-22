@@ -8,3 +8,6 @@
 | `hwpx_sample_content.py` | — | HWPX 시험본 내용(생성기: `step-3-dev` 브랜치 `tools/portfolio/hwpx_report.py`) |
 
 설계·분석: `docs/step3d/step3d-design.md`, 영향 분석: `docs/step3d/step3d-impact.md`, 검토 체크리스트: `docs/step3d/step3d-review-checklist.md`
+
+## 개선본(2026-10-22, `step-3d-template-refine`)
+`refined/` 폴더 — PDF 시제품 모양을 기준으로 다시 만든 HWPX(세로 병합·행 높이·여백 지정)와 비교용 PDF. 자세한 내용: `docs/step3d/step3d-hwpx-refine.md`
