@@ -69,11 +69,11 @@ export function DrillDocPreview({ doc }: { doc: DrillDoc }) {
           ) : (
             <>
               <h2 style={{ fontSize: "13pt", fontWeight: 700, margin: "0 0 1.5mm" }}>{p.title}</h2>
-              <p style={{ fontSize: "10pt", margin: "0 0 1.5mm" }}>{p.subtitle}</p>
+              <p style={{ fontSize: "10pt", margin: "0 0 2mm" }}>{p.subtitle}</p>
             </>
           )}
           <Table t={p.table} />
-          {p.footnote && <p style={{ fontSize: "9pt", marginTop: "1.5mm" }}>{p.footnote}</p>}
+          {p.footnote && <p style={{ fontSize: "9pt", marginTop: "1.5mm", lineHeight: 1.3, whiteSpace: "pre-wrap" }}>{p.footnote}</p>}
         </section>
       ))}
     </div>

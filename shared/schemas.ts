@@ -177,6 +177,8 @@ export const dutyEndSchema = z.object({ reason: z.string().trim().min(1, "해제
 const shortText = (max: number) => z.string().max(max);
 export const drillManualSchema = z.object({
   staffCount: z.string().trim().regex(/^\d{0,4}$/, "교직원 참가 인원은 숫자로 적으세요."),
+  // 실제 참가 학생 수(선택). 이전 화면·저장본은 이 항목이 없으므로 빈칸으로 받습니다(기존 요청 그대로 통과).
+  studentCount: z.string().trim().regex(/^\d{0,5}$/, "학생 참가 인원은 숫자로 적으세요.").default(""),
   totalCount: z.string().trim().regex(/^\d{0,5}$/, "총 참가 인원은 숫자로 적으세요."),
   roles: z.array(z.object({ part: shortText(60), who: shortText(60) })).min(1).max(10),
   trainingNote: shortText(300),

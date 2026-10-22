@@ -149,7 +149,7 @@ function tableXml(t: LTable, H: Header, tid: number): string {
           )
           .join("");
         return (
-          `<hp:tc name="" header="0" hasMargin="1" protect="0" editable="0" dirty="0" borderFillIDRef="${bf}">` +
+          `<hp:tc name="" header="${c.r < (t.headerRows ?? 0) ? 1 : 0}" hasMargin="1" protect="0" editable="0" dirty="0" borderFillIDRef="${bf}">` +
           `<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="${c.valign === "T" ? "TOP" : "CENTER"}" ` +
           'linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">' +
           `${paras}</hp:subList>` +
@@ -162,7 +162,7 @@ function tableXml(t: LTable, H: Header, tid: number): string {
   const tblBf = H.border("tbl", null, null);
   return (
     `<hp:tbl id="${tid}" zOrder="${tid % 1000}" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" ` +
-    `dropcapstyle="None" pageBreak="CELL" repeatHeader="0" rowCnt="${nrow}" colCnt="${ncol}" cellSpacing="0" borderFillIDRef="${tblBf}" noAdjust="0">` +
+    `dropcapstyle="None" pageBreak="CELL" repeatHeader="${t.headerRows ? 1 : 0}" rowCnt="${nrow}" colCnt="${ncol}" cellSpacing="0" borderFillIDRef="${tblBf}" noAdjust="0">` +
     `<hp:sz width="${cols.reduce((a, b) => a + b, 0)}" widthRelTo="ABSOLUTE" height="${rows.reduce((a, b) => a + b, 0)}" heightRelTo="ABSOLUTE" protect="0"/>` +
     '<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" ' +
     'vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>' +
@@ -194,11 +194,13 @@ export function buildDrillLogHwpx(doc: DrillDoc, opts: HwpxOptions = {}): Buffer
   const cpSubN = H.char("sub_n", SIZE.cell);
   const cpFoot = H.char("foot", SIZE.foot);
   const ppTitle = H.para("title", "CENTER", 120, 0, hu(4));
+  // 간격: 붙임 제목 → 부제 1.5mm, 부제 → 표 2mm, 표 → 주석 1.5mm(주석 줄 사이는 0)
   const ppAppTitle = H.para("app_title", "LEFT", 120, 0, hu(1.5));
   const ppSubR = H.para("sub_r", "RIGHT", 120, 0, hu(1.5));
-  const ppSubL = H.para("sub_l", "LEFT", 120, 0, hu(1.5));
+  const ppSubL = H.para("sub_l2", "LEFT", 120, 0, hu(2));
   const ppTbl = H.para("tblwrap", "LEFT", 100);
   const ppFoot = H.para("foot", "LEFT", 130, hu(1.5), 0);
+  const ppFootN = H.para("foot_n", "LEFT", 130, 0, 0);
 
   // 첫 문단: 쪽 설정(secPr) + 첫 쪽 제목. 쪽 번호 없음, 여백 = 배치 정의
   const first = secTpl.slice(secTpl.indexOf("<hp:p "), secTpl.indexOf("</hp:p>") + "</hp:p>".length);
@@ -231,7 +233,7 @@ export function buildDrillLogHwpx(doc: DrillDoc, opts: HwpxOptions = {}): Buffer
       `<hp:p id="0" paraPrIDRef="${ppTbl}" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">` +
         `<hp:run charPrIDRef="${cpSubN}">${tableXml(pg.table, H, 1990000001 + i)}<hp:t/></hp:run></hp:p>`,
     );
-    if (pg.footnote) body.push(p(ppFoot, cpFoot, pg.footnote));
+    if (pg.footnote) pg.footnote.split("\n").forEach((line, k) => body.push(p(k === 0 ? ppFoot : ppFootN, cpFoot, line)));
   });
 
   const section = secTpl.slice(0, secTpl.indexOf("<hp:p ")) + body.join("") + "</hs:sec>";

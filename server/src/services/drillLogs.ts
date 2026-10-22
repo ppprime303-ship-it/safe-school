@@ -6,7 +6,8 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { AppError, conflict, isUniqueViolation, notFound } from "../errors.js";
 import { writeAudit } from "./audit.js";
-import { DISASTER_TYPES } from "../../../shared/constants.js";
+import { DISASTER_TYPES, MEMBER_ROLES } from "../../../shared/constants.js";
+import { DUTY_LABEL, type StaffDuty } from "../../../shared/permissions.js";
 import {
   DRILL_FORM_KEY,
   DRILL_FORM_VERSION,
@@ -109,6 +110,35 @@ export async function listDrillTargets(db: Db, schoolId: string) {
         : null,
     })),
   };
+}
+
+/**
+ * 역할 담당자 고르기용 교직원 목록(STEP 3-D UI 개선): 같은 학교의 승인된·활성 계정의 이름과 직책·업무·담임 학급만.
+ * 이메일·연락처·계정 정보는 돌려주지 않습니다. 권한 검사(drilllog.edit)는 라우터에서 합니다.
+ */
+export async function listDrillStaff(db: Db, schoolId: string) {
+  const year = kstYear(new Date());
+  const rows = await db.schoolMembership.findMany({
+    where: { schoolId, status: "approved", user: { status: "active" } },
+    select: {
+      id: true,
+      role: true,
+      user: { select: { displayName: true } },
+      duties: { where: { endedAt: null }, select: { duty: true, isActing: true } },
+      assignments: { where: { duty: "homeroom", schoolClass: { schoolYear: year, active: true } }, select: { schoolClass: { select: { label: true } } } },
+    },
+  });
+  const staff = rows
+    .map((m: any) => ({
+      id: m.id as string,
+      name: ((m.user?.displayName ?? "") as string).trim(),
+      roleLabel: (MEMBER_ROLES as Record<string, string>)[m.role] ?? "",
+      duties: m.duties.map((d: { duty: StaffDuty; isActing: boolean }) => `${DUTY_LABEL[d.duty] ?? d.duty}${d.isActing ? "(직무대리)" : ""}`),
+      classes: m.assignments.map((a: any) => a.schoolClass.label as string),
+    }))
+    .filter((m) => m.name)
+    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  return { staff };
 }
 
 function guardError(error: unknown): never {
@@ -269,8 +299,11 @@ export async function exportDrillLogHwpx(prisma: PrismaClient, params: { schoolI
   let buf: Buffer;
   try {
     const doc = buildDrillDoc(snap, manual);
-    const errs = checkDoc(doc);
+    // 칸 구조 오류만 막습니다. 높이 초과(역할·평가를 최대로 늘린 경우)는 한글에서 다음 쪽으로 이어지므로 내려받기를 막지 않음
+    const errs = checkDoc(doc, { height: false });
     if (errs.length) throw new Error(errs.join("; "));
+    const tall = checkDoc(doc).filter((e) => e.includes("높이"));
+    if (tall.length) console.warn("[drilllog] 쪽 높이 초과(다음 쪽으로 이어짐)", tall.join("; "));
     buf = buildDrillLogHwpx(doc);
   } catch (e) {
     console.error("[drilllog] 문서 생성 실패", e instanceof Error ? e.message : e);

@@ -4,7 +4,8 @@
 //
 // 자동작성 데이터 정책
 // 1. 미보고 학급은 0명이 아니라 '미보고'  2. 재적과 대피 확인을 다른 칸에  3. 학급당 최신 보고 1건만(중복 집계 없음)
-// 4. 보고 시각 ≠ 대피 완료 시각(소요 시간 자동 계산 안 함)  5. 총 참가 인원은 담당자 입력값만
+// 4. 보고 시각 ≠ 대피 완료 시각(대피 소요 시간 자동 계산 안 함 — 일시의 '총 시간'은 발령~종료 기록, 초 단위)
+// 5. 총 참가 인원은 담당자 직접 입력값, 또는 교직원·학생 참가 인원(담당자 입력)이 모두 있을 때만 그 합. 미확인 값은 0으로 채우지 않음
 // 6. 기록되지 않은 조치를 쓰지 않음  7. 모의훈련/실제 구분 표시
 // 8. 원본 대피 보고는 이 문서에서 바꾸지 않음  9. 자동작성 당시 기록(스냅숏)과 이후 바뀐 기록을 구분해 알림
 
@@ -52,8 +53,9 @@ export interface DrillSnapshot {
 export type OX = "" | "O" | "X";
 export interface DrillManual {
   staffCount: string; // 교직원 참가 인원(숫자 문자열, 비우면 미입력)
-  totalCount: string; // 총 참가 인원(담당자 확인값만)
-  roles: { part: string; who: string }[];
+  studentCount: string; // 실제 참가 학생 수(담당자 확인값, 비우면 미입력) — 시스템 '대피 확인' 합계와 다른 값. 이전 저장본에는 없음(빈칸으로 읽음)
+  totalCount: string; // 총 참가 인원 직접 입력(비우면 교직원+학생 참가가 모두 있을 때 자동 합)
+  roles: { part: string; who: string }[]; // who: 교직원 명단에서 고른 이름을 ', '로 잇거나 직접 입력(외부 인력) — 자유 문자열
   trainingNote: string; // 훈련 내용 보충 설명
   evacPlaceText: string; // 비우면 자동 문장(기록된 대피 장소) 사용
   durationText: string; // 실제 대피 소요 시간(측정값)
@@ -74,6 +76,7 @@ export const DEFAULT_EVALS = ["대피의 신속성", "대피경로의 효율성"
 export function defaultManual(): DrillManual {
   return {
     staffCount: "",
+    studentCount: "",
     totalCount: "",
     roles: DEFAULT_ROLES.map((r) => ({ ...r })),
     trainingNote: "",
@@ -102,23 +105,65 @@ export function summarizeClasses(classes: DrillClassSnap[]) {
   };
 }
 
+const toCount = (v: string | undefined): number | null => (v && /^\d+$/.test(v.trim()) ? Number(v.trim()) : null);
+
+/** 참가 인원: 교직원·학생 참가는 담당자 입력, 학생 대피 확인은 시스템(보고 학급만), 총 참가는 확인된 값만으로 */
+export function participantCounts(snap: DrillSnapshot, manual: DrillManual) {
+  const sum = summarizeClasses(snap.classes);
+  const staff = toCount(manual.staffCount);
+  const student = toCount(manual.studentCount);
+  const totalManual = toCount(manual.totalCount);
+  const totalAuto = staff !== null && student !== null ? staff + student : null;
+  const missing = [staff === null ? "교직원" : "", student === null ? "학생 참가" : ""].filter(Boolean); // '…인원'을 붙여 씀
+  return {
+    staff,
+    student,
+    evacuated: sum.reportedCount > 0 ? sum.evacuated : null, // 보고가 하나도 없으면 0이 아니라 '보고 없음'
+    evacComplete: sum.reportedCount > 0 && sum.unreported.length === 0,
+    reportedCount: sum.reportedCount,
+    classCount: sum.total,
+    unreported: sum.unreported,
+    unconfirmed: sum.unconfirmed,
+    totalAuto,
+    total: totalManual ?? totalAuto,
+    totalSource: (totalManual !== null ? "manual" : totalAuto !== null ? "auto" : "none") as "manual" | "auto" | "none",
+    missing,
+  };
+}
+
+const listLabels = (labels: string[], max = 5) => (labels.length > max ? `${labels.slice(0, max).join(", ")} 외 ${labels.length - max}개` : labels.join(", "));
+
 const WD = "일월화수목금토";
 function kst(iso: string) {
   const d = new Date(new Date(iso).getTime() + 9 * 3600 * 1000);
-  return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate(), w: WD[d.getUTCDay()], h: d.getUTCHours(), mi: d.getUTCMinutes() };
+  return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate(), w: WD[d.getUTCDay()], h: d.getUTCHours(), mi: d.getUTCMinutes(), s: d.getUTCSeconds() };
 }
-const hhmm = (t: { h: number; mi: number }) => `${String(t.h).padStart(2, "0")}:${String(t.mi).padStart(2, "0")}`;
+const p2 = (n: number) => String(n).padStart(2, "0");
+const hhmm = (t: { h: number; mi: number }) => `${p2(t.h)}:${p2(t.mi)}`;
+const hhmmss = (t: { h: number; mi: number; s: number }) => `${p2(t.h)}:${p2(t.mi)}:${p2(t.s)}`;
+
+/** 발령~종료 경과(초). 표시하는 시각과 맞도록 두 시각을 각각 초 단위로 버린 뒤 뺍니다(1초 미만 버림, 반올림·올림 없음). */
+export function elapsedSeconds(startIso: string, endIso: string): number {
+  return Math.max(0, Math.floor(new Date(endIso).getTime() / 1000) - Math.floor(new Date(startIso).getTime() / 1000));
+}
+export function durationLabel(sec: number): string {
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return h > 0 ? `${h}시간 ${m}분 ${s}초` : m > 0 ? `${m}분 ${s}초` : `${s}초`;
+}
+export const TIME_BASIS_NOTE = "일시의 총 시간은 훈련 발령~종료 기록을 초 단위로 계산한 값(1초 미만 버림, 반올림 없음)으로, 대피 소요 시간이나 보고 저장 시각과 다릅니다.";
+const TIME_BASIS_SHORT = "총 시간: 발령~종료 기록을 초 단위로 계산(1초 미만 버림·반올림 없음), 대피 소요 시간 아님.";
 
 export function whenText(ev: DrillSnapshot["event"]): string {
   const a = kst(ev.startedAt);
-  let s = `${a.y}. ${a.m}. ${a.d}.(${a.w}) ${hhmm(a)}`;
-  if (ev.closedAt) {
-    const b = kst(ev.closedAt);
-    const mins = Math.round((new Date(ev.closedAt).getTime() - new Date(ev.startedAt).getTime()) / 60000);
-    s += ` ~ ${hhmm(b)} (총 ${mins}분)`;
-  } else s += " ~ (종료 전)";
+  let s = `${a.y}. ${a.m}. ${a.d}.(${a.w}) ${hhmmss(a)}`;
+  if (ev.closedAt) s += ` ~ ${hhmmss(kst(ev.closedAt))} (총 ${durationLabel(elapsedSeconds(ev.startedAt, ev.closedAt))})`;
+  else s += " ~ (종료 전)";
   return s;
 }
+const dateText = (iso: string) => {
+  const a = kst(iso);
+  return `${a.y}. ${a.m}. ${a.d}.(${a.w})`;
+};
 
 /** '운동장' → '운동장으로', '학교 앞 놀이터' → '…놀이터로'(받침 없음·ㄹ 받침은 '로') */
 export function particleRo(word: string): string {
@@ -156,25 +201,36 @@ export interface LTable {
   colPct: number[];
   rowsMm: number[];
   cells: LCell[];
+  headerRows?: number; // 쪽이 넘어갈 때 반복할 머리글 행 수(붙임 표)
 }
 export interface LPage {
   title: string;
   titleKind: "main" | "appendix";
   subtitle: string;
   table: LTable;
-  footnote?: string;
+  footnote?: string; // 여러 줄이면 '\n'으로 구분(HWPX에서는 줄마다 문단)
 }
 export interface DrillDoc {
   pages: LPage[];
 }
 
 export const PAGE = { w: 210, h: 297, margin: { left: 15, right: 15, top: 12, bottom: 12 } };
-export const TABLE_W = PAGE.w - PAGE.margin.left - PAGE.margin.right; // 180mm
+export const TABLE_W = PAGE.w - PAGE.margin.left - PAGE.margin.right - 1; // 179mm — 바깥 테두리 두께 때문에 본문 폭(180mm)보다 1mm 좁게
 export const USABLE_H = PAGE.h - PAGE.margin.top - PAGE.margin.bottom; // 273mm
 export const MAIN_COLS = [17.0, 15.0, 12.67, 13.0, 14.67, 13.0, 14.66];
 export const APPX_COLS = [15.0, 10.0, 14.0, 13.0, 11.0, 9.0, 28.0];
 export const ROW_H = 7.4;
-export const APPX_ROWS_PER_PAGE = 32; // 머리글 1행 + 학급 32행(+마지막 쪽 합계 1행) ≈ 252mm
+export const APPX_ROWS_PER_PAGE = 30; // 머리글 1행 + 학급 30행(+마지막 쪽 합계 1행) ≈ 237mm — 한글에서 글꼴 차이로 행이 조금 늘어도 쪽 안에 들어가게 여유
+export const PHOTO_MIN = 24; // 본문이 길어지면 사진 칸을 이 높이까지 줄임
+export const IMPROVE_MIN = 22;
+/** 제목·부제 높이(mm) */
+export const PAGE_HEAD_H = { main: 21, appendix: 14 } as const;
+/** 주석 높이 추정(9pt 한글 ≈ 3.2mm 폭 → 한 줄 약 56자, 줄 간격 130% ≈ 4.2mm) + 표와의 간격 1.5mm */
+export function footnoteHeight(text?: string): number {
+  if (!text) return 0;
+  const width = (line: string) => [...line].reduce((w, ch) => w + (ch.charCodeAt(0) < 0x2000 ? 0.55 : 1), 0); // 영문·숫자·공백은 약 반 폭
+  return 1.5 + text.split("\n").reduce((n, line) => n + Math.max(1, Math.ceil(width(line) / 56)), 0) * 4.2;
+}
 
 class TB {
   rowsMm: number[] = [];
@@ -205,12 +261,22 @@ export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDo
   t.put(r, 0, "일    시", LBL);
   t.put(r, 1, `${whenText(ev)}   [${mode}]`, { cs: 6, align: "L" });
 
-  r = t.row(8.5);
-  t.put(r, 0, "참가인원", LBL);
-  const staff = manual.staffCount.trim() ? manual.staffCount.trim() : "        ";
-  const stu = `학생 대피 확인 ${sum.evacuated}명` + (sum.unreported.length ? ` (미보고 ${sum.unreported.length}개 학급 제외)` : "");
-  t.put(r, 1, `교직원 ( ${staff} )명  /  ${stu}`, { cs: 4, align: "L" });
-  t.put(r, 5, `총 ( ${manual.totalCount.trim() ? manual.totalCount.trim() : "          "} )명`, { cs: 2 });
+  // 참가 인원: 머리글 행 + 값 행(교직원 / 학생 참가 / 학생 대피 확인 / 총 참가). 미확인 값은 빈 괄호, 설명은 표 아래 주석
+  const pc = participantCounts(snap, manual);
+  const BLANK = "(        )명";
+  const HEAD = { kind: "head" as const, bold: true };
+  r = t.row(ROW_H);
+  t.put(r, 0, "참가인원", { ...LBL, rs: 2 });
+  t.put(r, 1, "교직원", HEAD);
+  t.put(r, 2, "학생 참가", { ...HEAD, cs: 2 });
+  t.put(r, 4, "학생 대피 확인", { ...HEAD, cs: 2 });
+  t.put(r, 6, "총 참가", HEAD);
+  r = t.row(ROW_H);
+  const evacMark = pc.unreported.length > 0 || pc.unconfirmed > 0 ? " ※" : "";
+  t.put(r, 1, pc.staff !== null ? `${pc.staff}명` : BLANK);
+  t.put(r, 2, pc.student !== null ? `${pc.student}명` : BLANK, { cs: 2 });
+  t.put(r, 4, pc.evacuated === null ? "보고 없음 ※" : `${pc.evacuated}명${evacMark}`, { cs: 2 });
+  t.put(r, 6, pc.total !== null ? `${pc.total}명` : BLANK, { bold: pc.total !== null });
 
   const roles = manual.roles.length ? manual.roles : DEFAULT_ROLES;
   r = t.row(ROW_H);
@@ -251,16 +317,39 @@ export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDo
     t.put(rr, 5, clean(e.note, 80), { cs: 2, align: "L" });
   }
 
-  r = t.row(30.0);
-  t.put(r, 0, "추후 대피훈련 시\n반영사항", LBL);
-  t.put(r, 1, clean(manual.improvements, 1000), { cs: 6, align: "L", valign: "T" });
+  const improveRow = t.row(30.0);
+  t.put(improveRow, 0, "추후 대피훈련 시\n반영사항", LBL);
+  t.put(improveRow, 1, clean(manual.improvements, 1000), { cs: 6, align: "L", valign: "T" });
 
-  r = t.row(40.0);
-  t.put(r, 0, "사    진", LBL);
-  for (const c0 of [1, 3, 5]) t.put(r, c0, "", { cs: 2 });
+  const photoRow = t.row(40.0);
+  t.put(photoRow, 0, "사    진", LBL);
+  for (const c0 of [1, 3, 5]) t.put(photoRow, c0, "", { cs: 2 });
+
+  // 표 아래 주석: 미보고·미확인·총인원 미확정·시간 계산 기준(표 칸 안에서 줄바꿈되지 않게 분리)
+  const notes: string[] = [];
+  // 한 줄(약 56자) 안팎으로 짧게 — 길어지면 사진 칸이 줄어듦
+  if (pc.evacuated === null) notes.push(pc.classCount ? `※ 학생 대피 확인: 학급 대피 보고 없음(${pc.classCount}학급 미보고, 0명으로 적지 않음).` : "※ 학생 대피 확인: 등록된 학급 없음.");
+  else if (pc.unreported.length || pc.unconfirmed) {
+    const parts = [`보고 ${pc.reportedCount}/${pc.classCount}학급 합계`];
+    if (pc.unreported.length) parts.push(`미보고 ${pc.unreported.length}학급 제외(${listLabels(pc.unreported, 3)})`);
+    if (pc.unconfirmed) parts.push(`소재 미확인 ${pc.unconfirmed}명 별도`);
+    notes.push(`※ 학생 대피 확인: ${parts.join(", ")}.`);
+  }
+  if (pc.totalSource === "none") notes.push(`※ 총 참가: ${pc.missing.join("·")} 인원 확인 후 기입(미확인 값을 0으로 채우지 않음).`);
+  else if (pc.totalSource === "auto") notes.push("※ 총 참가 = 교직원 + 학생 참가(담당자 확인 값의 합).");
+  if (ev.closedAt) notes.push(`※ ${TIME_BASIS_SHORT}`);
+  notes.push("붙임  학급별 대피 현황 1부.");
+  const footnote = notes.join("\n");
+
+  // 쪽 높이를 넘으면 사진 칸(30mm까지) → 반영사항 칸(22mm까지) → 사진 칸(24mm까지) 순서로 줄임(그래도 넘으면 한글에서 다음 쪽으로 이어짐)
+  const over = () => PAGE_HEAD_H.main + t.rowsMm.reduce((a, b) => a + b, 0) + footnoteHeight(footnote) - USABLE_H;
+  for (const [row, min] of [[photoRow, 30], [improveRow, IMPROVE_MIN], [photoRow, PHOTO_MIN]] as const) {
+    const o = over();
+    if (o > 0) t.rowsMm[row] = Math.max(min, t.rowsMm[row]! - Math.ceil(o * 10) / 10);
+  }
 
   const pages: LPage[] = [
-    { title: docTitle(snap), titleKind: "main", subtitle: snap.schoolName, table: { colPct: MAIN_COLS, rowsMm: t.rowsMm, cells: t.cells }, footnote: "붙임  학급별 대피 현황 1부." },
+    { title: docTitle(snap), titleKind: "main", subtitle: snap.schoolName, table: { colPct: MAIN_COLS, rowsMm: t.rowsMm, cells: t.cells }, footnote },
   ];
 
   // 붙임: 학급별 대피 현황(학급 수에 따라 쪽 늘림)
@@ -298,12 +387,16 @@ export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDo
       a.put(tr, 6, `보고 ${sum.reportedCount} / 전체 ${sum.total}학급${sum.unreported.length ? " (미보고 제외 합계)" : ""}`, { align: "L", bold: true });
     }
     const pageNo = chunks.length > 1 ? ` (${pi + 1}/${chunks.length})` : "";
+    const last = pi === chunks.length - 1;
     pages.push({
       title: `붙임. 학급별 대피 현황${pageNo}`,
       titleKind: "appendix",
-      subtitle: `${snap.schoolName} · ${whenText(ev)} [${mode}] · 시스템 대피 보고 기준(기록 시점 ${kstStamp(snap.takenAt)})`,
-      table: { colPct: APPX_COLS, rowsMm: a.rowsMm, cells: a.cells },
-      footnote: "보고 시각은 담임교사가 보고를 저장한 시각이며 실제 대피 완료 시각이 아닙니다. 미보고 학급은 합계에 넣지 않았습니다.",
+      // 부제는 한 줄로(학교명 · 훈련일 · 구분 · 기록 시점) — 줄바꿈으로 제목과 표 사이가 벌어지지 않게
+      subtitle: `${snap.schoolName} · ${dateText(ev.startedAt)} ${mode} · 시스템 대피 보고 기준(기록 시점 ${kstStamp(snap.takenAt)})`,
+      table: { colPct: APPX_COLS, rowsMm: a.rowsMm, cells: a.cells, headerRows: 1 },
+      footnote: last
+        ? "※ 미보고 학급은 0명이 아니라 '—'로 표시하고 합계에 넣지 않았습니다. 재적·사전 파악 부재·대피 확인·미확인·부상은 담임교사 보고값입니다.\n※ 보고 시각은 담임교사가 보고를 저장한 시각이며 실제 대피 완료 시각이 아닙니다."
+        : "※ 다음 쪽에 이어집니다.",
     });
   });
   return { pages };
@@ -315,7 +408,7 @@ function kstStamp(iso: string) {
 }
 
 /** 배치 검사: 칸이 빈틈·겹침 없이 채워지는지, 쪽 높이 안인지 */
-export function checkDoc(doc: DrillDoc): string[] {
+export function checkDoc(doc: DrillDoc, opts: { height?: boolean } = {}): string[] {
   const errs: string[] = [];
   doc.pages.forEach((p, pi) => {
     const nc = p.table.colPct.length;
@@ -328,9 +421,8 @@ export function checkDoc(doc: DrillDoc): string[] {
         }
     }
     grid.forEach((row, r) => row.forEach((n: number, k: number) => n !== 1 && errs.push(`쪽 ${pi + 1}: 칸 (${r},${k}) ${n}회`)));
-    const head = p.titleKind === "main" ? 21 : 14;
-    const h = head + p.table.rowsMm.reduce((a, b) => a + b, 0) + (p.footnote ? 6 : 0);
-    if (h > USABLE_H) errs.push(`쪽 ${pi + 1}: 높이 ${h.toFixed(1)}mm > ${USABLE_H}mm`);
+    const h = PAGE_HEAD_H[p.titleKind] + p.table.rowsMm.reduce((a, b) => a + b, 0) + footnoteHeight(p.footnote);
+    if (opts.height !== false && h > USABLE_H) errs.push(`쪽 ${pi + 1}: 높이 ${h.toFixed(1)}mm > ${USABLE_H}mm`);
     if (Math.abs(p.table.colPct.reduce((a, b) => a + b, 0) - 100) > 0.05) errs.push(`쪽 ${pi + 1}: 열 너비 합`);
   });
   return errs;
