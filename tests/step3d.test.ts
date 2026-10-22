@@ -37,7 +37,7 @@ let c21 = "";
 
 async function person(key: string, schoolId: string, role: "admin" | "homeroom" | "staff", status: "approved" | "pending" = "approved") {
   const now = new Date();
-  U[key] = (await prisma.user.create({ data: { email: `${key}@d.kr`, displayName: key, emailVerifiedAt: now } })).id;
+  U[key] = (await prisma.user.create({ data: { email: `${key.toLowerCase()}@d.kr`, displayName: key, emailVerifiedAt: now } })).id;
   M[key] = (
     await prisma.schoolMembership.create({
       data: { schoolId, userId: U[key], role, status, ...(status === "approved" ? { approvalMethod: "roster" as const, approvedAt: now } : {}) },

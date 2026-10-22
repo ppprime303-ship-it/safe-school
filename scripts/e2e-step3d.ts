@@ -82,7 +82,7 @@ async function main() {
   const Bs = await prisma.school.create({ data: { name: "훈련일지B초등학교", slug: "e2e3d-b", status: "active", activatedAt: now } });
   const mem: Record<string, string> = {};
   const person = async (key: string, schoolId: string, role: "admin" | "homeroom" | "staff") => {
-    const u = await prisma.user.create({ data: { email: `${key}@e2e3d.test`, displayName: key, passwordHash: hash, emailVerifiedAt: now } });
+    const u = await prisma.user.create({ data: { email: `${key.toLowerCase()}@e2e3d.test`, displayName: key, passwordHash: hash, emailVerifiedAt: now } });
     mem[key] = (await prisma.schoolMembership.create({ data: { schoolId, userId: u.id, role, status: "approved", approvalMethod: "roster", approvedAt: now } })).id;
   };
   for (const [k, r] of [["admin", "admin"], ["principal", "staff"], ["vice1", "staff"], ["vice2", "staff"], ["safety1", "staff"], ["safety2", "homeroom"], ["operator", "staff"], ["teacher", "homeroom"], ["staff", "staff"]] as const) {
