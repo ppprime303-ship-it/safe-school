@@ -1,7 +1,11 @@
 // STEP 3-D 비상대피훈련일지 편집
 // 화면 순서: 제목·작성 상태 → 원본 기록 변경 알림 → 시스템 기록(자동, 읽기 전용) → 담당자 입력 → 저장하기(작성 상태 함께) → 미리보기·내려받기 → 수정 이력
 // - 시스템 기록(학급별 대피 보고)은 여기서 고치지 않습니다. 원본이 바뀌면 알리고, '다시 불러오기'를 골라야만 반영(판 +1)
-// - 평가 O/X·비고·반영사항·소요 시간·교직원 인원은 담당자가 입력(자동 평가 없음)
+// - 평가 O/X·비고·반영사항·소요 시간·교직원/학생 참가 인원은 담당자가 입력(자동 평가 없음)
+// - 학생 대피 확인 수는 시스템(보고 학급 합)으로 표시, 미보고는 0이 아니라 '미보고'. 총 참가는 확인된 값만으로(shared/drillLog participantCounts)
+// - 역할 담당자는 교직원 명단에서 고르거나(여러 명) 직접 입력 — 저장 형식은 기존과 같은 문자열
+// - 입력한 문장(대피 장소 등)은 자동으로 고치지 않음. 오탈자 의심만 안내
+// - PC(lg 이상)는 넓게: 참가 인원 4칸, 역할 한 줄 배치, 평가 2열. 모바일은 1열
 // - '작성 완료'는 앱 안 문서 상태일 뿐 결재·보고 완료가 아님
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, describeError } from "../../lib/api";
@@ -11,8 +15,9 @@ import { AppShell } from "../../components/layout/AppShell";
 import { ErrorState, LoadingState } from "../../components/ui/States";
 import { PrimaryButton } from "../../components/ui/PrimaryButton";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { autoEvacSentence, buildDrillDoc, summarizeClasses, whenText, type DrillManual, type DrillSnapshot, type OX } from "@shared/drillLog";
+import { TIME_BASIS_NOTE, autoEvacSentence, buildDrillDoc, defaultManual, participantCounts, summarizeClasses, whenText, type DrillManual, type DrillSnapshot, type OX } from "@shared/drillLog";
 import { DrillDocPreview } from "./DrillDocPreview";
+import { StaffPicker, WHO_MAX, type StaffEntry } from "./StaffPicker";
 
 interface Detail {
   log: { id: string; eventId: string; status: "draft" | "completed"; version: number; autoTakenAt: string; createdByName: string | null; updatedByName: string | null; updatedAt: string };
@@ -24,6 +29,7 @@ interface Detail {
 }
 
 const input = "mt-1 block min-h-touch w-full rounded-control border-2 border-line-strong bg-card px-3 text-lg";
+const hint = "mt-1 block text-sm font-normal text-ink-muted";
 
 export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logId: string }) {
   const [d, setD] = useState<Detail | null>(null);
@@ -36,12 +42,25 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
   const [refreshAsk, setRefreshAsk] = useState(false);
   const [preview, setPreview] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [dlMsg, setDlMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pickFor, setPickFor] = useState<number | null>(null);
+  const [staff, setStaff] = useState<StaffEntry[] | null>(null);
+  const [staffErr, setStaffErr] = useState<string | null>(null);
+
+  const openPicker = (i: number) => {
+    setPickFor(i);
+    if (staff || staffErr) return;
+    api<{ staff: StaffEntry[] }>("GET", `/schools/${schoolId}/drill-log-staff`)
+      .then((r) => setStaff(r.staff))
+      .catch((e) => setStaffErr(`명단을 불러오지 못했습니다(${describeError(e).message}). 입력칸에 직접 적으세요.`));
+  };
 
   const load = useCallback(async () => {
     try {
       const r = await api<Detail>("GET", `/schools/${schoolId}/drill-logs/${logId}`);
-      setD(r);
-      setManual(r.manual);
+      const m = { ...defaultManual(), ...r.manual }; // 이전 저장본에 없는 항목(학생 참가 등)은 빈칸으로
+      setD({ ...r, manual: m });
+      setManual(m);
       setStatus(r.log.status);
       setErr(null);
     } catch (e) {
@@ -93,7 +112,7 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
 
   const download = async () => {
     setDownloading(true);
-    setMsg(null);
+    setDlMsg(null);
     try {
       const res = await fetch(`/api/schools/${schoolId}/drill-logs/${logId}/export.hwpx`, { credentials: "same-origin", headers: { "X-Requested-With": "safe-school" } });
       if (!res.ok) {
@@ -110,9 +129,9 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 2000);
-      setMsg({ ok: true, text: `${name} 내려받기${dirty ? " — 저장하지 않은 변경은 들어가지 않았습니다(저장된 판 기준)" : ""}.` });
+      setDlMsg({ ok: true, text: `${name} 내려받기(판 ${d?.log.version ?? "-"})${dirty ? " — 저장하지 않은 변경은 들어가지 않았습니다" : ""}.` });
     } catch (e) {
-      setMsg({ ok: false, text: describeError(e).message });
+      setDlMsg({ ok: false, text: describeError(e).message });
     } finally {
       setDownloading(false);
     }
@@ -125,10 +144,14 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
   const sum = summarizeClasses(s.classes);
   const ro = !d.canEdit;
   const autoPlace = autoEvacSentence(s.event);
+  const pc = participantCounts(s, manual);
+  const recordedPlace = s.event.evacPlace?.trim() ?? "";
+  const placeTypo = !!recordedPlace && !!manual.evacPlaceText.trim() && !manual.evacPlaceText.includes(recordedPlace);
+  const unsavedForExport = dirty;
 
   return (
     <AppShell title="훈련일지" schoolId={schoolId}>
-      <div className="mx-auto max-w-3xl space-y-4 print:max-w-none">
+      <div className="mx-auto max-w-3xl space-y-4 text-base leading-relaxed lg:max-w-6xl print:max-w-none">
         <nav className="flex flex-wrap gap-3 text-base font-bold print:hidden">
           <Link href={`/s/${schoolId}/drill-logs`} className="text-accent underline underline-offset-4">훈련일지 목록</Link>
         </nav>
@@ -164,8 +187,8 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
         {/* 3. 시스템 기록 */}
         <section className="rounded-card border border-line bg-card p-4 shadow-card print:hidden" aria-labelledby="auto-title">
           <h2 id="auto-title" className="text-lg font-bold">시스템 기록(자동 반영 · 여기서 고치지 않음)</h2>
-          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-base">
-            <dt className="font-semibold text-ink-muted">일시</dt><dd>{whenText(s.event)} · 발령 {s.event.issuedByName ?? "-"} · 종료 {s.event.closedByName ?? "-"}</dd>
+          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-base">
+            <dt className="font-semibold text-ink-muted">일시</dt><dd>{whenText(s.event)} · 발령 {s.event.issuedByName ?? "-"} · 종료 {s.event.closedByName ?? "-"}<span className="block text-sm text-ink-muted">{TIME_BASIS_NOTE}</span></dd>
             <dt className="font-semibold text-ink-muted">대피 장소 기록</dt><dd>{s.event.evacPlace ?? "기록 없음(직접 입력)"}</dd>
             <dt className="font-semibold text-ink-muted">학급 보고</dt>
             <dd>
@@ -180,22 +203,61 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
         <section className="rounded-card border-2 border-warning bg-card p-4 shadow-card print:hidden" aria-labelledby="manual-title">
           <h2 id="manual-title" className="text-lg font-bold">담당자 확인·입력</h2>
           <fieldset disabled={ro} className="mt-2 space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block font-bold">교직원 참가 인원(명)
-                <input className={input} inputMode="numeric" value={manual.staffCount} onChange={(e) => set("staffCount", e.target.value.replace(/[^\d]/g, "").slice(0, 4))} placeholder="확인 후 입력" />
-              </label>
-              <label className="block font-bold">총 참가 인원(명)
-                <input className={input} inputMode="numeric" value={manual.totalCount} onChange={(e) => set("totalCount", e.target.value.replace(/[^\d]/g, "").slice(0, 5))} placeholder="자동 합산하지 않음" />
-              </label>
+            <div>
+              <p className="font-bold">참가 인원</p>
+              <div className="mt-1 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label className="block font-bold">교직원 참가(명)
+                  <input className={input} inputMode="numeric" value={manual.staffCount} onChange={(e) => set("staffCount", e.target.value.replace(/[^\d]/g, "").slice(0, 4))} placeholder="확인 후 입력" />
+                  <span className={hint}>담당자가 확인해 입력합니다.</span>
+                </label>
+                <label className="block font-bold">학생 참가(명)
+                  <input className={input} inputMode="numeric" value={manual.studentCount} onChange={(e) => set("studentCount", e.target.value.replace(/[^\d]/g, "").slice(0, 5))} placeholder="실제 참가 학생 수" />
+                  <span className={hint}>실제 훈련에 참가한 학생 수(시스템 대피 확인 수와 별개).</span>
+                  {!ro && !manual.studentCount && pc.evacComplete && pc.unconfirmed === 0 && pc.evacuated !== null && (
+                    <button type="button" className="mt-1 min-h-touch rounded-control border-2 border-accent px-3 text-sm font-bold text-accent" onClick={() => set("studentCount", String(pc.evacuated))}>
+                      대피 확인 {pc.evacuated}명을 넣기(전 학급 보고됨)
+                    </button>
+                  )}
+                </label>
+                <div className="font-bold" aria-live="polite">학생 대피 확인(시스템)
+                  <p className="mt-1 flex min-h-touch items-center rounded-control border-2 border-dashed border-line-strong bg-page px-3 text-lg">
+                    {pc.evacuated === null ? "보고 없음" : `${pc.evacuated}명`}
+                  </p>
+                  <span className={hint}>
+                    {pc.evacuated === null ? "학급 대피 보고가 없어 0명으로 표시하지 않습니다." : `보고 ${pc.reportedCount}/${pc.classCount}개 학급 합계`}
+                    {pc.unreported.length > 0 && <strong className="block text-danger">미보고 {pc.unreported.length}개 학급은 합계에서 뺐습니다.</strong>}
+                    {pc.unconfirmed > 0 && <strong className="block text-warning-strong">소재 미확인 {pc.unconfirmed}명(별도).</strong>}
+                  </span>
+                </div>
+                <label className="block font-bold">총 참가(명)
+                  <input className={input} inputMode="numeric" value={manual.totalCount} onChange={(e) => set("totalCount", e.target.value.replace(/[^\d]/g, "").slice(0, 5))} placeholder={pc.totalAuto !== null ? `자동 ${pc.totalAuto}` : "확인 필요"} />
+                  <span className={hint}>
+                    {pc.totalSource === "auto" && `교직원 + 학생 참가 = ${pc.totalAuto}명(자동). 직접 입력하면 그 값을 씁니다.`}
+                    {pc.totalSource === "none" && `${pc.missing.join("·")} 인원을 입력하면 자동 계산합니다. 그 전에는 문서에 빈칸으로 둡니다.`}
+                    {pc.totalSource === "manual" && (pc.totalAuto !== null && pc.totalAuto !== pc.total
+                      ? <strong className="text-warning-strong">직접 입력값입니다. 교직원 + 학생 참가 합({pc.totalAuto}명)과 다릅니다 — 확인하세요.</strong>
+                      : "직접 입력값을 씁니다.")}
+                  </span>
+                </label>
+              </div>
             </div>
             <div>
               <p className="font-bold">역할 및 담당자</p>
-              <div className="mt-1 space-y-2">
+              <p className="text-sm text-ink-muted">'명단에서 선택'으로 우리 학교 교직원을 여러 명 고를 수 있습니다. 명단에 없는 사람(외부 인력)이나 "각 반 담임교사" 같은 표현은 직접 입력하세요.</p>
+              <div className="mt-2 space-y-3 lg:space-y-2">
+                <div className="hidden gap-2 px-1 text-sm font-bold text-ink-muted lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto_auto]" aria-hidden="true">
+                  <span>구분</span><span>담당자</span><span className="w-32" /><span className="min-w-touch" />
+                </div>
                 {manual.roles.map((r, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2">
-                    <input aria-label={`역할 ${i + 1}`} className={input} value={r.part} maxLength={60} onChange={(e) => set("roles", manual.roles.map((x, j) => (j === i ? { ...x, part: e.target.value } : x)))} />
-                    <input aria-label={`역할 ${i + 1} 담당자`} className={input} value={r.who} maxLength={60} placeholder="직책명 권장(실명 지양)" onChange={(e) => set("roles", manual.roles.map((x, j) => (j === i ? { ...x, who: e.target.value } : x)))} />
-                    <button type="button" aria-label={`역할 ${i + 1} 지우기`} disabled={manual.roles.length <= 1} onClick={() => set("roles", manual.roles.filter((_, j) => j !== i))} className="min-h-touch min-w-touch rounded-control border-2 border-line-strong px-2 font-bold disabled:opacity-40">−</button>
+                  <div key={i} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-control border border-line p-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto_auto] lg:border-0 lg:p-0">
+                    <input aria-label={`역할 ${i + 1}`} className={`${input} mt-0`} value={r.part} maxLength={60} onChange={(e) => set("roles", manual.roles.map((x, j) => (j === i ? { ...x, part: e.target.value } : x)))} />
+                    <button type="button" aria-label={`역할 ${i + 1} 지우기`} disabled={manual.roles.length <= 1} onClick={() => set("roles", manual.roles.filter((_, j) => j !== i))} className="min-h-touch min-w-touch rounded-control border-2 border-line-strong px-2 font-bold disabled:opacity-40 lg:order-last">−</button>
+                    <input aria-label={`역할 ${i + 1} 담당자`} className={`${input} col-span-2 mt-0 lg:col-span-1`} value={r.who} maxLength={WHO_MAX} placeholder="명단에서 선택 또는 직접 입력" onChange={(e) => set("roles", manual.roles.map((x, j) => (j === i ? { ...x, who: e.target.value } : x)))} />
+                    {!ro && (
+                      <button type="button" onClick={() => openPicker(i)} className="col-span-2 min-h-touch rounded-control border-2 border-brand px-3 font-bold text-brand lg:col-span-1 lg:w-32">
+                        명단에서 선택
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -206,14 +268,20 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
             </label>
             <label className="block font-bold">대피(집결) 장소 문장
               <input className={input} maxLength={200} value={manual.evacPlaceText} onChange={(e) => set("evacPlaceText", e.target.value)} placeholder={autoPlace || "기록된 대피 장소가 없습니다 — 직접 입력"} />
-              <span className="mt-0.5 block text-sm font-normal text-ink-muted">비워 두면 {autoPlace ? `'${autoPlace}'(기록 기준)` : "빈칸"}으로 들어갑니다.</span>
+              <span className={hint}>비워 두면 {autoPlace ? `'${autoPlace}'(기록 기준)` : "빈칸"}으로 들어갑니다. 입력한 문장은 고치지 않고 그대로 문서에 넣습니다.</span>
+              {placeTypo && (
+                <span role="note" className="mt-1 block rounded-control border-2 border-warning bg-warning-soft px-3 py-2 text-sm font-semibold text-warning-strong">
+                  문장에 기록된 대피 장소({recordedPlace})가 들어 있지 않습니다. 오탈자가 없는지 확인하세요(자동으로 고치지 않습니다).
+                </span>
+              )}
             </label>
-            <label className="block font-bold">대피 소요 시간(측정값)
+            <label className="block font-bold lg:max-w-xl">대피 소요 시간(측정값)
               <input className={input} maxLength={40} value={manual.durationText} onChange={(e) => set("durationText", e.target.value)} placeholder="예) 6분 51초 — 자동 계산하지 않음" />
+              <span className={hint}>측정한 대피 소요 시간을 그대로 적습니다. 일시의 '총 시간'(발령~종료)이나 학급 보고 저장 시각으로 계산하지 않습니다.</span>
             </label>
             <div>
               <p className="font-bold">평가(O/X는 담당자 판단)</p>
-              <div className="mt-1 space-y-2">
+              <div className="mt-1 grid gap-2 lg:grid-cols-2">
                 {manual.evals.map((ev, i) => (
                   <div key={i} className="rounded-control border border-line p-2">
                     <p className="font-semibold">▪ {ev.item}</p>
@@ -239,8 +307,10 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
           </fieldset>
         </section>
 
-        {/* 5. 저장·출력 */}
-        <section className="rounded-card border border-line bg-card p-4 shadow-card print:hidden">
+        {/* 5. 저장 */}
+        <section className="rounded-card border border-line bg-card p-4 shadow-card print:hidden" aria-labelledby="save-title">
+          <h2 id="save-title" className="text-lg font-bold">저장</h2>
+          {ro && <p className="mt-1 text-sm text-ink-muted">열람 전용입니다.</p>}
           {!ro && (
             <div className="rounded-control border-2 border-line bg-page p-3">
               <fieldset>
@@ -267,11 +337,22 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
               {msg.conflict && <PrimaryButton className="mt-2" variant="secondary" icon="refresh" onClick={() => void load()}>최신 내용 불러오기(화면의 입력은 사라짐)</PrimaryButton>}
             </div>
           )}
+        </section>
+
+        {/* 6. 문서 출력(저장과 구분) */}
+        <section className="rounded-card border-2 border-dashed border-line-strong bg-page p-4 print:hidden" aria-labelledby="out-title">
+          <h2 id="out-title" className="text-lg font-bold">문서 출력 <span className="text-base font-semibold text-ink-muted">· 저장된 판 {d.log.version} 기준</span></h2>
+          {unsavedForExport && <p role="note" className="mt-1 font-semibold text-warning-strong">저장하지 않은 변경은 한글 파일에 들어가지 않습니다. 먼저 '저장하기'를 누르세요.</p>}
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
             <PrimaryButton variant="secondary" icon="file" loading={downloading} loadingText="만드는 중…" onClick={() => void download()}>한글(HWPX) 내려받기</PrimaryButton>
             <PrimaryButton variant="secondary" onClick={() => setPreview((p) => !p)} aria-expanded={preview}>{preview ? "미리보기 닫기" : "미리보기"}</PrimaryButton>
             <PrimaryButton variant="ghost" onClick={() => { setPreview(true); setTimeout(() => window.print(), 50); }}>인쇄 / PDF로 저장</PrimaryButton>
           </div>
+          {dlMsg && (
+            <div role={dlMsg.ok ? "status" : "alert"} className={`mt-3 rounded-control border-2 px-3 py-2 font-semibold ${dlMsg.ok ? "border-accent bg-accent-soft text-accent" : "border-danger bg-danger-soft text-danger"}`}>
+              {dlMsg.ok ? "✓ " : ""}{dlMsg.text}
+            </div>
+          )}
           <p className="mt-2 text-sm text-ink-muted">HWPX는 저장된 판으로 만듭니다. 한글에서 열어 사진을 넣고 마무리한 뒤 K-에듀파인 결재 문서에 직접 첨부하세요. PDF는 브라우저 인쇄 기능으로 만드는 보조 출력입니다.</p>
         </section>
 
@@ -279,13 +360,24 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
 
         <details className="rounded-card border border-line bg-card p-4 shadow-card print:hidden">
           <summary className="cursor-pointer text-lg font-bold">수정 이력 {d.revisions.length}판</summary>
+          <p className="mt-1 text-sm text-ink-muted">내용이 바뀌어 저장될 때만 판 번호가 올라갑니다. 이전 판은 고치거나 지울 수 없습니다.</p>
           <ol className="mt-2 space-y-1 text-sm">
             {d.revisions.map((r) => (
-              <li key={r.version}>판 {r.version} · {r.status === "completed" ? "작성 완료" : "작성 중"} · {formatDateTime(r.changedAt)} · {r.changedByName ?? "(알 수 없음)"}</li>
+              <li key={r.version}>판 {r.version}{r.version === d.log.version ? " (현재 판 · 한글 파일 기준)" : ""} · {r.status === "completed" ? "작성 완료" : "작성 중"} · {formatDateTime(r.changedAt)} · {r.changedByName ?? "(알 수 없음)"}</li>
             ))}
           </ol>
         </details>
       </div>
+
+      <StaffPicker
+        open={pickFor !== null}
+        roleName={pickFor !== null ? manual.roles[pickFor]?.part ?? "" : ""}
+        who={pickFor !== null ? manual.roles[pickFor]?.who ?? "" : ""}
+        staff={staff}
+        loadError={staffErr}
+        onApply={(who) => pickFor !== null && set("roles", manual.roles.map((x, j) => (j === pickFor ? { ...x, who } : x)))}
+        onClose={() => setPickFor(null)}
+      />
 
       <ConfirmDialog open={refreshAsk} title="시스템 기록을 다시 불러올까요?" confirmLabel="다시 불러와 저장" tone="primary" loading={saving} onConfirm={() => void save(true)} onCancel={() => setRefreshAsk(false)}>
         <p>학급별 대피 보고 등 자동 항목을 지금 기록으로 바꾸고 새 판으로 저장합니다. 담당자 입력값은 그대로 두며, 이전 판은 수정 이력에 남습니다.</p>

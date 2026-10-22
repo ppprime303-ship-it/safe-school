@@ -189,6 +189,12 @@ async function main() {
     check("안전담당1 저장 → 판 2", s1.status === 200 && s1.body.version === 2, s1.body);
     const same = await ag.safety1!.call("PATCH", `${S}/drill-logs/${logId}`, { manual, status: "draft", expectedVersion: 2 });
     check("같은 내용 저장 → 판 그대로(jsonb 키 순서와 무관)", same.status === 200 && same.body.changed === false && same.body.version === 2, same.body);
+    // UI·HWPX 개선: 이전 화면처럼 studentCount 없이 보내도 그대로 통과하고 판 번호가 오르지 않음(호환)
+    const { studentCount: _omit, ...legacyManual } = manual;
+    const legacy = await ag.safety1!.call("PATCH", `${S}/drill-logs/${logId}`, { manual: legacyManual, status: "draft", expectedVersion: 2 });
+    check("이전 형식(학생 참가 항목 없음) 저장 → 200, 판 그대로", legacy.status === 200 && legacy.body.changed === false && legacy.body.version === 2, legacy.body);
+    const badStu = await ag.safety1!.call("PATCH", `${S}/drill-logs/${logId}`, { manual: { ...manual, studentCount: "-3" }, status: "draft", expectedVersion: 2 });
+    check("학생 참가 인원 숫자 아님 → 400", badStu.status === 400, badStu.body);
     const stale = await ag.safety2!.call("PATCH", `${S}/drill-logs/${logId}`, { manual: { ...manual, staffCount: "15" }, status: "draft", expectedVersion: 1 });
     check("안전담당2가 오래된 판으로 저장 → 409", stale.status === 409 && stale.body.code === "version_conflict", stale.body);
     const s2 = await ag.safety2!.call("PATCH", `${S}/drill-logs/${logId}`, { manual: { ...manual, staffCount: "15" }, status: "completed", expectedVersion: 2 });
@@ -204,18 +210,36 @@ async function main() {
     const cross = await ag.adminB!.call("GET", `/schools/${Bs.id}/drill-logs/${logId}`);
     check("다른 학교 경로로 A 훈련일지 → 404", cross.status === 404, cross.status);
 
+    // 역할 담당자 선택용 교직원 이름 목록(drilllog.edit, 같은 학교 승인 교직원 이름·직책만)
+    const staffList = await ag.safety1!.call("GET", `${S}/drill-log-staff`);
+    const approvedCount = await prisma.schoolMembership.count({ where: { schoolId: A.id, status: "approved", user: { status: "active" } } });
+    check(
+      "안전담당: 교직원 이름 목록(승인·활성만, 이메일 없음)",
+      staffList.status === 200 && Array.isArray(staffList.body.staff) && staffList.body.staff.length === approvedCount && !JSON.stringify(staffList.body).includes("@") && staffList.body.staff.every((m: any) => m.name && !("email" in m)),
+      [staffList.status, staffList.body.staff?.length, approvedCount],
+    );
+    const staffT = await ag.teacher!.call("GET", `${S}/drill-log-staff`);
+    const staffV = await ag.vice1!.call("GET", `${S}/drill-log-staff`);
+    const staffX = await ag.adminB!.call("GET", `${S}/drill-log-staff`);
+    check("교직원 이름 목록: 담임·교감(열람만) 403, 다른 학교 404", staffT.status === 403 && staffV.status === 403 && staffX.status === 404, [staffT.status, staffV.status, staffX.status]);
+
     const dl = await ag.principal!.raw("GET", `${S}/drill-logs/${logId}/export.hwpx`);
     const buf = Buffer.from(await dl.arrayBuffer());
     const z = unzipNames(buf);
     check("교장 HWPX 내려받기: 형식·파일 이름", dl.status === 200 && dl.headers.get("content-type")?.startsWith("application/hwp+zip") === true && (dl.headers.get("content-disposition") ?? "").includes("filename*=UTF-8''"), [dl.status, dl.headers.get("content-type")]);
     check("HWPX: mimetype 첫 항목, 필수 파일", z.names[0] === "mimetype" && ["Contents/section0.xml", "Contents/header.xml", "META-INF/container.xml"].every((n) => z.names.includes(n)), z.names);
     check("HWPX 본문: 학교명·입력값·이스케이프·미보고·O/X 글자", z.section.includes("훈련일지A초등학교") && z.section.includes("방송 &lt;설비&gt; &amp; 사이렌 점검") && z.section.includes("미보고") && z.section.includes("6분 51초") && !z.section.includes("□"));
+    check(
+      "HWPX 참가 인원: 교직원/학생 참가/학생 대피 확인/총 참가 칸, 미보고·미확정은 주석, 총인원 빈칸",
+      ["<hp:t>교직원</hp:t>", "<hp:t>학생 참가</hp:t>", "<hp:t>학생 대피 확인</hp:t>", "<hp:t>총 참가</hp:t>", "<hp:t>15명</hp:t>", "<hp:t>24명 ※</hp:t>", "미보고 2학급 제외", "학생 참가 인원 확인 후 기입"].every((t) => z.section.includes(t)) &&
+        !z.section.includes("<hp:t>39명</hp:t>"),
+    );
     // 한글에서 직접 열어 볼 시험 파일(테스트 DB의 가상 데이터만): e2e-output/
     mkdirSync("e2e-output", { recursive: true });
     writeFileSync("e2e-output/step3d_훈련일지_3학급.hwpx", buf);
     check("3학급: 붙임 1쪽", (z.section.match(/붙임\. 학급별 대피 현황/g) ?? []).length === 1, (z.section.match(/붙임\. 학급별 대피 현황[^<]*/g) ?? []));
 
-    // 32학급 초과: 학급 37개 추가 → 원본 변경 알림 → 다시 불러오기(판 +1) → 붙임 2쪽
+    // 30학급 초과(붙임 쪽당 30학급): 학급 37개 추가 → 원본 변경 알림 → 다시 불러오기(판 +1) → 붙임 2쪽
     for (let g = 3; g <= 6; g++) for (let n = 1; n <= (g === 6 ? 10 : 9); n++) await cls(g, n, 25);
     const changed = await ag.safety1!.call("GET", `${S}/drill-logs/${logId}`);
     check("학급 추가 후 원본 변경 알림(자동 반영 안 함)", (changed.body.sourceChanges?.length ?? 0) >= 37 && changed.body.snapshot?.classes?.length === 3, changed.body.sourceChanges?.length);
@@ -226,6 +250,7 @@ async function main() {
     const z40 = unzipNames(buf40);
     writeFileSync("e2e-output/step3d_훈련일지_40학급.hwpx", buf40);
     check("40학급: 붙임 2쪽, 마지막 학급 포함, 미보고 표시", dl40.status === 200 && (z40.section.match(/붙임\. 학급별 대피 현황/g) ?? []).length === 2 && z40.section.includes("6학년 10반") && z40.section.includes("미보고"));
+    check("40학급: 붙임 표 머리글 쪽마다 반복 설정", (z40.section.match(/repeatHeader="1"/g) ?? []).length === 2);
     console.log("  → 한글 확인용 파일: e2e-output/step3d_훈련일지_3학급.hwpx, step3d_훈련일지_40학급.hwpx (테스트 데이터)");
 
     const tDl = await ag.staff!.raw("GET", `${S}/drill-logs/${logId}/export.hwpx`);

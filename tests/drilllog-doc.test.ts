@@ -7,7 +7,13 @@ import {
   checkDoc,
   defaultManual,
   diffSnapshots,
+  durationLabel,
+  elapsedSeconds,
+  footnoteHeight,
+  participantCounts,
   particleRo,
+  whenText,
+  USABLE_H,
   summarizeClasses,
   type DrillClassSnap,
   type DrillSnapshot,
@@ -18,6 +24,7 @@ import { crc32 } from "../server/src/drilllog/zip.js";
 const cls = (i: number, enrolled: number | null, report: DrillClassSnap["report"]): DrillClassSnap => ({
   classId: `c${i}`, label: `${Math.ceil(i / 3)}학년 ${((i - 1) % 3) + 1}반`, grade: Math.ceil(i / 3), classNo: ((i - 1) % 3) + 1, enrolled, enrolledSource: report ? "report" : enrolled === null ? "none" : "class", report,
 });
+const hasAll = (arr: string[], items: string[]) => items.every((x) => arr.includes(x));
 const rep = (evacuated: number, absentKnown = 0, injured = 0, version = 1, unconfirmed = 0) => ({
   evacuated, absentKnown, injured, unconfirmed, note: null, version, reportedAt: "2026-09-09T01:26:00.000Z", lastChangedAt: "2026-09-09T01:28:00.000Z",
 });
@@ -55,9 +62,64 @@ describe("자동작성 정책(배치)", () => {
   });
 
   it("학생 수는 보고된 학급 대피 확인 합만, 미보고는 제외 표시, 총 참가 인원·교직원은 비움", () => {
-    expect(main.some((t) => t.includes("학생 대피 확인 51명 (미보고 1개 학급 제외)") && t.includes("교직원 ("))).toBe(true);
-    expect(main).toContain("총 (            )명");
-    expect(main.some((t) => /총 \(\s*\d+\s*\)명/.test(t))).toBe(false);
+    // (UI·HWPX 개선) 참가 인원 칸: 머리글 행(교직원/학생 참가/학생 대피 확인/총 참가) + 값 행, 미보고 설명은 표 아래 주석
+    expect(hasAll(main.slice(0, 20), ["교직원", "학생 참가", "학생 대피 확인", "총 참가"])).toBe(true);
+    expect(main).toContain("51명 ※");
+    expect(main.filter((t) => t === "(        )명")).toHaveLength(3); // 교직원·학생 참가·총 참가 빈 괄호
+    expect(main.some((t) => /^0명/.test(t))).toBe(false);
+    expect(doc.pages[0]!.footnote).toContain("※ 학생 대피 확인: 보고 2/3학급 합계, 미보고 1학급 제외(1학년 3반).");
+    expect(doc.pages[0]!.footnote).toContain("※ 총 참가: 교직원·학생 참가 인원 확인 후 기입");
+    expect(main.some((t) => t.includes("\n") && t.includes("미보고"))).toBe(false); // 표 칸 안에 미보고 안내 없음
+  });
+
+  it("총 참가: 교직원·학생 참가가 모두 있을 때만 자동 합, 직접 입력이 우선, 미확인은 0으로 채우지 않음", () => {
+    const m = defaultManual();
+    expect(participantCounts(SNAP, m)).toMatchObject({ total: null, totalSource: "none", evacuated: 51, evacComplete: false });
+    m.staffCount = "14";
+    expect(participantCounts(SNAP, m)).toMatchObject({ total: null, missing: ["학생 참가"] });
+    m.studentCount = "75";
+    expect(participantCounts(SNAP, m)).toMatchObject({ total: 89, totalSource: "auto" });
+    const cells = buildDrillDoc(SNAP, m).pages[0]!.table.cells.map((c) => c.text);
+    expect(hasAll(cells, ["14명", "75명", "51명 ※", "89명"])).toBe(true);
+    m.totalCount = "90";
+    expect(participantCounts(SNAP, m)).toMatchObject({ total: 90, totalSource: "manual", totalAuto: 89 });
+    const none = { ...SNAP, classes: SNAP.classes.map((c) => ({ ...c, report: null })) };
+    expect(participantCounts(none, defaultManual()).evacuated).toBeNull();
+    expect(buildDrillDoc(none, defaultManual()).pages[0]!.table.cells.map((c) => c.text)).toContain("보고 없음 ※");
+  });
+
+  it("이전 저장본(studentCount 없음)도 그대로 배치", () => {
+    const legacy = { ...defaultManual(), staffCount: "12", totalCount: "88" } as Record<string, unknown>;
+    delete legacy.studentCount;
+    const cells = buildDrillDoc(SNAP, legacy as never).pages[0]!.table.cells.map((c) => c.text);
+    expect(hasAll(cells, ["12명", "(        )명", "88명"])).toBe(true);
+  });
+
+  it("일시: 시·분·초 표시, 총 시간은 초 단위(1초 미만 버림, 반올림 없음)", () => {
+    expect(elapsedSeconds("2026-09-09T01:00:50.900Z", "2026-09-09T01:07:10.100Z")).toBe(380); // 표시 10:00:50 ~ 10:07:10 → 6분 20초
+    expect(durationLabel(380)).toBe("6분 20초");
+    expect(durationLabel(45)).toBe("45초");
+    expect(durationLabel(3600)).toBe("1시간 0분 0초");
+    const w = whenText({ ...SNAP.event, startedAt: "2026-09-09T01:00:50.900Z", closedAt: "2026-09-09T01:07:29.999Z" });
+    expect(w).toBe("2026. 9. 9.(수) 10:00:50 ~ 10:07:29 (총 6분 39초)"); // 6분 39.099초 → 반올림하지 않음
+    expect(doc.pages[0]!.footnote).toContain("1초 미만 버림");
+  });
+
+  it("역할 10개·평가 8개·긴 반영사항이어도 칸 구조 정상, 사진 칸은 줄어도 최소 높이 유지", () => {
+    const m = defaultManual();
+    m.roles = Array.from({ length: 10 }, (_, i) => ({ part: `역할 ${i + 1}`, who: "김교사, 이교사, 박교사" }));
+    m.evals = Array.from({ length: 8 }, (_, i) => ({ item: `평가 ${i + 1}`, result: "O" as const, note: "" }));
+    const d = buildDrillDoc(SNAP, m);
+    expect(checkDoc(d, { height: false })).toEqual([]);
+    const rows = d.pages[0]!.table.rowsMm;
+    expect(rows[rows.length - 1]).toBeGreaterThanOrEqual(24);
+    // 기본 서식은 1쪽 안, 사진 칸은 30mm 이상·반영사항 칸은 그대로(30mm)
+    const d0 = buildDrillDoc(SNAP, defaultManual());
+    const h0 = 21 + d0.pages[0]!.table.rowsMm.reduce((a, b) => a + b, 0) + footnoteHeight(d0.pages[0]!.footnote);
+    expect(h0).toBeLessThanOrEqual(USABLE_H);
+    const r0 = d0.pages[0]!.table.rowsMm;
+    expect(r0[r0.length - 1]).toBeGreaterThanOrEqual(30);
+    expect(r0[r0.length - 2]).toBe(30);
   });
 
   it("미보고 학급은 0이 아니라 '—'·'미보고', 재적과 대피 확인은 다른 칸", () => {
@@ -113,6 +175,10 @@ describe("자동작성 정책(배치)", () => {
     for (const p of d.pages.slice(1)) expect(p.table.cells[0]!.text).toBe("학년·반");
     expect(d.pages.slice(1).filter((p) => p.table.cells.some((c) => c.text === "보고 학급 합계"))).toHaveLength(1);
     expect(d.pages[1]!.title).toBe("붙임. 학급별 대피 현황 (1/3)");
+    for (const p of d.pages.slice(1)) {
+      expect(p.table.headerRows).toBe(1); // 한글에서 쪽이 넘어가도 머리글 반복
+      expect(p.subtitle.includes("\n")).toBe(false);
+    }
   });
 
   it("스냅숏 이후 원본 기록 변화 감지(문서에 자동 반영하지 않음)", () => {
@@ -148,6 +214,9 @@ describe("HWPX 생성(구조 검사 — 한글 호환 보장 아님)", () => {
     expect(sec).not.toContain("<hp:pic");
     expect(sec).not.toContain("pageNum");
     expect(sec.split("<hp:tbl ").length - 1).toBe(2);
+    expect((sec.match(/repeatHeader="1"/g) ?? []).length).toBe(1); // 붙임 표만 머리글 반복
+    expect(sec).toContain("<hp:t>붙임  학급별 대피 현황 1부.</hp:t>"); // 주석은 줄마다 문단
+    expect(sec).not.toMatch(/<hp:t>[^<]*\n/);
     expect(xmlText("a\u0000b<")).toBe("ab&lt;");
   });
 
