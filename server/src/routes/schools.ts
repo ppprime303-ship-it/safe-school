@@ -7,6 +7,7 @@ import { parse } from "../validate.js";
 import { requireRecentReauth, requireVerified } from "../auth/session.js";
 import { getSchoolinfoClient } from "../integrations/client.js";
 import { rateLimit } from "../middleware/security.js";
+import { resolveAccess } from "../services/access.js";
 import { searchDirectory } from "../services/schoolDirectory.js";
 import { applyForSchoolRegistration, reapplyForPendingSchool } from "../services/schoolRegistration.js";
 import {
@@ -92,13 +93,14 @@ schoolsRouter.post("/schools/:schoolId/join-requests", requireVerified, async (r
 // ───────────── 관리자: 교직원 목록·승인·배정·회수 ─────────────
 schoolsRouter.get("/schools/:schoolId/members", requireVerified, async (req, res) => {
   const schoolId = param(req.params.schoolId);
-  await resolveSchoolAccess(prisma, { userId: req.auth!.userId, schoolId, roles: ["admin"] });
+  await resolveAccess(prisma, { userId: req.auth!.userId, schoolId, need: "members.manage" });
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
   const members = await prisma.schoolMembership.findMany({
     where: { schoolId, ...(status ? { status: status as "pending" | "approved" | "rejected" | "revoked" } : {}) },
     include: {
       user: { select: { displayName: true, email: true } },
       assignments: { include: { schoolClass: { select: { id: true, label: true, schoolYear: true } } } },
+      duties: { where: { endedAt: null }, select: { id: true, duty: true, isActing: true, grantedVia: true, startedAt: true } },
     },
     orderBy: [{ status: "asc" }, { createdAt: "asc" }],
   });
@@ -110,27 +112,28 @@ schoolsRouter.get("/schools/:schoolId/members", requireVerified, async (req, res
       requestedAt: m.createdAt,
       user: m.user,
       assignments: m.assignments.map((a) => ({ duty: a.duty, class: a.schoolClass })),
+      duties: m.duties.map((d) => ({ id: d.id, duty: d.duty, isActing: d.isActing, grantedVia: d.grantedVia, startedAt: d.startedAt })),
     })),
   });
 });
 
 schoolsRouter.post("/schools/:schoolId/members/approve", requireVerified, async (req, res) => {
   const schoolId = param(req.params.schoolId);
-  await resolveSchoolAccess(prisma, { userId: req.auth!.userId, schoolId, roles: ["admin"] });
+  await resolveAccess(prisma, { userId: req.auth!.userId, schoolId, need: "members.manage" });
   const input = parse(membershipDecisionSchema, req.body);
   res.json(await decideMemberships(prisma, { schoolId, actorUserId: req.auth!.userId, membershipIds: input.membershipIds, decision: "approve", ip: req.ip }));
 });
 
 schoolsRouter.post("/schools/:schoolId/members/reject", requireVerified, async (req, res) => {
   const schoolId = param(req.params.schoolId);
-  await resolveSchoolAccess(prisma, { userId: req.auth!.userId, schoolId, roles: ["admin"] });
+  await resolveAccess(prisma, { userId: req.auth!.userId, schoolId, need: "members.manage" });
   const input = parse(membershipDecisionSchema, req.body);
   res.json(await decideMemberships(prisma, { schoolId, actorUserId: req.auth!.userId, membershipIds: input.membershipIds, decision: "reject", ip: req.ip }));
 });
 
 schoolsRouter.put("/schools/:schoolId/members/:membershipId/assignments", requireVerified, async (req, res) => {
   const schoolId = param(req.params.schoolId);
-  await resolveSchoolAccess(prisma, { userId: req.auth!.userId, schoolId, roles: ["admin"] });
+  await resolveAccess(prisma, { userId: req.auth!.userId, schoolId, need: "members.manage" });
   const input = parse(assignmentsSchema, req.body);
   res.json(
     await setAssignments(prisma, {
@@ -146,8 +149,8 @@ schoolsRouter.put("/schools/:schoolId/members/:membershipId/assignments", requir
 
 schoolsRouter.post("/schools/:schoolId/members/:membershipId/revoke", requireVerified, requireRecentReauth, async (req, res) => {
   const schoolId = param(req.params.schoolId);
-  await resolveSchoolAccess(prisma, { userId: req.auth!.userId, schoolId, roles: ["admin"] });
-  res.json(await revokeMembership(prisma, { schoolId, actorUserId: req.auth!.userId, membershipId: param(req.params.membershipId), ip: req.ip }));
+  const a = await resolveAccess(prisma, { userId: req.auth!.userId, schoolId, need: "members.manage" });
+  res.json(await revokeMembership(prisma, { schoolId, actorUserId: req.auth!.userId, membershipId: param(req.params.membershipId), actorRole: a.membership.role, ip: req.ip }));
 });
 
 // ───────────── 학급(승인된 교직원 조회, 관리자 수정) ─────────────
@@ -165,7 +168,7 @@ schoolsRouter.get("/schools/:schoolId/classes", requireVerified, async (req, res
 
 schoolsRouter.put("/schools/:schoolId/classes/enrollment", requireVerified, async (req, res) => {
   const schoolId = param(req.params.schoolId);
-  await resolveSchoolAccess(prisma, { userId: req.auth!.userId, schoolId, roles: ["admin"] });
+  await resolveAccess(prisma, { userId: req.auth!.userId, schoolId, need: "classes.manage" });
   const input = parse(confirmEnrollmentSchema, req.body);
   res.json(await confirmEnrollment(prisma, { schoolId, actorUserId: req.auth!.userId, items: input.items }));
 });
@@ -173,14 +176,14 @@ schoolsRouter.put("/schools/:schoolId/classes/enrollment", requireVerified, asyn
 // ───────────── 관리자: 학교알리미 공시자료(참고) ─────────────
 schoolsRouter.get("/schools/:schoolId/public-data", requireVerified, async (req, res) => {
   const schoolId = param(req.params.schoolId);
-  await resolveSchoolAccess(prisma, { userId: req.auth!.userId, schoolId, roles: ["admin"] });
+  await resolveAccess(prisma, { userId: req.auth!.userId, schoolId, need: "classes.manage" });
   const schoolYear = Number(req.query.year) || currentSchoolYear();
   res.json(await getClassStructureProposal(prisma, schoolId, schoolYear));
 });
 
 schoolsRouter.post("/schools/:schoolId/public-data/refresh", requireVerified, async (req, res) => {
   const schoolId = param(req.params.schoolId);
-  await resolveSchoolAccess(prisma, { userId: req.auth!.userId, schoolId, roles: ["admin"] });
+  await resolveAccess(prisma, { userId: req.auth!.userId, schoolId, need: "classes.manage" });
   const result = await refreshGradeClassData(prisma, getSchoolinfoClient(), { schoolId });
   if (!result.snapshot && result.stale) throw notFound(result.warning ?? "공시자료가 없습니다.");
   res.json({ changed: result.changed, stale: result.stale, warning: result.warning, snapshotId: result.snapshot?.id ?? null });
@@ -188,7 +191,7 @@ schoolsRouter.post("/schools/:schoolId/public-data/refresh", requireVerified, as
 
 schoolsRouter.post("/schools/:schoolId/classes/apply-structure", requireVerified, async (req, res) => {
   const schoolId = param(req.params.schoolId);
-  await resolveSchoolAccess(prisma, { userId: req.auth!.userId, schoolId, roles: ["admin"] });
+  await resolveAccess(prisma, { userId: req.auth!.userId, schoolId, need: "classes.manage" });
   const input = parse(applyStructureSchema, req.body);
   res.json(await applyClassStructure(prisma, { schoolId, actorUserId: req.auth!.userId, schoolYear: input.schoolYear, grades: input.grades }));
 });

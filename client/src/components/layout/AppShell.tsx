@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import type { ActiveEvent } from "../../lib/disaster";
 import { Link, usePath } from "../../lib/router";
 import { useSession } from "../../lib/session";
+import { capsOf } from "../../lib/permissions";
 import { EmergencyBanner } from "../ui/EmergencyBanner";
 import { Icon, type IconName } from "../ui/Icon";
 
@@ -13,17 +14,18 @@ export interface NavItem {
   icon: IconName;
 }
 
-export function navItemsFor(schoolId: string | null, role: "admin" | "homeroom" | "staff" | null): NavItem[] {
+// STEP 3-D: 메뉴는 역할 대신 합산 권한(직책·업무 겸임 반영)으로 결정
+export function navItemsFor(schoolId: string | null, caps: readonly string[] | null): NavItem[] {
   if (!schoolId) return [{ href: "/schools", label: "학교 선택", icon: "school" }];
+  const has = (c: string) => !!caps && caps.includes(c);
   const items: NavItem[] = [];
-  if (role === "admin") items.push({ href: `/s/${schoolId}/board`, label: "상황판", icon: "dashboard" });
+  if (has("board.view")) items.push({ href: `/s/${schoolId}/board`, label: "상황판", icon: "dashboard" });
   items.push({ href: `/s/${schoolId}/report`, label: "학급 보고", icon: "clipboard" });
   items.push({ href: `/s/${schoolId}/alerts`, label: "경보", icon: "bell" });
-  if (role === "admin") {
-    items.push({ href: `/s/${schoolId}/members`, label: "교직원", icon: "users" });
-    items.push({ href: `/s/${schoolId}/classes`, label: "학급", icon: "school" });
-  }
-  items.push({ href: "/schools", label: role === "admin" ? "학교" : "학교 선택", icon: "home" });
+  if (has("drilllog.view")) items.push({ href: `/s/${schoolId}/drill-logs`, label: "훈련일지", icon: "file" });
+  if (has("members.manage")) items.push({ href: `/s/${schoolId}/members`, label: "교직원", icon: "users" });
+  if (has("classes.manage")) items.push({ href: `/s/${schoolId}/classes`, label: "학급", icon: "school" });
+  items.push({ href: "/schools", label: has("members.manage") ? "학교" : "학교 선택", icon: "home" });
   return items;
 }
 
@@ -141,7 +143,7 @@ export function AppShell({
   useEffect(() => {
     if (membership && current?.school.id !== membership.school.id) selectSchool(membership.school.id);
   }, [membership, current, selectSchool]);
-  const items = navItemsFor(membership?.school.id ?? null, membership?.role ?? null);
+  const items = navItemsFor(membership?.school.id ?? null, membership ? capsOf(membership) : null);
   return (
     <div className="flex min-h-dvh">
       <Sidebar items={items} schoolName={membership?.school.name} />

@@ -139,6 +139,8 @@ model School {
   region            SchoolRegion?
   alertMatches      SchoolAlertMatch[]
   notices           SchoolNotice[]
+  duties            MemberDuty[]
+  drillLogs         DrillLog[]
 
   @@map("schools")
 }
@@ -249,6 +251,11 @@ model User {
   noticesUpdated     SchoolNotice[]               @relation("NoticeUpdater")
   noticeRevisions    SchoolNoticeRevision[]
   noticeRecords      NoticeHandlingRecord[]
+  dutiesGranted      MemberDuty[]                 @relation("DutyGranter")
+  dutiesEnded        MemberDuty[]                 @relation("DutyEnder")
+  drillLogsCreated   DrillLog[]                   @relation("DrillLogCreator")
+  drillLogsUpdated   DrillLog[]                   @relation("DrillLogUpdater")
+  drillLogRevisions  DrillLogRevision[]
 
   @@map("users")
 }
@@ -321,6 +328,7 @@ model SchoolMembership {
   user        User              @relation("MembershipUser", fields: [userId], references: [id], onDelete: Cascade)
   approvedBy  User?             @relation("MembershipApprover", fields: [approvedById], references: [id], onDelete: SetNull)
   assignments ClassAssignment[]
+  duties      MemberDuty[]
 
   @@unique([schoolId, userId], map: "school_memberships_school_user_key")
   @@index([schoolId, status], map: "school_memberships_school_status_idx")
@@ -426,6 +434,7 @@ model DisasterEvent {
   closedBy  User?               @relation("EventCloser", fields: [closedById], references: [id], onDelete: SetNull)
   types     DisasterEventType[]
   reports   EvacuationReport[]
+  drillLog  DrillLog?
 
   // 부분 UNIQUE 인덱스 disaster_events_one_active_per_school 은 migration.sql 에 있습니다.
   @@index([schoolId, startedAt(sort: Desc)], map: "disaster_events_school_started_idx")
@@ -755,4 +764,96 @@ model NoticeHandlingRecord {
 
   @@index([noticeId, recordedAt], map: "notice_handling_records_notice_idx")
   @@map("notice_handling_records")
+}
+
+// ───────────── STEP 3-D 직책·업무(겸임) · 비상대피훈련일지 ─────────────
+// 마이그레이션 20261023000000_duties_drill_logs 에 CHECK·부분 UNIQUE·트리거가 있습니다.
+// - 교장(1명)·교감(최대 2명): 플랫폼 운영자 확인으로만 등록(granted_via=platform_operator, 확인 방법 필수)
+// - 안전업무 담당·앱 운영담당: 여러 명, 겸임 가능. 종료만 가능(삭제·되살리기 불가)
+// - 훈련일지: 종료된 모의훈련에만, 이벤트당 1건, 판 번호 +1 강제, 수정 이력 DB 자동 기록
+
+enum StaffDuty {
+  principal
+  vice_principal
+  safety_officer
+  app_operator
+}
+
+enum DutyGrantVia {
+  school_app
+  platform_operator
+}
+
+model MemberDuty {
+  id                 String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId           String       @map("school_id") @db.Uuid
+  membershipId       String       @map("membership_id") @db.Uuid
+  duty               StaffDuty
+  isActing           Boolean      @default(false) @map("is_acting")
+  grantedVia         DutyGrantVia @map("granted_via")
+  grantedById        String?      @map("granted_by_id") @db.Uuid
+  grantedByLabel     String?      @map("granted_by_label")
+  verificationMethod String?      @map("verification_method")
+  note               String?
+  startedAt          DateTime     @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt            DateTime?    @map("ended_at") @db.Timestamptz(6)
+  endedById          String?      @map("ended_by_id") @db.Uuid
+  endedByLabel       String?      @map("ended_by_label")
+  endReason          String?      @map("end_reason")
+
+  school     School           @relation(fields: [schoolId], references: [id], onDelete: Restrict, map: "member_duties_school_fkey")
+  membership SchoolMembership @relation(fields: [membershipId], references: [id], onDelete: Restrict, map: "member_duties_membership_fkey")
+  grantedBy  User?            @relation("DutyGranter", fields: [grantedById], references: [id], onDelete: SetNull, map: "member_duties_granted_by_fkey")
+  endedBy    User?            @relation("DutyEnder", fields: [endedById], references: [id], onDelete: SetNull, map: "member_duties_ended_by_fkey")
+
+  @@map("member_duties")
+}
+
+enum DrillLogStatus {
+  draft
+  completed
+}
+
+model DrillLog {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId     String         @map("school_id") @db.Uuid
+  eventId      String         @unique(map: "drill_logs_event_key") @map("event_id") @db.Uuid
+  formKey      String         @default("evacuation_drill") @map("form_key")
+  formVersion  Int            @default(1) @map("form_version")
+  status       DrillLogStatus @default(draft)
+  version      Int            @default(1)
+  autoSnapshot Json           @map("auto_snapshot")
+  autoTakenAt  DateTime       @default(now()) @map("auto_taken_at") @db.Timestamptz(6)
+  manual       Json
+  createdById  String?        @map("created_by_id") @db.Uuid
+  updatedById  String?        @map("updated_by_id") @db.Uuid
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime       @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  school    School             @relation(fields: [schoolId], references: [id], onDelete: Restrict, map: "drill_logs_school_fkey")
+  event     DisasterEvent      @relation(fields: [eventId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "drill_logs_event_fkey")
+  createdBy User?              @relation("DrillLogCreator", fields: [createdById], references: [id], onDelete: SetNull, map: "drill_logs_creator_fkey")
+  updatedBy User?              @relation("DrillLogUpdater", fields: [updatedById], references: [id], onDelete: SetNull, map: "drill_logs_updater_fkey")
+  revisions DrillLogRevision[]
+
+  @@index([schoolId, updatedAt(sort: Desc)], map: "drill_logs_school_updated_idx")
+  @@map("drill_logs")
+}
+
+/// 훈련일지 수정 이력(DB 트리거만 기록, 수정·삭제 불가)
+model DrillLogRevision {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  drillLogId   String         @map("drill_log_id") @db.Uuid
+  version      Int
+  status       DrillLogStatus
+  autoSnapshot Json           @map("auto_snapshot")
+  manual       Json
+  changedById  String?        @map("changed_by_id") @db.Uuid
+  changedAt    DateTime       @default(now()) @map("changed_at") @db.Timestamptz(6)
+
+  drillLog  DrillLog @relation(fields: [drillLogId], references: [id], onDelete: Restrict, map: "drill_log_revisions_log_fkey")
+  changedBy User?    @relation(fields: [changedById], references: [id], onDelete: SetNull, map: "drill_log_revisions_changer_fkey")
+
+  @@unique([drillLogId, version], map: "drill_log_revisions_log_version_key")
+  @@map("drill_log_revisions")
 }

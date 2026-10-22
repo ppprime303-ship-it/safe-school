@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>비상대피훈련일지 시제품</title>
+<!--
+  SAFE SCHOOL STEP 3-D 1차 시제품(앱 미연결, 가상 데이터)
+  - 원본 참고: 학교 비상대피훈련일지(지진) HWP의 표 구성(일시·참가인원·역할담당·훈련내용·대피장소·대피소요시간·평가 O/X·비고·추후 반영사항·사진)
+  - 실제 학교명·담당자 실명·연락처·사진은 쓰지 않았습니다.
+  - 색 표시: 파랑 = 시스템 기록으로 확인 / 청록 = 기록이 있으면 자동(없으면 빈칸) / 주황 = 교직원이 직접 확인·입력
+  - 인쇄(또는 PDF 저장)할 때는 색 표시·안내가 사라지고 A4 문서 모양만 남습니다.
+-->
+<style>
+  :root{--ink:#111;--line:#222;--muted:#555;--auto:#e3ecfa;--auto-b:#2a5bb5;--cond:#e2f3f1;--cond-b:#167a6e;--man:#fff1dc;--man-b:#b45309;--page:#e9edf2}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--ink);font-family:"Malgun Gothic","맑은 고딕","Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+  .bar{position:sticky;top:0;z-index:5;background:#183153;color:#fff;padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .bar h1{font-size:16px;margin:0 12px 0 0}
+  .bar button,.bar label{font:inherit;font-size:14px}
+  .bar button{background:#fff;color:#183153;border:0;border-radius:6px;padding:7px 12px;font-weight:700;cursor:pointer}
+  .bar label{display:flex;gap:6px;align-items:center;cursor:pointer}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;font-size:13px}
+  .chip{padding:3px 8px;border-radius:999px;border:2px solid;font-weight:700;color:#111}
+  .chip.a{background:var(--auto);border-color:var(--auto-b)} .chip.c{background:var(--cond);border-color:var(--cond-b)} .chip.m{background:var(--man);border-color:var(--man-b)}
+  .wrap{display:flex;flex-wrap:wrap;gap:20px;justify-content:center;padding:20px 12px 60px}
+  .a4{width:210mm;min-height:297mm;background:#fff;padding:16mm 14mm;box-shadow:0 2px 12px rgba(0,0,0,.18)}
+  .side{width:min(360px,100%);display:flex;flex-direction:column;gap:14px}
+  .card{background:#fff;border-radius:10px;padding:14px 16px;box-shadow:0 1px 6px rgba(0,0,0,.12);font-size:14px;line-height:1.55}
+  .card h2{font-size:15px;margin:0 0 8px}
+  .card ul{margin:0;padding-left:18px}
+  .doc-title{text-align:center;font-size:24pt;font-weight:800;letter-spacing:1px;margin:6mm 0 8mm}
+  .school{text-align:right;font-weight:700;font-size:11pt;margin-bottom:2mm}
+  table.f{width:100%;border-collapse:collapse;font-size:10.5pt;table-layout:fixed}
+  table.f th,table.f td{border:1px solid var(--line);padding:5px 6px;vertical-align:middle}
+  table.f th{background:#f2f2f2;font-weight:700;text-align:center}
+  .c{text-align:center} .band{background:#f2f2f2;text-align:center;font-weight:800;letter-spacing:6px}
+  /* 출처 표시(화면 전용) */
+  .src-a{background:var(--auto);box-shadow:inset 3px 0 0 var(--auto-b)}
+  .src-c{background:var(--cond);box-shadow:inset 3px 0 0 var(--cond-b)}
+  .src-m{background:var(--man);box-shadow:inset 3px 0 0 var(--man-b)}
+  .need{color:var(--man-b);font-weight:700}
+  .hint{display:block;font-size:8.5pt;color:var(--muted);margin-top:2px}
+  input.t,textarea.t,select.t{font:inherit;width:100%;border:1px dashed #999;background:rgba(255,255,255,.75);padding:3px 4px;border-radius:3px}
+  textarea.t{resize:vertical;min-height:22mm;line-height:1.5}
+  .ox{display:flex;justify-content:center;gap:10px}
+  .ox label{display:flex;gap:3px;align-items:center;cursor:pointer;font-weight:700}
+  .ox input{width:16px;height:16px}
+  .photos{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+  .ph{border:1px dashed #888;height:38mm;display:flex;align-items:center;justify-content:center;text-align:center;font-size:9pt;color:var(--muted);position:relative;overflow:hidden;cursor:pointer;background:#fafafa}
+  .ph img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
+  .ph input{position:absolute;inset:0;opacity:0;cursor:pointer}
+  .mini{width:100%;border-collapse:collapse;font-size:9.5pt}
+  .mini th,.mini td{border:1px solid #888;padding:2px 4px;text-align:center}
+  .mini th{background:#f7f7f7}
+  .unrep{color:#a11;font-weight:800}
+  .ref{border-left:4px solid var(--cond-b);background:#f3faf9;padding:8px 10px;border-radius:4px}
+  .warn{border-left:4px solid var(--man-b);background:#fff7ec;padding:8px 10px;border-radius:4px}
+  .mode{display:inline-block;border:1.5px solid #333;border-radius:3px;padding:0 5px;font-size:9.5pt;font-weight:700;margin-left:6px;vertical-align:middle}
+  body.plain .src-a,body.plain .src-c,body.plain .src-m{background:none;box-shadow:none}
+  body.plain .hint,body.plain .screen-only{display:none}
+  body.plain input.t,body.plain textarea.t,body.plain select.t{border-color:transparent;background:none}
+  @page{size:A4;margin:0}
+  @media print{
+    body{background:#fff}
+    .bar,.side,.screen-only,.hint{display:none!important}
+    .wrap{padding:0;display:block}
+    .a4{box-shadow:none;margin:0;width:210mm;min-height:auto}
+    .src-a,.src-c,.src-m{background:none!important;box-shadow:none!important}
+    input.t,textarea.t,select.t{border:none!important;background:none!important;padding:0}
+    textarea.t{resize:none}
+    input.t::placeholder,textarea.t::placeholder{color:transparent}
+    .ph{border:1px solid #888} .ph .ph-empty{display:none}
+  }
+  @media (max-width:840px){.a4{width:100%;min-height:auto;padding:14px 10px}.doc-title{font-size:20pt}table.f{font-size:9.5pt}}
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>STEP 3-D 시제품 · 비상대피훈련일지</h1>
+  <div class="legend" aria-label="색 구분">
+    <span class="chip a">시스템 기록으로 확인</span>
+    <span class="chip c">기록 있으면 자동</span>
+    <span class="chip m">교직원 확인·입력</span>
+  </div>
+  <label><input type="checkbox" id="plain"> 색 표시 끄고 문서 모양 보기</label>
+  <button type="button" onclick="window.print()">인쇄 / PDF로 저장</button>
+</div>
+
+<div class="wrap">
+  <article class="a4" aria-label="비상대피훈련일지 A4 미리보기">
+    <div class="doc-title">비상대피훈련일지(<span id="typeLabel"></span>)</div>
+    <div class="school src-a" id="schoolName"></div>
+    <table class="f">
+      <colgroup><col style="width:17%"><col style="width:41%"><col style="width:14%"><col style="width:28%"></colgroup>
+      <tr>
+        <th>일&nbsp;&nbsp;&nbsp;&nbsp;시</th>
+        <td colspan="3" class="src-a"><span id="when"></span><span class="mode" id="modeBadge"></span>
+          <span class="hint">발령·종료 시각(시스템 기록). 실제 훈련 시작·끝 시각과 다르면 고치세요.</span></td>
+      </tr>
+      <tr>
+        <th>참가인원</th>
+        <td colspan="2" class="src-m">교직원 <input class="t" style="width:16mm" placeholder="  명" aria-label="교직원 참가 인원"> 명 /
+          학생 <b id="stuConfirmed"></b>
+          <span class="hint">학생 수 = 보고된 학급의 '대피 확인' 합계. 미보고 학급은 포함하지 않았습니다. 교직원 참가 여부는 시스템에 없어 직접 입력합니다.</span></td>
+        <td class="src-m c">총 <input class="t" style="width:18mm" placeholder="확인 필요" aria-label="총 참가 인원"> 명</td>
+      </tr>
+      <tr>
+        <th>학급별<br>대피 보고<span class="hint">(추가 제안 항목)</span></th>
+        <td colspan="3" class="src-a">
+          <table class="mini" id="classTable" aria-label="학급별 대피 보고(시스템 기록)"></table>
+          <span class="hint">원본 서식에 없는 항목입니다. 넣을지 검토해 주세요. 미보고 학급은 0명이 아니라 '미보고'로 표시합니다.</span>
+        </td>
+      </tr>
+      <tr id="rolesHead">
+        <th rowspan="7">역할담당</th>
+        <th colspan="2">구&nbsp;&nbsp;분</th><th>담당자</th>
+      </tr>
+      <tr><td colspan="4" class="band">훈 련 내 용</td></tr>
+      <tr>
+        <th><span id="evacLabel"></span><br>대피(집결)장소</th>
+        <td colspan="3" class="src-c" id="evacPlace"></td>
+      </tr>
+      <tr>
+        <th>대피소요 시간</th>
+        <td colspan="3" class="src-m">
+          <input class="t" style="width:40mm" placeholder="예) 6분 51초" aria-label="대피 소요 시간">
+          <span class="hint" id="durationRef"></span>
+        </td>
+      </tr>
+      <tr id="evalsHead">
+        <th rowspan="7">평&nbsp;&nbsp;가</th>
+        <th>평가내용</th><th>평가결과<br>(O, X)</th><th>비&nbsp;&nbsp;고</th>
+      </tr>
+      <tr>
+        <th>추후 대피훈련 시<br>반영사항</th>
+        <td colspan="3" class="src-m"><textarea class="t" rows="4" aria-label="추후 대피훈련 시 반영사항" placeholder="교직원이 직접 작성합니다. 오른쪽 '시스템 기록 참고'를 보고 판단하세요."></textarea></td>
+      </tr>
+      <tr>
+        <th>사&nbsp;&nbsp;진</th>
+        <td colspan="3" class="src-m">
+          <div class="photos" id="photos"></div>
+          <span class="hint">사진은 이 화면에서만 미리 봅니다(서버로 보내지 않음). 학생 얼굴이 드러나지 않게 주의하세요.</span>
+        </td>
+      </tr>
+    </table>
+  </article>
+
+  <aside class="side">
+    <section class="card">
+      <h2>이 시제품은</h2>
+      <ul>
+        <li>실제 학교의 비상대피훈련일지(지진) 표 구성을 따랐습니다.</li>
+        <li><b>가상 데이터</b>입니다(SAFE SCHOOL 시연초등학교). 앱과 연결되지 않았습니다.</li>
+        <li>표 안 입력칸·O/X·사진은 직접 눌러 볼 수 있습니다(저장되지 않음).</li>
+      </ul>
+    </section>
+    <section class="card ref">
+      <h2>시스템 기록 참고(문서에 자동으로 넣지 않음)</h2>
+      <ul id="facts"></ul>
+      <p style="margin:6px 0 0;font-size:13px">평가·반영사항은 AI나 시스템이 쓰지 않습니다. 위 사실은 판단 참고용입니다.</p>
+    </section>
+    <section class="card">
+      <h2>항목별 출처</h2>
+      <ul id="sources"></ul>
+    </section>
+    <section class="card warn">
+      <h2>한글·K-에듀파인 활용(시제품 단계 안내)</h2>
+      <ul>
+        <li>지금 시제품: 인쇄·PDF 저장만 가능합니다.</li>
+        <li>개발 목표: 한글 문서(HWPX) 내려받기 → 한글에서 열어 고친 뒤 K-에듀파인 결재 문서에 <b>사용자가 직접 첨부</b>.</li>
+        <li>HWPX 시험 파일을 함께 드렸습니다. 한글에서 열리는지, 표가 깨지지 않는지 확인이 필요합니다. 확인 전에는 호환된다고 말할 수 없습니다.</li>
+        <li>K-에듀파인 자동 업로드·결재 상신은 하지 않습니다.</li>
+      </ul>
+    </section>
+  </aside>
+</div>
+
+<script>
+// ───── 앱이 서버에서 받을 데이터 모양(가상) ─────
+// source: "a" 시스템 기록으로 확인 / "c" 기록이 있으면 자동 / "m" 교직원 확인
+const DATA = {
+  schoolName: "SAFE SCHOOL 시연초등학교",                         // schools.name
+  event: {                                                          // disaster_events
+    type: "earthquake", typeLabel: "지진", mode: "drill",
+    startedAt: "2026-09-09T10:20:00+09:00",                         // 발령 시각
+    closedAt:  "2026-09-09T11:20:00+09:00",                         // 종료 시각
+    evacPlace: "운동장"                                             // evac_place(발령 때 입력한 경우만)
+  },
+  classes: [                                                        // classes + evacuation_reports
+    { label: "1학년 1반", enrolled: 25, report: { evacuated: 24, absentKnown: 1, injured: 0, unconfirmed: 0, firstReportedAt: "2026-09-09T10:26:05+09:00", version: 2 } },
+    { label: "1학년 2반", enrolled: 27, report: { evacuated: 27, absentKnown: 0, injured: 0, unconfirmed: 0, firstReportedAt: "2026-09-09T10:27:12+09:00", version: 1 } },
+    { label: "2학년 1반", enrolled: 24, report: null }               // 미보고
+  ],
+  // 원본 서식의 역할 구분(학교마다 다름 → 학교가 기본 목록을 저장해 두는 방식 제안). 담당자 실명은 넣지 않음
+  roles: [
+    { part: "안전교육 및 학생 대피", who: "각 반 담임교사" },
+    { part: "신고", who: "" },
+    { part: "안내 방송", who: "" },
+    { part: "부상 학생 응급처치", who: "" },
+    { part: "실내 잔류 확인", who: "" },
+    { part: "소요시간 측정, 최종인원 점검", who: "" }
+  ],
+  // 원본 서식의 평가 항목(유아 → 학생으로만 바꿈)
+  evals: ["대피의 신속성", "대피경로의 효율성", "대피장소의 안전성", "교사 역할의 조직적 수행 정도", "비상벨 또는 사이렌 소리의 적절성", "학생의 반응"]
+};
+
+const WD = "일월화수목금토";
+const d = (s) => new Date(s);
+const kst = (s) => { const x = new Date(d(s).getTime() + 9 * 3600e3); return { y: x.getUTCFullYear(), m: x.getUTCMonth() + 1, dd: x.getUTCDate(), w: WD[x.getUTCDay()], h: x.getUTCHours(), mi: x.getUTCMinutes(), s: x.getUTCSeconds() }; };
+const hm = (t) => `${String(t.h).padStart(2, "0")}:${String(t.mi).padStart(2, "0")}`;
+const hms = (t) => `${hm(t)}:${String(t.s).padStart(2, "0")}`;
+const dur = (ms) => { const s = Math.round(ms / 1000); return `${Math.floor(s / 60)}분 ${s % 60}초`; };
+const $ = (id) => document.getElementById(id);
+// 조사: 받침 없거나 ㄹ 받침이면 "로", 그 밖에는 "으로"(tools/hwpx/drill_log_layout.py 와 같은 규칙)
+const ro = (w) => { const c = w.trim().slice(-1); if (c >= "가" && c <= "힣") { const j = (c.charCodeAt(0) - 0xac00) % 28; return w + (j === 0 || j === 8 ? "로" : "으로"); } return w + "(으)로"; };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+const E = DATA.event, a = kst(E.startedAt), b = E.closedAt ? kst(E.closedAt) : null;
+$("typeLabel").textContent = E.typeLabel;
+$("schoolName").textContent = DATA.schoolName;
+$("modeBadge").textContent = E.mode === "drill" ? "모의훈련" : "실제 상황";
+$("when").textContent = `${a.y}. ${a.m}. ${a.dd}.(${a.w}) ${hm(a)} ~ ${b ? hm(b) : "종료 전"}` + (b ? ` (총 ${Math.round((d(E.closedAt) - d(E.startedAt)) / 60000)}분)` : "");
+$("evacLabel").textContent = E.typeLabel + "발생시";
+
+// 참가 인원: 보고된 학급의 대피 확인 합만(중복 없음: 학급당 보고 1건 = 최신 판). 미보고 학급은 따로 표시
+const reported = DATA.classes.filter((c) => c.report);
+const unreported = DATA.classes.filter((c) => !c.report);
+const evac = reported.reduce((n, c) => n + c.report.evacuated, 0);
+$("stuConfirmed").innerHTML = `대피 확인 ${evac}명` + (unreported.length ? ` <span class="unrep">(미보고 ${unreported.length}개 학급 제외)</span>` : "");
+
+$("classTable").innerHTML =
+  "<tr><th>학급</th><th>재적</th><th>대피 확인</th><th>사전 파악 부재</th><th>미확인</th><th>부상</th></tr>" +
+  DATA.classes.map((c) => c.report
+    ? `<tr><td>${esc(c.label)}</td><td>${c.enrolled}</td><td>${c.report.evacuated}</td><td>${c.report.absentKnown}</td><td>${c.report.unconfirmed}</td><td>${c.report.injured}</td></tr>`
+    : `<tr><td>${esc(c.label)}</td><td>${c.enrolled}</td><td colspan="4" class="unrep">미보고</td></tr>`).join("");
+
+$("rolesHead").insertAdjacentHTML("afterend", DATA.roles.map((r, i) =>
+  `<tr><td colspan="2" class="src-c c"><input class="t c" value="${esc(r.part)}" aria-label="역할 구분 ${i + 1}"></td>` +
+  `<td class="src-m c"><input class="t c" value="${esc(r.who)}" placeholder="확인 필요" aria-label="담당자 ${i + 1}"></td></tr>`).join(""));
+document.querySelector("#rolesHead th").rowSpan = DATA.roles.length + 1;
+
+$("evacPlace").innerHTML = E.evacPlace
+  ? `<input class="t" value="학생들이 각 반 대피로를 따라 ${esc(ro(E.evacPlace))} 대피" aria-label="대피 장소"><span class="hint">'${esc(E.evacPlace)}'는 발령 때 입력한 대피 장소입니다. 문장은 고칠 수 있습니다.</span>`
+  : `<input class="t" placeholder="확인 필요 — 발령 때 대피 장소를 입력하지 않았습니다" aria-label="대피 장소">`;
+
+// 소요 시간: 시스템에는 '대피 완료' 시각이 없음 → 참고값만 표시하고 자동 입력하지 않음
+if (reported.length) {
+  const last = reported.map((c) => d(c.report.firstReportedAt)).sort((x, y) => y - x)[0];
+  $("durationRef").textContent = `참고: 발령 ${hms(a)} → 보고된 학급 중 마지막 첫 보고 ${hms(kst(last.toISOString()))} (${dur(last - d(E.startedAt))}). 보고 버튼을 누른 시각이라 실제 대피 완료 시각이 아닙니다. 미보고 학급이 있으면 계산하지 않는 것을 권장합니다.`;
+}
+
+$("evalsHead").insertAdjacentHTML("afterend", DATA.evals.map((t, i) =>
+  `<tr><td>▪ ${esc(t)}</td><td class="src-m"><div class="ox" role="radiogroup" aria-label="${esc(t)} 평가">` +
+  `<label><input type="radio" name="ev${i}" value="O">O</label><label><input type="radio" name="ev${i}" value="X">X</label></div></td>` +
+  `<td class="src-m"><input class="t" placeholder="직접 입력" aria-label="${esc(t)} 비고"></td></tr>`).join(""));
+document.querySelector("#evalsHead th").rowSpan = DATA.evals.length + 1;
+
+$("photos").innerHTML = [1, 2, 3].map((i) =>
+  `<label class="ph"><span class="ph-empty">사진 ${i}<br>눌러서 선택</span><input type="file" accept="image/*" aria-label="활동 사진 ${i}"></label>`).join("");
+document.querySelectorAll(".ph input").forEach((inp) => inp.addEventListener("change", () => {
+  const f = inp.files && inp.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { let img = inp.parentElement.querySelector("img"); if (!img) { img = document.createElement("img"); inp.parentElement.prepend(img); } img.src = r.result; img.alt = "활동 사진"; };
+  r.readAsDataURL(f);
+}));
+
+const injured = reported.reduce((n, c) => n + c.report.injured, 0);
+const absent = reported.reduce((n, c) => n + c.report.absentKnown, 0);
+const facts = [
+  `훈련 구분: ${E.mode === "drill" ? "모의훈련" : "실제 상황"}(발령 기록)`,
+  `보고 학급 ${reported.length}개 / 전체 ${DATA.classes.length}개` + (unreported.length ? ` — 미보고: ${unreported.map((c) => c.label).join(", ")}` : ""),
+  `대피 확인 ${evac}명, 사전 파악 부재 ${absent}명, 부상 보고 ${injured}명(보고된 학급 기준)`,
+  ...reported.filter((c) => c.report.version > 1).map((c) => `${c.label}: 보고를 ${c.report.version - 1}회 수정함(이력 있음)`),
+];
+$("facts").innerHTML = facts.map((f) => `<li>${esc(f)}</li>`).join("");
+
+$("sources").innerHTML = [
+  ["a", "학교명", "학교 정보"],
+  ["a", "일시·훈련 구분", "재난 발령·종료 기록"],
+  ["a", "학생 대피 확인 수·학급별 보고", "학급 대피 보고(학급당 최신 1건)"],
+  ["c", "대피 장소", "발령 때 입력했으면 자동, 없으면 빈칸"],
+  ["c", "역할 구분", "학교가 저장한 기본 목록(개발 예정)"],
+  ["m", "교직원 인원·총인원·담당자", "시스템에 기록 없음"],
+  ["m", "대피 소요 시간", "대피 완료 시각 기록 없음(참고값만)"],
+  ["m", "평가 O/X·비고·반영사항·사진", "교직원 판단"],
+].map(([k, t, s]) => `<li><span class="chip ${k}" style="padding:0 6px;font-size:12px">${k === "a" ? "시스템" : k === "c" ? "조건부" : "직접"}</span> ${esc(t)} — ${esc(s)}</li>`).join("");
+
+$("plain").addEventListener("change", (e) => document.body.classList.toggle("plain", e.target.checked));
+</script>
+</body>
+</html>

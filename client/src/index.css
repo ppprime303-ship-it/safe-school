@@ -86,3 +86,32 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* STEP 3-D 훈련일지 인쇄(PDF로 저장): 미리보기 A4 쪽만 출력 */
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+  body:has(.drill-print) * {
+    visibility: hidden;
+  }
+  body:has(.drill-print) .drill-print,
+  body:has(.drill-print) .drill-print * {
+    visibility: visible;
+  }
+  body:has(.drill-print) .drill-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    overflow: visible;
+  }
+  .drill-page {
+    box-shadow: none !important;
+    margin: 0 !important;
+    break-after: page;
+  }
+  .drill-page:last-child {
+    break-after: auto;
+  }
+}

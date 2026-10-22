@@ -1,0 +1,20 @@
+{
+  "_설명": "STEP 3-D 시연용 가상 데이터(실제 학생·교직원 정보 없음). 앱 연결 시 서버가 같은 모양으로 만들어 넘김",
+  "schoolName": "SAFE SCHOOL 시연초등학교",
+  "event": { "type": "earthquake", "typeLabel": "지진", "mode": "drill",
+             "startedAt": "2026-09-09T10:20:00+09:00", "closedAt": "2026-09-09T11:20:00+09:00", "evacPlace": "운동장" },
+  "classes": [
+    { "label": "1학년 1반", "enrolled": 25, "report": { "evacuated": 24, "absentKnown": 1, "injured": 0, "unconfirmed": 0 } },
+    { "label": "1학년 2반", "enrolled": 27, "report": { "evacuated": 27, "absentKnown": 0, "injured": 0, "unconfirmed": 0 } },
+    { "label": "2학년 1반", "enrolled": 24, "report": null }
+  ],
+  "roles": [
+    { "part": "안전교육 및 학생 대피", "who": "각 반 담임교사" },
+    { "part": "신고", "who": "" },
+    { "part": "안내 방송", "who": "" },
+    { "part": "부상 학생 응급처치", "who": "" },
+    { "part": "실내 잔류 확인", "who": "" },
+    { "part": "소요시간 측정, 최종인원 점검", "who": "" }
+  ],
+  "evals": ["대피의 신속성", "대피경로의 효율성", "대피장소의 안전성", "교사 역할의 조직적 수행 정도", "비상벨 또는 사이렌 소리의 적절성", "학생의 반응"]
+}

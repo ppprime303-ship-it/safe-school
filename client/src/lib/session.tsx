@@ -11,6 +11,10 @@ export interface Membership {
   status: MembershipStatus;
   school: { id: string; name: string; status: "pending_verification" | "active" | "suspended"; isDemo: boolean; schoolKindCode: string | null };
   assignments: { duty: "homeroom" | "assist" | "inspection"; class: { id: string; label: string; schoolYear: number } }[];
+  /** STEP 3-D 직책·업무(교장·교감·안전업무 담당·앱 운영담당)와 합산 권한 — 서버가 다시 검사 */
+  duties?: string[];
+  actingDuties?: string[];
+  capabilities?: string[];
 }
 
 export interface Me {

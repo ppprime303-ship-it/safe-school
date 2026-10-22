@@ -2,6 +2,7 @@
 import type { AssignmentDuty, MemberRole, PrismaClient } from "@prisma/client";
 import { AppError, badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { writeAudit } from "./audit.js";
+import { countOperators, lockSchoolOperators } from "./access.js";
 
 // ───────────── 접근 검증(모든 학교 업무 API가 사용) ─────────────
 // 승인된 소속 + 활성 학교 + (필요 시) 역할이 모두 맞아야 통과합니다.
@@ -149,20 +150,39 @@ export async function setAssignments(
 // ───────────── 관리자: 권한 회수(세션 즉시 무효화) ─────────────
 export async function revokeMembership(
   prisma: PrismaClient,
-  params: { schoolId: string; actorUserId: string; membershipId: string; ip?: string | null },
+  params: { schoolId: string; actorUserId: string; membershipId: string; actorRole?: MemberRole; ip?: string | null },
 ) {
   return prisma.$transaction(async (tx) => {
+    await lockSchoolOperators(tx, params.schoolId); // 동시 회수로 관리자·운영자가 0명이 되지 않게
     const membership = await tx.schoolMembership.findFirst({ where: { id: params.membershipId, schoolId: params.schoolId } });
     if (!membership) throw notFound("교직원을 찾을 수 없습니다.");
     if (membership.userId === params.actorUserId) throw conflict("cannot_revoke_self", "자기 자신의 권한은 회수할 수 없습니다.");
+    // STEP 3-D: 플랫폼 운영자가 자격을 확인한 학교 관리자(admin)는 다른 관리자만 회수할 수 있음(앱 운영담당은 불가)
+    if (membership.role === "admin" && params.actorRole && params.actorRole !== "admin") {
+      throw forbidden("학교 관리자의 권한은 다른 학교 관리자만 회수할 수 있습니다.");
+    }
+    // STEP 3-D: 교장·교감 직책(플랫폼 운영자가 기관 확인 후 등록)이 있는 계정은 앱에서 회수하지 않음 — 직책 종료는 플랫폼 운영자 도구로
+    const position = await tx.memberDuty.count({ where: { membershipId: membership.id, endedAt: null, duty: { in: ["principal", "vice_principal"] } } });
+    if (position > 0) {
+      throw forbidden("교장·교감 직책이 등록된 계정은 앱에서 회수할 수 없습니다. 전보·퇴직 등은 플랫폼 운영자에게 직책 종료를 요청하세요.");
+    }
     if (membership.role === "admin") {
       const otherAdmins = await tx.schoolMembership.count({
         where: { schoolId: params.schoolId, role: "admin", status: "approved", id: { not: membership.id } },
       });
       if (otherAdmins === 0) throw conflict("last_admin", "마지막 관리자의 권한은 회수할 수 없습니다.");
     }
+    // STEP 3-D: 교직원 승인 권한을 가진 사람이 한 명도 남지 않게 되는 회수 방지
+    if (membership.status === "approved" && (await countOperators(tx, params.schoolId)) > 0 && (await countOperators(tx, params.schoolId, membership.id)) === 0) {
+      throw conflict("last_operator", "교직원 승인 권한을 가진 마지막 사람의 권한은 회수할 수 없습니다. 먼저 다른 앱 운영담당을 지정하세요.");
+    }
     await tx.schoolMembership.update({ where: { id: membership.id }, data: { status: "revoked", revokedAt: new Date() } });
     await tx.classAssignment.deleteMany({ where: { membershipId: membership.id } });
+    // STEP 3-D: 진행 중인 직책·업무도 함께 종료(기록은 보존)
+    const endedDuties = await tx.memberDuty.updateMany({
+      where: { membershipId: membership.id, endedAt: null },
+      data: { endedAt: new Date(), endedById: params.actorUserId, endReason: "교직원 권한 회수" },
+    });
     const { count } = await tx.session.deleteMany({ where: { userId: membership.userId } });
     await writeAudit(tx, {
       schoolId: params.schoolId,
@@ -170,7 +190,7 @@ export async function revokeMembership(
       action: "membership.revoked",
       targetType: "membership",
       targetId: membership.id,
-      after: { sessionsInvalidated: count },
+      after: { sessionsInvalidated: count, dutiesEnded: endedDuties.count },
       ip: params.ip,
     });
     return { sessionsInvalidated: count };

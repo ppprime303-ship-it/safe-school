@@ -1,6 +1,7 @@
 // 학교 선택: 내 소속 학교로 시작하거나, 학교를 검색해 등록 신청(최초) 또는 가입 신청(이미 등록된 학교)
 import { useState, type FormEvent } from "react";
 import { api, ApiError } from "../lib/api";
+import { homePath, roleSummary } from "../lib/permissions";
 import { navigate } from "../lib/router";
 import { useSession, type Membership } from "../lib/session";
 import { AppShell } from "../components/layout/AppShell";
@@ -58,7 +59,7 @@ export function SchoolSelectPage() {
 
   const start = (m: Membership) => {
     selectSchool(m.school.id);
-    navigate(m.role === "admin" ? `/s/${m.school.id}/board` : `/s/${m.school.id}/report`);
+    navigate(homePath(m));
   };
 
   const search = async (e: FormEvent) => {
@@ -124,7 +125,7 @@ export function SchoolSelectPage() {
                     {membershipBadge(m)}
                   </div>
                   <p className="mt-1 text-base text-ink-muted">
-                    {m.role === "admin" ? "학교 관리자" : m.role === "homeroom" ? "담임교사" : "교직원"}
+                    {roleSummary(m)}
                     {m.assignments.length > 0 && ` · ${m.assignments.map((a) => a.class.label).join(", ")}`}
                   </p>
                   {usable ? (

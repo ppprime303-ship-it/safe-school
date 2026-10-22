@@ -27,6 +27,7 @@
     "e2e:step3": "tsx scripts/e2e-step3.ts",
     "e2e:step3b": "tsx scripts/e2e-step3b.ts",
     "e2e:step3c": "tsx scripts/e2e-step3c.ts",
+    "e2e:step3d": "tsx scripts/e2e-step3d.ts",
     "alerts": "tsx scripts/alerts.ts"
   },
   "dependencies": {
