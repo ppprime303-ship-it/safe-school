@@ -15,6 +15,9 @@ import { AlertsPage } from "./pages/alerts/AlertsPage";
 import { NoticesPage } from "./pages/notices/NoticesPage";
 import { NoticeEditorPage } from "./pages/notices/NoticeEditorPage";
 import { AppShell } from "./components/layout/AppShell";
+import { can, homePath } from "./lib/permissions";
+import { DrillLogsPage } from "./pages/drill/DrillLogsPage";
+import { DrillLogEditorPage } from "./pages/drill/DrillLogEditorPage";
 
 function Redirect({ to }: { to: string }) {
   useEffect(() => navigate(to, { replace: true }), [to]);
@@ -42,11 +45,20 @@ function Routes() {
 
   if (path === "/") {
     if (!current) return <Redirect to="/schools" />;
-    return <Redirect to={current.role === "admin" ? `/s/${current.school.id}/board` : `/s/${current.school.id}/report`} />;
+    return <Redirect to={homePath(current)} />;
   }
   if (path === "/schools") return <SchoolSelectPage />;
 
   // STEP 3-C 안내문 편집(새 안내문은 /s/:schoolId/notices/new?alert=<경보 ID>)
+  // STEP 3-D 훈련일지 편집
+  const drillRoute = matchPath("/s/:schoolId/drill-logs/:logId", path);
+  if (drillRoute) {
+    const m = usableMemberships.find((x) => x.school.id === drillRoute.schoolId);
+    if (!m) return <Redirect to="/schools" />;
+    if (!can(m, "drilllog.view")) return <Redirect to={homePath(m)} />;
+    return <DrillLogEditorPage key={drillRoute.logId} schoolId={drillRoute.schoolId!} logId={drillRoute.logId!} />;
+  }
+
   const noticeRoute = matchPath("/s/:schoolId/notices/:noticeId", path);
   if (noticeRoute) {
     if (!usableMemberships.some((m) => m.school.id === noticeRoute.schoolId)) return <Redirect to="/schools" />;
@@ -58,18 +70,19 @@ function Routes() {
     const membership = usableMemberships.find((m) => m.school.id === school.schoolId);
     if (!membership) return <Redirect to="/schools" />;
     if (school.screen === "report") return <ReportPage schoolId={school.schoolId!} />;
-    if (school.screen === "alerts") return <AlertsPage schoolId={school.schoolId!} isAdmin={membership.role === "admin"} />;
+    if (school.screen === "alerts") return <AlertsPage schoolId={school.schoolId!} isAdmin={can(membership, "region.manage")} />;
     if (school.screen === "notices") return <NoticesPage key={window.location.search} schoolId={school.schoolId!} />;
-    // 관리자 전용 화면: 화면에서도 막고, 서버 API에서도 다시 검사합니다.
-    const adminScreens: Record<string, (id: string) => ReactElement> = {
-      board: (id) => <BoardPage schoolId={id} />,
-      members: (id) => <MembersPage schoolId={id} />,
-      classes: (id) => <ClassesPage schoolId={id} />,
+    // 권한이 필요한 화면: 화면에서도 막고, 서버 API에서도 다시 검사합니다(STEP 3-D: 역할 대신 합산 권한).
+    const guarded: Record<string, { cap: Parameters<typeof can>[1]; page: (id: string) => ReactElement }> = {
+      board: { cap: "board.view", page: (id) => <BoardPage schoolId={id} /> },
+      members: { cap: "members.manage", page: (id) => <MembersPage schoolId={id} /> },
+      classes: { cap: "classes.manage", page: (id) => <ClassesPage schoolId={id} /> },
+      "drill-logs": { cap: "drilllog.view", page: (id) => <DrillLogsPage schoolId={id} /> },
     };
-    const adminScreen = adminScreens[school.screen!];
-    if (adminScreen) {
-      if (membership.role !== "admin") return <Redirect to={`/s/${school.schoolId}/report`} />;
-      return adminScreen(school.schoolId!);
+    const g = guarded[school.screen!];
+    if (g) {
+      if (!can(membership, g.cap)) return <Redirect to={homePath(membership)} />;
+      return g.page(school.schoolId!);
     }
   }
 

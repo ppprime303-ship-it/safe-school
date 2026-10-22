@@ -9,6 +9,7 @@ import { Icon } from "../../components/ui/Icon";
 import { PrimaryButton } from "../../components/ui/PrimaryButton";
 import { EmptyState, ErrorState, LoadingState, SaveStatus, type SaveState } from "../../components/ui/States";
 import { Badge } from "../../components/ui/StatusBadge";
+import { DutiesSection, DutyBadges, type MemberDutyView } from "./DutiesSection";
 
 type Role = "admin" | "homeroom" | "staff";
 type Duty = "homeroom" | "assist" | "inspection";
@@ -19,6 +20,7 @@ interface Member {
   requestedAt: string;
   user: { displayName: string; email: string };
   assignments: { duty: Duty; class: { id: string; label: string; schoolYear: number } }[];
+  duties?: MemberDutyView[]; // STEP 3-D 직책·업무
 }
 interface SchoolClass {
   id: string;
@@ -172,6 +174,7 @@ export function MembersPage({ schoolId }: { schoolId: string }) {
                       <p className="flex flex-wrap items-center gap-2 text-lg font-bold">
                         {m.user.displayName}
                         <Badge tone={m.role === "admin" ? "info" : "neutral"}>{ROLE_LABEL[m.role]}</Badge>
+                        <DutyBadges duties={m.duties ?? []} />
                       </p>
                       <p className="mt-0.5 text-base text-ink-muted">
                         {m.assignments.length > 0 ? m.assignments.map((a) => `${a.class.label}${a.duty === "assist" ? "(보조)" : ""}`).join(", ") : "담당 학급 없음"}
@@ -187,6 +190,16 @@ export function MembersPage({ schoolId }: { schoolId: string }) {
               )}
             </div>
           </section>
+
+          {/* STEP 3-D 업무 담당자(안전업무 담당·앱 운영담당 지정, 교장·교감 표시) */}
+          <DutiesSection
+            schoolId={schoolId}
+            members={approved.map((m) => ({ id: m.id, role: m.role, user: m.user, duties: m.duties ?? [] }))}
+            onChanged={async (message) => {
+              setSaveState({ kind: "saved", at: message });
+              await load();
+            }}
+          />
         </div>
       )}
 

@@ -164,3 +164,30 @@ export const handlingRecordSchema = z
   .refine((v) => !v.sentAt || v.sentByTeacher, { message: "발송 일시는 '발송 완료'를 선택했을 때만 적습니다.", path: ["sentAt"] });
 
 export const voidRecordSchema = z.object({ reason: z.string().trim().min(1, "무효 처리 사유를 입력하세요.").max(200) });
+
+// ───────────── STEP 3-D 업무 담당자 지정 ─────────────
+export const dutyGrantSchema = z.object({
+  membershipId: z.string().uuid(),
+  duty: z.enum(["safety_officer", "app_operator"]), // 교장·교감은 앱에서 지정 불가
+  note: z.string().trim().max(200).nullable().optional(),
+});
+export const dutyEndSchema = z.object({ reason: z.string().trim().min(1, "해제 사유를 입력하세요.").max(200) });
+
+// ───────────── STEP 3-D 비상대피훈련일지(담당자 입력값) ─────────────
+const shortText = (max: number) => z.string().max(max);
+export const drillManualSchema = z.object({
+  staffCount: z.string().trim().regex(/^\d{0,4}$/, "교직원 참가 인원은 숫자로 적으세요."),
+  totalCount: z.string().trim().regex(/^\d{0,5}$/, "총 참가 인원은 숫자로 적으세요."),
+  roles: z.array(z.object({ part: shortText(60), who: shortText(60) })).min(1).max(10),
+  trainingNote: shortText(300),
+  evacPlaceText: shortText(200),
+  durationText: shortText(40),
+  evals: z.array(z.object({ item: shortText(60), result: z.enum(["", "O", "X"]), note: shortText(80) })).min(1).max(8),
+  improvements: shortText(1000),
+});
+export const drillLogUpdateSchema = z.object({
+  manual: drillManualSchema,
+  status: z.enum(["draft", "completed"]),
+  expectedVersion: z.number().int().min(1),
+  refreshAuto: z.boolean().optional(), // 원본 기록이 바뀐 경우 자동 항목 다시 불러오기(교직원 확인 후)
+});

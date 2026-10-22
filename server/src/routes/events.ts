@@ -7,6 +7,8 @@ import { parse } from "../validate.js";
 import { requireVerified } from "../auth/session.js";
 import { rateLimit } from "../middleware/security.js";
 import { resolveSchoolAccess } from "../services/membership.js";
+import { resolveAccess } from "../services/access.js";
+import type { Capability } from "../../../shared/permissions.js";
 import { addEventType, closeEvent, getActiveEvent, getBoard, issueEvent, myClasses, submitReport, summarize, updateEvent } from "../services/events.js";
 import {
   addEventTypeSchema,
@@ -24,7 +26,12 @@ const issueLimiter = rateLimit({ windowMs: 60 * 1000, max: 20 });
 
 const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value) ?? "";
 const ids = (req: Request) => ({ schoolId: param(req.params.schoolId), eventId: param(req.params.eventId) });
-const admin = (req: Request) => resolveSchoolAccess(prisma, { userId: req.auth!.userId, schoolId: param(req.params.schoolId), roles: ["admin"] });
+// STEP 3-D: 발령·종료·상황판은 기능 권한으로 검사(기존 관리자 + 교장·교감 + 안전업무 담당). 결과는 기존과 같은 소속 정보
+const can = (cap: Capability) => async (req: Request) =>
+  (await resolveAccess(prisma, { userId: req.auth!.userId, schoolId: param(req.params.schoolId), need: cap })).membership;
+const issuer = can("event.issue");
+const closer = can("event.close");
+const boardViewer = can("board.view");
 const member = (req: Request) => resolveSchoolAccess(prisma, { userId: req.auth!.userId, schoolId: param(req.params.schoolId) });
 
 // 진행 중 상황(승인된 교직원 누구나)
@@ -35,27 +42,27 @@ eventsRouter.get("/schools/:schoolId/events/active", requireVerified, async (req
 
 // A1 발령(관리자). 실제 상황은 confirmReal: true 필요
 eventsRouter.post("/schools/:schoolId/events", requireVerified, issueLimiter, async (req, res) => {
-  await admin(req);
+  await issuer(req);
   const input = parse(issueEventSchema, req.body);
   const event = await issueEvent(prisma, { schoolId: param(req.params.schoolId), actorUserId: req.auth!.userId, ...input, ip: req.ip });
   res.status(201).json({ event });
 });
 
 eventsRouter.post("/schools/:schoolId/events/:eventId/types", requireVerified, async (req, res) => {
-  await admin(req);
+  await issuer(req);
   const input = parse(addEventTypeSchema, req.body);
   res.json({ event: await addEventType(prisma, { ...ids(req), actorUserId: req.auth!.userId, type: input.type, note: input.note, ip: req.ip }) });
 });
 
 eventsRouter.patch("/schools/:schoolId/events/:eventId", requireVerified, async (req, res) => {
-  await admin(req);
+  await issuer(req);
   const input = parse(updateEventSchema, req.body);
   res.json({ event: await updateEvent(prisma, { ...ids(req), actorUserId: req.auth!.userId, ...input, ip: req.ip }) });
 });
 
 // A3 상황판(관리자)
 eventsRouter.get("/schools/:schoolId/events/:eventId/board", requireVerified, async (req, res) => {
-  await admin(req);
+  await boardViewer(req);
   const board = await getBoard(prisma, ids(req));
   res.json({ ...board, summary: summarize(board.classes) });
 });
@@ -88,7 +95,7 @@ eventsRouter.put("/schools/:schoolId/events/:eventId/reports/:classId", requireV
 
 // 종료(관리자). 실제 상황은 confirmClose: true 필요
 eventsRouter.post("/schools/:schoolId/events/:eventId/close", requireVerified, issueLimiter, async (req, res) => {
-  await admin(req);
+  await closer(req);
   const input = parse(closeEventSchema, req.body ?? {});
   res.json(await closeEvent(prisma, { ...ids(req), actorUserId: req.auth!.userId, confirmClose: input.confirmClose, ip: req.ip }));
 });

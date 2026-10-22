@@ -1,4 +1,5 @@
 // 교직원 계정: 가입 → 이메일 인증 → 로그인. 학교 소속은 routes/schools.ts 에서 따로 신청합니다.
+import { capabilitiesFor } from "../../../shared/permissions.js";
 import { Router } from "express";
 import { prisma } from "../db.js";
 import { AppError, conflict } from "../errors.js";
@@ -130,6 +131,7 @@ authRouter.get("/auth/me", requireAuth, async (req, res) => {
         include: {
           school: { select: { id: true, name: true, status: true, isDemo: true, schoolKindCode: true } },
           assignments: { include: { schoolClass: { select: { id: true, label: true, schoolYear: true } } } },
+          duties: { where: { endedAt: null }, select: { duty: true, isActing: true } },
         },
       },
       registrations: { select: { id: true, schoolId: true, status: true, createdAt: true } },
@@ -145,6 +147,10 @@ authRouter.get("/auth/me", requireAuth, async (req, res) => {
       status: m.status,
       school: m.school,
       assignments: m.assignments.map((a) => ({ duty: a.duty, class: a.schoolClass })),
+      // STEP 3-D: 직책·업무와 합산 권한(화면 표시용 — 서버는 요청마다 다시 검사)
+      duties: m.duties.map((d) => d.duty),
+      actingDuties: m.duties.filter((d) => d.isActing).map((d) => d.duty),
+      capabilities: m.status === "approved" ? capabilitiesFor(m.role, m.duties.map((d) => d.duty)) : [],
     })),
     registrations: user.registrations,
   });
