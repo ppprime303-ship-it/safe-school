@@ -18,7 +18,7 @@ import { AppShell } from "./components/layout/AppShell";
 import { can, homePath } from "./lib/permissions";
 import { DrillLogsPage } from "./pages/drill/DrillLogsPage";
 import { DrillLogEditorPage } from "./pages/drill/DrillLogEditorPage";
-import { EducationResourcesPage } from "./pages/education/EducationResourcesPage";
+import { EducationResourceDetailPage, EducationResourcesPage } from "./pages/education/EducationResourcesPage";
 
 function Redirect({ to }: { to: string }) {
   useEffect(() => navigate(to, { replace: true }), [to]);
@@ -58,6 +58,13 @@ function Routes() {
     if (!m) return <Redirect to="/schools" />;
     if (!can(m, "drilllog.view")) return <Redirect to={homePath(m)} />;
     return <DrillLogEditorPage key={drillRoute.logId} schoolId={drillRoute.schoolId!} logId={drillRoute.logId!} />;
+  }
+
+  // STEP 4 안전교육 자료 상세(SAFE SCHOOL 안): 목록과 같은 공통 소속 검사만
+  const eduRoute = matchPath("/s/:schoolId/education/:resourceId", path);
+  if (eduRoute) {
+    if (!usableMemberships.some((m) => m.school.id === eduRoute.schoolId)) return <Redirect to="/schools" />;
+    return <EducationResourceDetailPage key={eduRoute.resourceId} schoolId={eduRoute.schoolId!} resourceId={eduRoute.resourceId!} />;
   }
 
   const noticeRoute = matchPath("/s/:schoolId/notices/:noticeId", path);
