@@ -2,13 +2,14 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Icon, type IconName } from "./Icon";
 
-type Variant = "primary" | "secondary" | "danger" | "ghost" | "success";
+type Variant = "primary" | "secondary" | "danger" | "dangerOutline" | "ghost" | "success";
 type Size = "md" | "lg" | "xl";
 
 const VARIANT: Record<Variant, string> = {
   primary: "bg-brand text-white hover:bg-brand-hover",
   secondary: "border-2 border-brand bg-card text-brand hover:bg-brand-soft",
   danger: "bg-danger text-white hover:bg-danger-hover",
+  dangerOutline: "border-2 border-danger bg-card text-danger hover:bg-danger-soft", // 권한 해제처럼 되돌릴 수 있는 위험 작업(STEP 3-E)
   success: "bg-accent text-white hover:bg-accent-hover",
   ghost: "bg-transparent text-brand hover:bg-brand-soft",
 };
