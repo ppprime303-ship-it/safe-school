@@ -13,7 +13,9 @@ export interface NavItem {
   label: string;
   icon: IconName;
   /** STEP 4: 모바일에서 하단 메뉴 대신 상단 머리글에 둘 항목(하단 메뉴 칸 수·배치를 바꾸지 않기 위함) */
-  mobile?: "header";
+  mobile?: "header" | "none";
+  /** 이 경로들로 시작하면 머리글 항목을 '현재 화면'으로 표시(STEP 5: 안전교육·시설 자료 탭 공유) */
+  activePrefixes?: string[];
   /** 모바일 머리글용 짧은 이름 */
   shortLabel?: string;
 }
@@ -30,10 +32,21 @@ export function navItemsFor(schoolId: string | null, caps: readonly string[] | n
   if (has("members.manage")) items.push({ href: `/s/${schoolId}/members`, label: "교직원", icon: "users" });
   if (has("classes.manage")) items.push({ href: `/s/${schoolId}/classes`, label: "학급", icon: "school" });
   // STEP 4: 승인된 교직원 모두 같은 안전교육 자료 안내(권한 검사 없음 — 소속 승인은 App.tsx 공통 검사)
-  items.push({ href: `/s/${schoolId}/education`, label: "안전교육 자료", icon: "book", mobile: "header", shortLabel: "교육자료" });
+  items.push({
+    href: `/s/${schoolId}/education`,
+    label: "안전교육 자료",
+    icon: "book",
+    mobile: "header",
+    shortLabel: "교육자료",
+    activePrefixes: [`/s/${schoolId}/education`, `/s/${schoolId}/facility-resources`],
+  });
+  // STEP 5: 시설 안전점검 자료 — PC 좌측 메뉴에만 별도 항목, 모바일은 머리글 '교육자료' → 화면 위 탭으로 이동(머리글 폭 유지)
+  items.push({ href: `/s/${schoolId}/facility-resources`, label: "시설 안전 자료", icon: "building", mobile: "none" });
   items.push({ href: "/schools", label: has("members.manage") ? "학교" : "학교 선택", icon: "home" });
   return items;
 }
+
+const headerActive = (item: NavItem, path: string) => path === item.href || !!item.activePrefixes?.some((p) => path.startsWith(p));
 
 export function AppHeader({ title, schoolName, links = [] }: { title: string; schoolName?: string; links?: NavItem[] }) {
   const { me, logout } = useSession();
@@ -52,8 +65,8 @@ export function AppHeader({ title, schoolName, links = [] }: { title: string; sc
                 key={item.href}
                 href={item.href}
                 aria-label={item.label}
-                aria-current={path === item.href ? "page" : undefined}
-                className={`flex min-h-touch min-w-touch shrink-0 flex-col items-center justify-center rounded-control px-1.5 text-xs font-bold lg:hidden ${path === item.href ? "bg-brand-soft text-brand" : "text-ink-muted hover:bg-brand-soft"}`}
+                aria-current={headerActive(item, path) ? "page" : undefined}
+                className={`flex min-h-touch min-w-touch shrink-0 flex-col items-center justify-center rounded-control px-1.5 text-xs font-bold lg:hidden ${headerActive(item, path) ? "bg-brand-soft text-brand" : "text-ink-muted hover:bg-brand-soft"}`}
               >
                 <Icon name={item.icon} size={22} />
                 <span className="whitespace-nowrap">{item.shortLabel ?? item.label}</span>
@@ -89,7 +102,7 @@ export function Sidebar({ items, schoolName }: { items: NavItem[]; schoolName?: 
       </div>
       <ul className="flex-1 space-y-1 px-3">
         {items.map((item) => {
-          const active = path === item.href;
+          const active = path === item.href || (item.mobile === "none" && path.startsWith(`${item.href}/`));
           return (
             <li key={item.href}>
               <Link
@@ -119,7 +132,7 @@ export function Sidebar({ items, schoolName }: { items: NavItem[]; schoolName?: 
 
 export function MobileNavigation({ items: all }: { items: NavItem[] }) {
   const path = usePath();
-  const items = all.filter((i) => i.mobile !== "header"); // STEP 4: 머리글 항목은 하단 메뉴에서 제외(기존 하단 메뉴 그대로)
+  const items = all.filter((i) => i.mobile === undefined); // STEP 4·5: 머리글·숨김 항목은 하단 메뉴에서 제외(기존 하단 메뉴 그대로) // STEP 4: 머리글 항목은 하단 메뉴에서 제외(기존 하단 메뉴 그대로)
   if (items.length < 2) return null;
   // STEP 3-E: 겸임으로 메뉴가 6개 이상이면(모바일 390px 기준 칸당 약 55px) 글자를 줄이고 줄바꿈하지 않음
   const dense = items.length > 5;

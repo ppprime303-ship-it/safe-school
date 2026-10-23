@@ -9,7 +9,7 @@ export interface Membership {
   id: string;
   role: MemberRole;
   status: MembershipStatus;
-  school: { id: string; name: string; status: "pending_verification" | "active" | "suspended"; isDemo: boolean; schoolKindCode: string | null };
+  school: { id: string; name: string; status: "pending_verification" | "active" | "suspended"; isDemo: boolean; schoolKindCode: string | null; /** STEP 5: 관할 교육청명(학교 등록 정보, 없으면 null·이전 서버는 없음) */ eduOfficeName?: string | null };
   assignments: { duty: "homeroom" | "assist" | "inspection"; class: { id: string; label: string; schoolYear: number } }[];
   /** STEP 3-D 직책·업무(교장·교감·안전업무 담당·앱 운영담당)와 합산 권한 — 서버가 다시 검사 */
   duties?: string[];

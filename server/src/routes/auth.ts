@@ -129,7 +129,8 @@ authRouter.get("/auth/me", requireAuth, async (req, res) => {
     include: {
       memberships: {
         include: {
-          school: { select: { id: true, name: true, status: true, isDemo: true, schoolKindCode: true } },
+          // STEP 5: eduOfficeName(학교알리미 등록 정보의 관할 교육청명, 본인 소속 학교만) — 시설 안전 자료의 관할 교육청 우선 표시용
+          school: { select: { id: true, name: true, status: true, isDemo: true, schoolKindCode: true, eduOfficeName: true } },
           assignments: { include: { schoolClass: { select: { id: true, label: true, schoolYear: true } } } },
           duties: { where: { endedAt: null }, select: { duty: true, isActing: true } },
         },
