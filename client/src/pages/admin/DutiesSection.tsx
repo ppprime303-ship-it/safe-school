@@ -35,6 +35,55 @@ export function DutyBadges({ duties }: { duties: MemberDutyView[] }) {
   );
 }
 
+/**
+ * STEP 3-E: 교직원 한 명의 업무 행(모바일 겹침 수정).
+ * ① 이름 ② 현재 업무 배지 ③ 권한 변경 단추를 줄로 나눕니다. 모바일(~639px)은 단추를 한 줄에 하나(전체 폭·줄바꿈 허용),
+ * 640px 이상은 2열, PC(lg)는 이름 오른쪽에 나란히. '지정'은 남색 테두리 + 더하기, '해제'는 빨간 테두리 + X로 구분.
+ * 동작(비밀번호 재확인·권한 검사·감사 로그)은 부모(DutiesSection)와 서버가 그대로 처리합니다.
+ */
+export function DutyMemberRow({ member: m, isSelf, onEnd, onGrant }: { member: DutyMember; isSelf: boolean; onEnd: (d: MemberDutyView) => void; onGrant: (duty: StaffDuty) => void }) {
+  return (
+    <li className="py-3 lg:flex lg:items-center lg:gap-4" data-testid="duty-member">
+      <div className="min-w-0 lg:flex-1">
+        <p className="text-base font-bold break-keep [overflow-wrap:anywhere]">{m.user.displayName}</p>
+        <div className="mt-1 flex flex-wrap items-center gap-1.5" aria-label={`${m.user.displayName} 현재 업무`}>
+          {m.duties.length ? <DutyBadges duties={m.duties} /> : <span className="text-sm text-ink-muted">지정된 업무 없음</span>}
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:mt-0 lg:flex lg:shrink-0 lg:flex-wrap lg:justify-end">
+        {GRANTABLE.map((duty) => {
+          const cur = m.duties.find((d) => d.duty === duty);
+          return cur ? (
+            <PrimaryButton
+              key={duty}
+              variant="dangerOutline"
+              icon="x"
+              className="w-full whitespace-normal text-center leading-snug break-keep lg:w-auto"
+              onClick={() => onEnd(cur)}
+            >
+              {DUTY_LABEL[duty]} 해제
+            </PrimaryButton>
+          ) : isSelf ? (
+            <span key={duty} className="flex min-h-touch items-center rounded-control border border-dashed border-line-strong px-3 text-sm text-ink-muted break-keep">
+              {DUTY_LABEL[duty]}: 본인은 다른 담당자가 지정
+            </span>
+          ) : (
+            <PrimaryButton
+              key={duty}
+              variant="secondary"
+              icon="plus"
+              className="w-full whitespace-normal text-center leading-snug break-keep lg:w-auto"
+              onClick={() => onGrant(duty)}
+            >
+              {DUTY_LABEL[duty]} 지정
+            </PrimaryButton>
+          );
+        })}
+      </div>
+    </li>
+  );
+}
+
 type Pending = { kind: "grant"; member: DutyMember; duty: StaffDuty } | { kind: "end"; member: DutyMember; duty: MemberDutyView };
 
 export function DutiesSection({ schoolId, members, onChanged }: { schoolId: string; members: DutyMember[]; onChanged: (msg: string) => void | Promise<void> }) {
@@ -97,29 +146,16 @@ export function DutiesSection({ schoolId, members, onChanged }: { schoolId: stri
           </div>
         ))}
       </dl>
-      <ul className="mt-3 divide-y divide-line">
+      {/* STEP 3-E 모바일 배치: ① 이름 ② 현재 업무 ③ 권한 변경 단추를 줄로 나눔. 모바일은 단추 한 줄에 하나(전체 폭), 중간 폭은 2열, PC(lg)는 이름 옆 오른쪽 정렬 */}
+      <ul className="mt-3 divide-y divide-line" data-testid="duty-members">
         {members.map((m) => (
-          <li key={m.id} className="flex flex-wrap items-center gap-2 py-2">
-            <span className="min-w-0 flex-1 text-base font-bold">
-              {m.user.displayName} <DutyBadges duties={m.duties} />
-            </span>
-            {GRANTABLE.map((duty) => {
-              const cur = m.duties.find((d) => d.duty === duty);
-              return cur ? (
-                <PrimaryButton key={duty} variant="ghost" className="text-danger" onClick={() => { setReason("업무분장 변경"); setPending({ kind: "end", member: m, duty: cur }); }}>
-                  {DUTY_LABEL[duty]} 해제
-                </PrimaryButton>
-              ) : (
-                m.user.email === myEmail ? (
-                  <span key={duty} className="text-sm text-ink-muted">{DUTY_LABEL[duty]}: 본인은 다른 담당자가 지정</span>
-                ) : (
-                  <PrimaryButton key={duty} variant="secondary" onClick={() => setPending({ kind: "grant", member: m, duty })}>
-                    {DUTY_LABEL[duty]} 지정
-                  </PrimaryButton>
-                )
-              );
-            })}
-          </li>
+          <DutyMemberRow
+            key={m.id}
+            member={m}
+            isSelf={m.user.email === myEmail}
+            onEnd={(cur) => { setReason("업무분장 변경"); setPending({ kind: "end", member: m, duty: cur }); }}
+            onGrant={(duty) => setPending({ kind: "grant", member: m, duty })}
+          />
         ))}
       </ul>
 
