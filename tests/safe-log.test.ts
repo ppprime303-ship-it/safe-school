@@ -7,6 +7,11 @@ describe("서버 오류 로그 요약", () => {
     expect(maskSensitive("가입 실패 teacher01@school.example.kr 010-1234-5678")).toBe("가입 실패 [이메일 가림] [전화번호 가림]");
   });
 
+  it("DB 주소(사용자·비밀번호 포함)를 가림", () => {
+    const s = maskSensitive("Can't reach database server postgresql://appuser:S3cr3t@helium:5432/heliumdb?schema=x");
+    expect(s).toBe("Can't reach database server [주소 가림]");
+  });
+
   it("Prisma 호출 내용(요청 값)을 버리고 이름·코드·위치만 남김", () => {
     const e = new Error("\nInvalid `prisma.user.create()` invocation:\n{\n  data: {\n    email: \"kim@example.com\",\n    displayName: \"김가상\"\n  }\n}\nUnknown argument `foo`.");
     (e as Error & { code?: string }).code = "P2009";

@@ -3,11 +3,12 @@
 // - 오류 이름·코드·메시지 첫 부분만 남기고, 이메일·전화번호 형태는 가리며, Prisma 호출 내용(Invalid `…` invocation 이후)은 버립니다.
 // - 문제 위치를 찾을 수 있도록 스택의 앞부분(파일·줄)은 남깁니다(스택에는 요청 값이 없음).
 
+const URL_WITH_SCHEME = /\b(?!file:)[a-z][a-z0-9+.-]*:\/\/[^\s'"`<>]+/gi; // DB 주소 등(사용자·비밀번호 포함 가능)
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const PHONE = /\b0\d{1,2}[- .]?\d{3,4}[- .]?\d{4}\b/g;
 
 export function maskSensitive(text: string): string {
-  return text.replace(EMAIL, "[이메일 가림]").replace(PHONE, "[전화번호 가림]");
+  return text.replace(URL_WITH_SCHEME, "[주소 가림]").replace(EMAIL, "[이메일 가림]").replace(PHONE, "[전화번호 가림]");
 }
 
 export function safeErrorSummary(err: unknown): string {
