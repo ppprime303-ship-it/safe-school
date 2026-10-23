@@ -18,6 +18,7 @@ import { AppShell } from "./components/layout/AppShell";
 import { can, homePath } from "./lib/permissions";
 import { DrillLogsPage } from "./pages/drill/DrillLogsPage";
 import { DrillLogEditorPage } from "./pages/drill/DrillLogEditorPage";
+import { EducationResourcesPage } from "./pages/education/EducationResourcesPage";
 
 function Redirect({ to }: { to: string }) {
   useEffect(() => navigate(to, { replace: true }), [to]);
@@ -72,6 +73,8 @@ function Routes() {
     if (school.screen === "report") return <ReportPage schoolId={school.schoolId!} />;
     if (school.screen === "alerts") return <AlertsPage schoolId={school.schoolId!} isAdmin={can(membership, "region.manage")} />;
     if (school.screen === "notices") return <NoticesPage key={window.location.search} schoolId={school.schoolId!} />;
+    // STEP 4 안전교육 자료 안내: 승인된 소속 교직원 모두(역할·업무 무관 동일), 위의 공통 소속 검사만 사용
+    if (school.screen === "education") return <EducationResourcesPage schoolId={school.schoolId!} />;
     // 권한이 필요한 화면: 화면에서도 막고, 서버 API에서도 다시 검사합니다(STEP 3-D: 역할 대신 합산 권한).
     const guarded: Record<string, { cap: Parameters<typeof can>[1]; page: (id: string) => ReactElement }> = {
       board: { cap: "board.view", page: (id) => <BoardPage schoolId={id} /> },

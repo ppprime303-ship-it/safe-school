@@ -27,6 +27,9 @@ const PATHS = {
   copy: "M9 9h11v11H9V9Zm-4 6H4V4h11v1",
   file: "M6 3h8l4 4v14H6V3Zm8 0v4h4M9 12h6M9 16h6",
   user: "M19 20v-1.5A3.5 3.5 0 0 0 15.5 15h-7A3.5 3.5 0 0 0 5 18.5V20M15.5 7.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z",
+  book: "M12 6.5C10.5 5 8 4.5 4 4.5V18c4 0 6.5.5 8 2 1.5-1.5 4-2 8-2V4.5c-4 0-6.5.5-8 2Zm0 0V20", // STEP 4 안전교육 자료
+  external: "M14 4h6v6M20 4l-9 9M18 14v6H4V6h6", // 새 창(외부 사이트)
+
 } as const;
 
 export type IconName = keyof typeof PATHS;
