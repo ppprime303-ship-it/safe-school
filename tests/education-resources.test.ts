@@ -8,7 +8,12 @@ import {
   countBy,
   filterResources,
   isFilterActive,
+  areaSummary,
+  filterFromSearch,
+  filterToSearch,
+  findResource,
   isSafeExternalUrl,
+  levelSummary,
   validateResources,
   type EducationResource,
 } from "../client/src/lib/educationResources";
@@ -115,5 +120,43 @@ describe("검색(등록한 안내 정보만)", () => {
     const f = { ...EMPTY_FILTER, query: "없는검색어xyz" };
     expect(filterResources(EDUCATION_RESOURCES, f)).toEqual([]);
     expect(isFilterActive(f)).toBe(true);
+  });
+});
+
+describe("주소 쿼리 ↔ 검색어·필터(상태 유지)", () => {
+  it("왕복: 검색어·학교급·영역", () => {
+    const f = { query: "교통 안전", level: "middle" as const, area: "traffic" as const };
+    const q = filterToSearch(f);
+    expect(q).toBe("?q=%EA%B5%90%ED%86%B5+%EC%95%88%EC%A0%84&level=middle&area=traffic");
+    expect(filterFromSearch(q)).toEqual(f);
+  });
+  it("필터가 없으면 쿼리 없음", () => {
+    expect(filterToSearch(EMPTY_FILTER)).toBe("");
+    expect(filterFromSearch("")).toEqual(EMPTY_FILTER);
+  });
+  it("알 수 없는 학교급·영역은 '전체', 검색어는 50자까지", () => {
+    const f = filterFromSearch(`?level=college&area=%3Cscript%3E&q=${"가".repeat(80)}`);
+    expect(f.level).toBe("all");
+    expect(f.area).toBe("all");
+    expect(f.query.length).toBe(50);
+  });
+});
+
+describe("카드 배지·기관 찾기", () => {
+  it("학교급 요약·영역 요약(카드에는 짧게)", () => {
+    const [ss, ka] = EDUCATION_RESOURCES;
+    expect(levelSummary(ss!)).toBe("유·초·중·고");
+    expect(areaSummary(ss!)).toBe("7대 안전교육 영역");
+    expect(areaSummary(ka!)).toBe("생활·교통·재난 외");
+    expect(areaSummary({ ...ka!, areaSummary: undefined })).toBe("생활·교통·폭력예방 외");
+    expect(levelSummary({ ...ka!, levels: ["high", "elementary"] })).toBe("초·고");
+  });
+  it("기관 ID로 찾기, 없으면 null", () => {
+    expect(findResource(EDUCATION_RESOURCES, "kasem")?.operator).toBe("행정안전부");
+    expect(findResource(EDUCATION_RESOURCES, "nope")).toBeNull();
+  });
+  it("연결 종류: 자료실 직접(학교안전지원시스템) / 홈페이지(국민안전교육플랫폼)", () => {
+    expect(EDUCATION_RESOURCES.map((r) => [r.id, r.urlKind])).toEqual([["schoolsafe24", "direct"], ["kasem", "home"]]);
+    expect(EDUCATION_RESOURCES.find((r) => r.id === "kasem")!.menuPath).toBe(undefined);
   });
 });

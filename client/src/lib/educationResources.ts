@@ -22,6 +22,18 @@ export const SCHOOL_LEVELS = [
 ] as const;
 export type SchoolLevelId = (typeof SCHOOL_LEVELS)[number]["id"];
 
+/** 카드 배지용 짧은 이름 */
+export const AREA_SHORT: Record<EducationAreaId, string> = {
+  life: "생활",
+  traffic: "교통",
+  violence: "폭력예방",
+  addiction: "약물·사이버",
+  disaster: "재난",
+  occupational: "직업",
+  firstaid: "응급처치",
+};
+export const LEVEL_SHORT: Record<SchoolLevelId, string> = { kindergarten: "유", elementary: "초", middle: "중", high: "고" };
+
 export const AREA_LABEL = Object.fromEntries(EDUCATION_AREAS.map((a) => [a.id, a.label])) as Record<EducationAreaId, string>;
 export const LEVEL_LABEL = Object.fromEntries(SCHOOL_LEVELS.map((l) => [l.id, l.label])) as Record<SchoolLevelId, string>;
 
@@ -48,6 +60,14 @@ export interface EducationResource {
   areaHowTo?: Partial<Record<EducationAreaId, string>>;
   /** 공식 사이트로 이동할 주소(직접 자료 페이지는 확인된 경우에만, 아니면 기관 홈페이지) */
   url: string;
+  /** url 이 확인된 자료실 직접 주소(direct)인지, 기관 홈페이지(home)인지 */
+  urlKind: "direct" | "home";
+  /** 사이트 안 자료실 위치(메뉴 경로). 확인하지 못했으면 비움 */
+  menuPath?: string;
+  /** 카드 배지용 영역 요약(없으면 자동: 7개 모두면 '7대 안전교육 영역', 아니면 앞 3개 + '외') */
+  areaSummary?: string;
+  /** 통일된 기관 아이콘(공식 로고 사용 허가를 확인하지 못해 로고 이미지는 쓰지 않음) */
+  symbol: "school" | "shield";
   /** url 이 자료 페이지일 때 기관 홈페이지(선택) */
   homeUrl?: string;
   /** 검색용 추가 낱말(주제 키워드) */
@@ -111,6 +131,47 @@ export function countBy(list: readonly EducationResource[], f: ResourceFilter) {
   return { area, level };
 }
 
+/** 카드 배지: 학교급 요약(유·초·중·고) */
+export function levelSummary(r: EducationResource): string {
+  return SCHOOL_LEVELS.filter((l) => r.levels.includes(l.id)).map((l) => LEVEL_SHORT[l.id]).join("·");
+}
+
+/** 카드 배지: 영역 요약(전체 목록은 상세 페이지에서) */
+export function areaSummary(r: EducationResource): string {
+  if (r.areaSummary) return r.areaSummary;
+  if (r.areas.length === EDUCATION_AREAS.length) return "7대 안전교육 영역";
+  const shown = r.areas.slice(0, 3).map((a) => AREA_SHORT[a]).join("·");
+  return r.areas.length > 3 ? `${shown} 외` : shown;
+}
+
+export function findResource(list: readonly EducationResource[], id: string): EducationResource | null {
+  return list.find((r) => r.id === id) ?? null;
+}
+
+/**
+ * 검색어·필터 ↔ 주소 쿼리(?q=&level=&area=) — 상세에서 돌아오거나 새로고침·뒤로 가기 때 상태 복원.
+ * 알 수 없는 값은 '전체'로, 검색어는 50자까지만(화면 입력 제한과 같음).
+ */
+export function filterFromSearch(search: string): ResourceFilter {
+  const p = new URLSearchParams(search);
+  const level = p.get("level");
+  const area = p.get("area");
+  return {
+    query: (p.get("q") ?? "").slice(0, 50),
+    level: SCHOOL_LEVELS.some((l) => l.id === level) ? (level as SchoolLevelId) : "all",
+    area: EDUCATION_AREAS.some((a) => a.id === area) ? (area as EducationAreaId) : "all",
+  };
+}
+
+export function filterToSearch(f: ResourceFilter): string {
+  const p = new URLSearchParams();
+  if (f.query.trim()) p.set("q", f.query.trim());
+  if (f.level !== "all") p.set("level", f.level);
+  if (f.area !== "all") p.set("area", f.area);
+  const s = p.toString();
+  return s ? `?${s}` : "";
+}
+
 /** 안내 데이터 점검(테스트·화면에서 사용): 문제 목록을 돌려줍니다. */
 export function validateResources(list: readonly EducationResource[], allowedHosts: readonly string[]): string[] {
   const errors: string[] = [];
@@ -129,6 +190,8 @@ export function validateResources(list: readonly EducationResource[], allowedHos
     for (const a of Object.keys(r.areaHowTo ?? {})) if (!r.areas.includes(a as EducationAreaId)) errors.push(`${r.id}: 영역 안내(${a})가 있으나 영역 목록에 없음`);
     if (!isSafeExternalUrl(r.url, allowedHosts)) errors.push(`${r.id}: 허용되지 않은 주소`);
     if (r.homeUrl !== undefined && !isSafeExternalUrl(r.homeUrl, allowedHosts)) errors.push(`${r.id}: 허용되지 않은 홈페이지 주소`);
+    if (r.urlKind === "home" && r.homeUrl !== undefined && r.homeUrl !== r.url) errors.push(`${r.id}: 홈페이지 연결인데 homeUrl 이 다름`);
+    if (!/^[a-z0-9-]+$/.test(r.id)) errors.push(`${r.id}: id 형식(영문 소문자·숫자·-)`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(r.verifiedAt)) errors.push(`${r.id}: 확인일 형식 오류`);
   }
   return errors;
