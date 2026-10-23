@@ -174,7 +174,8 @@ describe("메뉴 연결", () => {
   });
   it("학교를 고르지 않았으면 메뉴 없음, 기존 하단 메뉴 항목 수는 그대로", () => {
     expect(navItemsFor(null, null).some((i) => i.href.endsWith("/education"))).toBe(false);
-    const bottom = (caps: string[]) => navItemsFor("s1", caps).filter((i) => i.mobile !== "header").map((i) => i.label);
+    // 하단 메뉴 = mobile 표시가 없는 항목(STEP 5: 시설 안전 자료는 mobile:"none"이라 하단 메뉴에 없음)
+    const bottom = (caps: string[]) => navItemsFor("s1", caps).filter((i) => i.mobile === undefined).map((i) => i.label);
     expect(bottom([])).toEqual(["학급 보고", "경보", "학교 선택"]);
     expect(bottom(["board.view", "drilllog.view", "members.manage", "classes.manage"])).toEqual(["상황판", "학급 보고", "경보", "훈련일지", "교직원", "학급", "학교"]);
   });

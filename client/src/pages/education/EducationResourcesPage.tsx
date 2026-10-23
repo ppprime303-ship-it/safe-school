@@ -9,6 +9,7 @@ import { Icon } from "../../components/ui/Icon";
 import { PrimaryButton } from "../../components/ui/PrimaryButton";
 import { Link } from "../../lib/router";
 import { EDUCATION_ALLOWED_HOSTS, EDUCATION_RESOURCES } from "../../data/educationResources";
+import { ResourceTabs } from "../facility/FacilityResourcesPage";
 import {
   AREA_LABEL,
   EDUCATION_AREAS,
@@ -419,6 +420,8 @@ export function EducationResourcesPage({ schoolId }: { schoolId: string }) {
   );
   return (
     <AppShell title="안전교육 자료" schoolId={schoolId}>
+      {/* STEP 5: 시설 안전점검 자료로 가는 탭(모바일 머리글 '교육자료' 하나로 두 화면) */}
+      <ResourceTabs schoolId={schoolId} active="education" />
       <EducationResourcesView schoolId={schoolId} initialFilter={initial} onFilterChange={sync} />
     </AppShell>
   );

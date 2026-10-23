@@ -19,6 +19,7 @@ import { can, homePath } from "./lib/permissions";
 import { DrillLogsPage } from "./pages/drill/DrillLogsPage";
 import { DrillLogEditorPage } from "./pages/drill/DrillLogEditorPage";
 import { EducationResourceDetailPage, EducationResourcesPage } from "./pages/education/EducationResourcesPage";
+import { FacilityResourceDetailPage, FacilityResourcesPage } from "./pages/facility/FacilityResourcesPage";
 
 function Redirect({ to }: { to: string }) {
   useEffect(() => navigate(to, { replace: true }), [to]);
@@ -67,6 +68,13 @@ function Routes() {
     return <EducationResourceDetailPage key={eduRoute.resourceId} schoolId={eduRoute.schoolId!} resourceId={eduRoute.resourceId!} />;
   }
 
+  // STEP 5 시설 안전점검 자료 상세: 목록과 같은 공통 소속 검사만
+  const facRoute = matchPath("/s/:schoolId/facility-resources/:resourceId", path);
+  if (facRoute) {
+    if (!usableMemberships.some((m) => m.school.id === facRoute.schoolId)) return <Redirect to="/schools" />;
+    return <FacilityResourceDetailPage key={facRoute.resourceId} schoolId={facRoute.schoolId!} resourceId={facRoute.resourceId!} />;
+  }
+
   const noticeRoute = matchPath("/s/:schoolId/notices/:noticeId", path);
   if (noticeRoute) {
     if (!usableMemberships.some((m) => m.school.id === noticeRoute.schoolId)) return <Redirect to="/schools" />;
@@ -82,6 +90,8 @@ function Routes() {
     if (school.screen === "notices") return <NoticesPage key={window.location.search} schoolId={school.schoolId!} />;
     // STEP 4 안전교육 자료 안내: 승인된 소속 교직원 모두(역할·업무 무관 동일), 위의 공통 소속 검사만 사용
     if (school.screen === "education") return <EducationResourcesPage schoolId={school.schoolId!} />;
+    // STEP 5 시설 안전점검 법령·지침·매뉴얼 안내: 승인된 소속 교직원 모두 동일
+    if (school.screen === "facility-resources") return <FacilityResourcesPage schoolId={school.schoolId!} />;
     // 권한이 필요한 화면: 화면에서도 막고, 서버 API에서도 다시 검사합니다(STEP 3-D: 역할 대신 합산 권한).
     const guarded: Record<string, { cap: Parameters<typeof can>[1]; page: (id: string) => ReactElement }> = {
       board: { cap: "board.view", page: (id) => <BoardPage schoolId={id} /> },

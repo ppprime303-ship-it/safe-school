@@ -30,6 +30,7 @@ const PATHS = {
   book: "M12 6.5C10.5 5 8 4.5 4 4.5V18c4 0 6.5.5 8 2 1.5-1.5 4-2 8-2V4.5c-4 0-6.5.5-8 2Zm0 0V20", // STEP 4 안전교육 자료
   "chevron-left": "M15 5l-7 7 7 7",
   shield: "M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3Z", // 공공기관 일반 심볼(STEP 4)
+  building: "M4 21V6l8-3 8 3v15M2 21h20M9 21v-4h6v4M8 8.5h2m4 0h2M8 12.5h2m4 0h2", // STEP 5 시설 안전 자료
   external: "M14 4h6v6M20 4l-9 9M18 14v6H4V6h6", // 새 창(외부 사이트)
 
 } as const;
