@@ -101,6 +101,8 @@ function unzipSection(buf: Buffer) {
 
 let keySeq = 0;
 const ikey = () => `e2e3e-${Date.now()}-${++keySeq}`;
+// 이메일은 DB 제약(users_email_lowercase)에 맞게 소문자로 만듭니다(인증·DB 제약은 그대로). 키는 소문자로 바꿔도 서로 겹치지 않음
+const emailOf = (key: string) => `${key.toLowerCase()}@e2e3e.test`;
 const report = (evacuated: number, absentKnown: number, enrolledCount: number, expectedVersion: number | null, injured = 0, note: string | null = null) => ({
   evacuated, absentKnown, injured, enrolledCount, enrolledChangeReason: null, note, expectedVersion,
 });
@@ -120,7 +122,7 @@ async function main() {
   const C = await prisma.school.create({ data: { name: "통합검증C초등학교", slug: "e2e3e-c", address: "대전광역시 서구 시험로 1", status: "active", activatedAt: now } });
   const mem: Record<string, string> = {};
   const person = async (key: string, schoolId: string, role: "admin" | "homeroom" | "staff") => {
-    const u = await prisma.user.create({ data: { email: `${key}@e2e3e.test`, displayName: key, passwordHash: hash, emailVerifiedAt: now } });
+    const u = await prisma.user.create({ data: { email: emailOf(key), displayName: key, passwordHash: hash, emailVerifiedAt: now } });
     mem[key] = (await prisma.schoolMembership.create({ data: { schoolId, userId: u.id, role, status: "approved", approvalMethod: "roster", approvedAt: now } })).id;
   };
   // A학교: 교장 1·교감 2(직책), 안전담당 A(교직원)·B(담임 겸임), 안전+앱운영 겸임 1, 앱 운영담당 1, 기존 관리자, 담임, 일반 교직원
@@ -151,7 +153,7 @@ async function main() {
     const ag: Record<string, Agent> = {};
     for (const k of ["admin", "principal", "vice1", "vice2", "safetyA", "safetyB", "opSafe", "operator", "teacher", "staff", "adminB", "opX", "opY"]) {
       ag[k] = new Agent(k);
-      await ag[k]!.login(`${k}@e2e3e.test`);
+      await ag[k]!.login(emailOf(k));
     }
     const S = `/schools/${A.id}`;
     const SB = `/schools/${B.id}`;
