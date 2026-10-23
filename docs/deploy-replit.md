@@ -1,5 +1,7 @@
 # Replit 배포 준비(STEP 2, 브랜치 `step-2-integrated`)
 
+> **STEP 3-F(2026-10-23) 변경**: 배포 실행은 `npm run deploy:start`(DB 대상 스키마 검증 후 같은 주소로 마이그레이션·서버 시작)로 바꿉니다. 아래 STEP 2 시점 설명보다 `docs/step3f/deploy-db-safety.md`가 우선합니다.
+
 ## 1. 브랜치
 
 | 브랜치 | 내용 | 상태 |

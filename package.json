@@ -9,8 +9,11 @@
   },
   "scripts": {
     "dev": "tsx watch --clear-screen=false server/src/index.ts",
-    "build": "vite build && esbuild server/src/index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/server/index.js",
+    "build": "vite build && esbuild server/src/index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/server/index.js && esbuild scripts/deploy-start.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/deploy-start.js",
     "start": "NODE_ENV=production node dist/server/index.js",
+    "deploy:start": "node dist/deploy-start.js",
+    "deploy:check": "tsx scripts/deploy-start.ts --check",
+    "deploy:migrate": "tsx scripts/deploy-start.ts --migrate-only",
     "typecheck": "tsc --noEmit",
     "test": "tsx scripts/prepare-test-db.ts && vitest run",
     "db:generate": "prisma generate",
