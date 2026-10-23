@@ -213,7 +213,7 @@ export function LoginPage() {
         </form>
         <p className="mt-4 text-center text-sm text-ink-muted">재난 중 앱에 접속할 수 없으면 학교의 기존 비상대응 절차(방송·비상연락망)를 따르세요.</p>
         <p className="mt-1 text-center text-sm">
-          <a href="/status" className="font-semibold text-accent underline underline-offset-4">
+          <a href="/status" className="inline-flex min-h-touch items-center font-semibold text-accent underline underline-offset-4">
             시스템 상태 확인
           </a>
         </p>

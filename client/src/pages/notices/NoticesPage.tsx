@@ -36,11 +36,11 @@ export function NoticesPage({ schoolId }: { schoolId: string }) {
           <h2 className="text-lg font-bold">{alertId ? "이 경보의 안내문" : "작성한 안내문"}</h2>
           <div className="flex gap-3 text-base font-bold">
             {alertId && (
-              <Link href={`/s/${schoolId}/notices`} className="text-accent underline underline-offset-4">
+              <Link href={`/s/${schoolId}/notices`} className="inline-flex min-h-touch items-center text-accent underline underline-offset-4">
                 전체 보기
               </Link>
             )}
-            <Link href={`/s/${schoolId}/alerts`} className="text-accent underline underline-offset-4">
+            <Link href={`/s/${schoolId}/alerts`} className="inline-flex min-h-touch items-center text-accent underline underline-offset-4">
               경보함으로
             </Link>
           </div>

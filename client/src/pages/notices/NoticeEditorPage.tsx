@@ -192,10 +192,10 @@ export function NoticeEditorPage({ schoolId, noticeId }: { schoolId: string; not
     <AppShell title={isNew ? "안내문 작성" : "안내문"} schoolId={schoolId}>
       <div className="mx-auto max-w-3xl space-y-4">
         <nav aria-label="안내문 이동" className="flex flex-wrap gap-3 text-base font-bold">
-          <Link href={`/s/${schoolId}/notices`} className="text-accent underline underline-offset-4">
+          <Link href={`/s/${schoolId}/notices`} className="inline-flex min-h-touch items-center text-accent underline underline-offset-4">
             안내문 목록
           </Link>
-          <Link href={`/s/${schoolId}/alerts`} className="text-accent underline underline-offset-4">
+          <Link href={`/s/${schoolId}/alerts`} className="inline-flex min-h-touch items-center text-accent underline underline-offset-4">
             경보함
           </Link>
         </nav>
@@ -415,7 +415,7 @@ function AlertContext({ alert, detail, schoolId }: { alert: NoticeAlertState; de
         {alert.issuer} · 발령 {formatDateTime(alert.issuedAt)} · 대상 지역 {alert.areasRaw}
       </p>
       <details className="mt-2">
-        <summary className="cursor-pointer text-sm font-bold text-accent">공식 경보 원문 보기(수정되지 않음)</summary>
+        <summary className="cursor-pointer py-3 text-sm font-bold text-accent">공식 경보 원문 보기(수정되지 않음)</summary>
         <blockquote className="mt-1 whitespace-pre-wrap rounded-control border-l-4 border-line-strong bg-page px-3 py-2 text-base">{alert.body}</blockquote>
       </details>
       {warnings.length > 0 && (
@@ -718,7 +718,7 @@ function ReuseDialog({ detail, schoolId, onClose }: { detail: NoticeDetail; scho
 function RevisionsPanel({ detail }: { detail: NoticeDetail }) {
   return (
     <details className="rounded-card border border-line bg-card p-4 shadow-card">
-      <summary className="cursor-pointer text-lg font-bold">수정 이력 {detail.revisions.length}판</summary>
+      <summary className="cursor-pointer py-2.5 text-lg font-bold">수정 이력 {detail.revisions.length}판</summary>
       <p className="mt-1 text-sm text-ink-muted">저장할 때마다 DB가 판 번호와 함께 자동으로 기록하며, 고치거나 지울 수 없습니다.</p>
       <ol className="mt-3 space-y-2">
         {detail.revisions.map((r) => (
@@ -727,7 +727,7 @@ function RevisionsPanel({ detail }: { detail: NoticeDetail }) {
               <strong>판 {r.version}</strong> · {NOTICE_STATUS_META[r.status].label} · {formatDateTime(r.changedAt)} · {r.changedByName ?? "(알 수 없음)"}
             </p>
             <details className="mt-1">
-              <summary className="cursor-pointer text-sm font-bold text-accent">이 판 내용 보기</summary>
+              <summary className="cursor-pointer py-3 text-sm font-bold text-accent">이 판 내용 보기</summary>
               <p className="mt-1 font-bold">{r.title}</p>
               <p className="mt-1 whitespace-pre-wrap text-sm">{r.body}</p>
             </details>
@@ -797,7 +797,7 @@ function RecordsPanel({ detail, schoolId, onChanged }: { detail: NoticeDetail; s
 
   return (
     <details className="rounded-card border border-line bg-card p-4 shadow-card">
-      <summary className="cursor-pointer text-lg font-bold">처리 이력(선택) {detail.records.length}건</summary>
+      <summary className="cursor-pointer py-2.5 text-lg font-bold">처리 이력(선택) {detail.records.length}건</summary>
       <p className="mt-1 text-sm text-ink-muted">{NOTICE_GUIDE_TEXT.record} 학부모 이름·연락처는 적지 마세요.</p>
       {detail.records.length > 0 && (
         <ul className="mt-3 space-y-2">

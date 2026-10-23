@@ -58,7 +58,7 @@ export function AlertsPage({ schoolId, isAdmin }: { schoolId: string; isAdmin: b
       <div className="mx-auto max-w-2xl space-y-4">
         {isAdmin && <RegionCard schoolId={schoolId} onChanged={() => void fetchAlerts()} />}
         <div className="flex justify-end">
-          <Link href={`/s/${schoolId}/notices`} className="text-base font-bold text-accent underline underline-offset-4">
+          <Link href={`/s/${schoolId}/notices`} className="inline-flex min-h-touch items-center text-base font-bold text-accent underline underline-offset-4">
             작성한 학교 안내문 보기
           </Link>
         </div>

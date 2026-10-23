@@ -190,6 +190,47 @@ describe("자동작성 정책(배치)", () => {
   });
 });
 
+describe("STEP 3-E 문서 품질: 긴 글자·특수문자·많은 학급", () => {
+  const longSchool = "SAFE SCHOOL 가상 미래교육 혁신 시범 운영 연구학교 부설 시연초등학교 & <분교>";
+  const m = defaultManual();
+  m.staffCount = "120";
+  m.studentCount = "1450";
+  m.roles = m.roles.map((r) => ({ ...r, who: "가".repeat(20) + ", " + "나".repeat(20) + ", " + "다".repeat(16) })); // 60자
+  m.evals = m.evals.map((e) => ({ ...e, result: "O", note: "비고 ".repeat(20).slice(0, 80) }));
+  m.improvements = "반영사항 <태그> & \"따옴표\" 😀 ".repeat(40).slice(0, 1000);
+  m.evacPlaceText = "운동으로 대피";
+  const many = { ...SNAP, schoolName: longSchool, classes: Array.from({ length: 100 }, (_, i) => cls(i + 1, 25, i % 11 === 0 ? null : rep(24, 1))) };
+  const d = buildDrillDoc(many, m);
+
+  it("칸 구조 정상(높이 초과는 한글에서 다음 쪽으로 이어짐), 붙임은 학급 수에 맞게 4쪽", () => {
+    expect(checkDoc(d, { height: false })).toEqual([]);
+    expect(d.pages.filter((p) => p.titleKind === "appendix")).toHaveLength(Math.ceil(100 / APPX_ROWS_PER_PAGE));
+    for (const p of d.pages.slice(1)) expect(checkDoc({ pages: [p] })).toEqual([]); // 붙임 쪽은 긴 학교명이어도 높이 안
+  });
+
+  it("입력 문장 그대로(자동 수정 없음), 글자 수 제한 적용", () => {
+    const cells = d.pages[0]!.table.cells.map((c) => c.text);
+    expect(cells).toContain("운동으로 대피");
+    expect(cells.filter((t) => [...t].length === 60 && t.startsWith("가")).length).toBe(6);
+    expect(cells.some((t) => [...t].length > 1000)).toBe(false);
+  });
+
+  it("HWPX 생성: 특수문자 이스케이프, 학교명 포함, 붙임 머리글 반복 4개 표", () => {
+    const { files } = unzip(buildDrillLogHwpx(d));
+    const sec = files.get("Contents/section0.xml")!.data.toString("utf8");
+    expect(sec).toContain("&amp; &lt;분교&gt;");
+    expect(sec).toContain("반영사항 &lt;태그&gt; &amp; \"따옴표\" 😀");
+    expect((sec.match(/repeatHeader="1"/g) ?? []).length).toBe(4);
+    expect(sec).not.toMatch(/<hp:t>[^<]*>/);
+  });
+
+  it("미보고 학급이 있으면 합계는 '미보고 제외', 0명으로 채우지 않음", () => {
+    const last = d.pages[d.pages.length - 1]!.table.cells.map((c) => c.text);
+    expect(last.some((t) => t.includes("(미보고 제외 합계)"))).toBe(true);
+    expect(d.pages.slice(1).flatMap((p) => p.table.cells).filter((c) => c.text === "미보고")).toHaveLength(10);
+  });
+});
+
 describe("HWPX 생성(구조 검사 — 한글 호환 보장 아님)", () => {
   const m = defaultManual();
   m.staffCount = "14";
