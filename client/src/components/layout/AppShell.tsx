@@ -101,6 +101,8 @@ export function Sidebar({ items, schoolName }: { items: NavItem[]; schoolName?: 
 export function MobileNavigation({ items }: { items: NavItem[] }) {
   const path = usePath();
   if (items.length < 2) return null;
+  // STEP 3-E: 겸임으로 메뉴가 6개 이상이면(모바일 390px 기준 칸당 약 55px) 글자를 줄이고 줄바꿈하지 않음
+  const dense = items.length > 5;
   return (
     <nav aria-label="주 메뉴" className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-card pb-[env(safe-area-inset-bottom)] lg:hidden">
       <ul className="mx-auto flex max-w-xl">
@@ -111,12 +113,12 @@ export function MobileNavigation({ items }: { items: NavItem[] }) {
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`flex min-h-16 flex-col items-center justify-center gap-0.5 text-sm font-bold ${active ? "text-brand" : "text-ink-muted"}`}
+                className={`flex min-h-16 flex-col items-center justify-center gap-0.5 font-bold ${dense ? "text-xs tracking-tight" : "text-sm"} ${active ? "text-brand" : "text-ink-muted"}`}
               >
-                <span className={`flex h-8 w-14 items-center justify-center rounded-full ${active ? "bg-brand-soft" : ""}`}>
+                <span className={`flex h-8 ${dense ? "w-11" : "w-14"} items-center justify-center rounded-full ${active ? "bg-brand-soft" : ""}`}>
                   <Icon name={item.icon} size={22} />
                 </span>
-                {item.label}
+                <span className="whitespace-nowrap">{item.label}</span>
               </Link>
             </li>
           );

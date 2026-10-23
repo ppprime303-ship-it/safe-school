@@ -2,6 +2,7 @@ import http from "node:http";
 import { env } from "./env.js";
 import { prisma } from "./db.js";
 import { createApp } from "./app.js";
+import { safeErrorSummary } from "./security/safeLog.js";
 import { startCollector } from "./alerts/collector.js";
 import { assertMockAllowed, mockFileSource, type AlertSource } from "./alerts/providers.js";
 
@@ -36,7 +37,7 @@ async function main() {
 }
 
 main().catch(async (error) => {
-  console.error("[SAFE SCHOOL] 시작 실패", error);
+  console.error("[SAFE SCHOOL] 시작 실패", safeErrorSummary(error));
   await prisma.$disconnect();
   process.exit(1);
 });

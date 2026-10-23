@@ -4,6 +4,7 @@ import fs from "node:fs";
 import type { Server } from "node:http";
 import { prisma } from "./db.js";
 import { AppError } from "./errors.js";
+import { safeErrorSummary } from "./security/safeLog.js";
 import { loadSession } from "./auth/session.js";
 import { requireJsonForMutations } from "./middleware/security.js";
 import { healthRouter } from "./routes/health.js";
@@ -42,7 +43,8 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     res.status(400).json({ code: "invalid_json", message: "요청 형식(JSON)이 올바르지 않습니다." });
     return;
   }
-  console.error("[server] 처리하지 못한 오류", err);
+  // STEP 3-E: 오류 객체를 통째로 남기지 않음(요청 값·개인정보 노출 방지) — security/safeLog.ts
+  console.error("[server] 처리하지 못한 오류", safeErrorSummary(err));
   res.status(500).json({ code: "internal_error", message: "서버 오류가 발생했습니다. 잠시 후 다시 시도하세요." });
 };
 

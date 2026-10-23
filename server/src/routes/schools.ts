@@ -2,6 +2,7 @@
 // 모든 학교 업무 API는 서버에서 소속·승인·역할·학교 활성 상태를 검사합니다(resolveSchoolAccess).
 import { Router } from "express";
 import { prisma } from "../db.js";
+import { safeErrorSummary } from "../security/safeLog.js";
 import { notFound } from "../errors.js";
 import { parse } from "../validate.js";
 import { requireRecentReauth, requireVerified } from "../auth/session.js";
@@ -57,7 +58,7 @@ schoolsRouter.post("/school-registrations", requireVerified, async (req, res) =>
   });
   // 공시자료(학년별 학급수·학생수)는 실패해도 등록에 영향 없음(참고자료)
   void refreshGradeClassData(prisma, getSchoolinfoClient(), { schoolId: result.school.id }).catch((e) =>
-    console.warn("[registration] 공시자료 조회 실패", e),
+    console.warn("[registration] 공시자료 조회 실패", safeErrorSummary(e)),
   );
   res.status(201).json({
     schoolId: result.school.id,

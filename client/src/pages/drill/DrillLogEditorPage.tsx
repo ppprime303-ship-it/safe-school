@@ -153,7 +153,7 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
     <AppShell title="훈련일지" schoolId={schoolId}>
       <div className="mx-auto max-w-3xl space-y-4 text-base leading-relaxed lg:max-w-6xl print:max-w-none">
         <nav className="flex flex-wrap gap-3 text-base font-bold print:hidden">
-          <Link href={`/s/${schoolId}/drill-logs`} className="text-accent underline underline-offset-4">훈련일지 목록</Link>
+          <Link href={`/s/${schoolId}/drill-logs`} className="inline-flex min-h-touch items-center text-accent underline underline-offset-4">훈련일지 목록</Link>
         </nav>
 
         {/* 1. 제목·상태 */}
@@ -359,7 +359,7 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
         {preview && <DrillDocPreview doc={doc} />}
 
         <details className="rounded-card border border-line bg-card p-4 shadow-card print:hidden">
-          <summary className="cursor-pointer text-lg font-bold">수정 이력 {d.revisions.length}판</summary>
+          <summary className="cursor-pointer py-2.5 text-lg font-bold">수정 이력 {d.revisions.length}판</summary>
           <p className="mt-1 text-sm text-ink-muted">내용이 바뀌어 저장될 때만 판 번호가 올라갑니다. 이전 판은 고치거나 지울 수 없습니다.</p>
           <ol className="mt-2 space-y-1 text-sm">
             {d.revisions.map((r) => (
