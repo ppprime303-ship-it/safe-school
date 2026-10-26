@@ -1,4 +1,4 @@
-// STEP 6 심사위원 시연 환경 준비·초기화(국내 VPS 심사 환경 셸에서 운영자만 실행)
+// STEP 6 심사위원 시연 환경 준비·초기화(Replit 심사 배포 환경 셸에서 운영자만 실행 — 국내 VPS 시범운영에서는 거부)
 //
 //   계획만 보기(기본, DB 읽기만):
 //     npm run judge:setup
@@ -9,7 +9,8 @@
 //
 // 실제 학교 시범운영 환경 차단(두 겹)
 //  1) 코드: DEPLOY_PROFILE=production + DEPLOY_DB_SCHEMA=safeschool_prod_judge 일 때만(시범운영 safeschool_prod_pilot 거부)
-//  2) DB: 실행 계정이 심사 외 SAFE SCHOOL 스키마에 USAGE 권한이 있으면 거부(심사 전용 최소 권한 계정 필수 — deploy/sql/roles.sql)
+//  2) DB: 실행 계정이 심사 외 운영 스키마(safeschool_prod*, 시범운영 등)에 USAGE 권한이 있으면 거부
+//     (국내 VPS의 ss_pilot 은 시범운영 스키마 소유자라 항상 거부됨. 시범운영 DB는 Replit과 다른 서버)
 //     + 심사 스키마에 시연 학교가 아닌 학교가 있으면 거부
 //
 // 안전 원칙

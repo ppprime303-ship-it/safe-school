@@ -1,56 +1,29 @@
-# STEP 6 릴리스·배포·롤백 절차
+# STEP 6 공모전 심사 환경(Replit 배포) 릴리스·롤백 절차
 
-원칙: **Replit에서 검증한 실제 코드만 배포합니다.** 승인받지 않은 커밋은 자동 배포하지 않습니다. DB를 삭제·초기화하는 자동 롤백은 없습니다.
+2026-10-26 오후 수정: 심사 환경은 **Replit App 공개 Deployment**(2026년 11월 요금제 갱신 후 공개)입니다. 국내 VPS는 실제 학교 시범운영 전용이며 절차는 `docs/step7/step7-vps-operations.md`에 있습니다.
+원칙: Replit에서 전체 테스트를 통과한 커밋만 배포합니다. 자동 배포·DB 초기화·강제 push는 하지 않습니다.
 
-## 1. 릴리스 커밋 정하기(GitHub ↔ Replit 비교)
-같은 변경이 cherry-pick 때문에 GitHub와 Replit에서 서로 다른 해시를 가집니다(예: `d728928` ↔ `5c95d43`). Replit에는 GitHub에 없는 로컬 커밋도 있습니다. 그래서 **해시가 아니라 파일 내용(트리)**으로 비교합니다.
-
-Replit Shell에서 다음을 실행합니다(읽기만 함).
+## 1. 릴리스 커밋 정하기(GitHub ↔ Replit)
+GitHub 개발 커밋과 Replit 검증 커밋은 cherry-pick 때문에 해시가 다릅니다. **내용**으로 비교합니다.
 ```bash
-git fetch origin step-6-deployment
-git status --short                          # 커밋 안 된 변경이 없어야 함
-git diff --stat HEAD origin/step-6-deployment -- . ':(exclude)docs' ':(exclude).replit'
-git diff --stat HEAD origin/step-6-deployment -- .replit   # .replit 은 Replit 전용이므로 차이가 있어도 됨
+git fetch origin
+git status --short                                       # 커밋 안 된 변경이 없어야 함
+bash scripts/release-compare.sh <GitHub 커밋> <Replit 커밋>   # [같음]이어야 함(문서·.replit 차이는 무관)
+npm run typecheck && npm test                            # 전체 통과
 ```
-- 출력이 비어 있으면 코드가 같습니다. 문서(`docs/`)와 `.replit`만 다를 수 있습니다.
-- 차이가 있으면 아래 (가)·(나) 중 하나로 맞춥니다. 강제 push·reset은 쓰지 않습니다.
-  - (가) **권장**: GitHub의 STEP 6 커밋을 Replit `step-6-deployment`에 cherry-pick → Replit에서 전체 테스트 → 통과한 Replit 커밋을 **새 이름의 브랜치**로 GitHub에 push(`git push origin HEAD:release/step6-judge`). 기존 브랜치는 덮어쓰지 않습니다. 이렇게 하면 VPS는 Replit에서 검증한 바로 그 커밋을 받습니다.
-  - (나) Replit 로컬 커밋을 GitHub에 올릴 수 없는 사정이 있으면 차이 목록을 기록하고, 사용자 승인을 받은 뒤 GitHub 쪽에 같은 내용을 반영합니다.
-- 승인한 커밋에 태그를 답니다: `git tag -a judge-v1 <해시> -m "심사 시연 1차(564+ 통과)"` → `git push origin judge-v1`
+- 다르면 차이 파일을 확인해 사용자 승인 후 맞춥니다(reset·강제 push 금지).
+- 승인한 Replit 커밋에 태그: `git tag -a judge-v1 -m "심사 시연 1차" && git push origin judge-v1`(새 태그만, 기존 브랜치 덮어쓰기 없음)
 
-## 2. 배포 순서(VPS, 매번, **환경별로 따로**)
-2026-10-26 갱신: 한 VPS에 심사(`judge`)·시범운영(`pilot`) 두 환경이 있습니다(`step6-environment-isolation.md`). 아래 `<env>`는 `judge` 또는 `pilot`이고, 폴더는 `/srv/safe-school/<env>/`, 서비스는 `safe-school@<env>`입니다. 한 번에 한 환경만 배포하고, 심사 기간에는 시범운영 배포를 피합니다. 태그도 환경별로 답니다(`judge-v1`, `pilot-v1`).
+## 2. 배포(11월, 승인 후)
 | 순서 | 할 일 | 확인 |
 | --- | --- | --- |
-| 1 | 릴리스 태그와 해시 확인: `git rev-parse judge-v1^{commit}` | 승인 기록의 해시와 같음 |
-| 2 | 새 릴리스 폴더에 받기: `git clone --branch judge-v1 --depth 1 … releases/<해시>` | `git status` 깨끗함 |
-| 3 | `npm ci` → `npm run build` | 오류 없음. 테스트는 Replit에서 이미 통과(VPS에서는 DB 테스트를 돌리지 않음 — 운영 DB 보호) |
-| 4 | DB 대상 확인: `npm run deploy:check` | 운영 스키마, 학교·사용자 수가 예상과 같음 |
-| 5 | **마이그레이션이 있는 릴리스면** 변경 전 백업: `deploy/scripts/pg-backup.sh` | 덤프 읽기 확인 메시지 |
-| 6 | (승인 후) 마이그레이션: `npm run deploy:migrate` | 적용 결과 확인. 실패하면 7번으로 넘어가지 않음 |
-| 7 | 링크 전환 → 재시작: `ln -sfn releases/<새 해시> current && sudo systemctl restart safe-school@<env>` | `systemctl is-active` |
-| 8 | 확인: 그 환경의 HTTPS 접속, `/api/health`, (judge) 심사 계정 로그인·상황판·훈련일지 HWPX·모의 경보 / (pilot) 학교 검색·로그인. **다른 환경이 영향 없이 계속 동작하는지도 확인** | 이상 없음 |
-| 9 | 기록: 배포 시각·해시·확인 결과를 `docs/devlog`에 남김 | — |
+| 1 | 배포 Secrets 설정(`step6-environment-isolation.md` 4절 2번). 개발 Secrets와 다른 SESSION_SECRET | Secrets 화면(값을 캡처·공유하지 않음) |
+| 2 | 첫 배포 1회만: 배포 DB에 심사 스키마 생성(`DEPLOY_ALLOW_NEW_SCHEMA=true npm run deploy:migrate`, 그 뒤 플래그 제거) | `npm run deploy:check` → 학교 0, 사용자 0 |
+| 3 | 심사 데이터: `npm run judge:setup`(계획만) → 승인 → `JUDGE_SETUP_CONFIRM=safeschool_prod_judge npm run judge:setup -- --apply --out <파일> --sample-drill` | 학교 2, 계정 8, 비밀번호 파일 600 |
+| 4 | Replit 배포 실행(`npm run build` → `npm run deploy:start`) | 배포 주소 `/api/health` |
+| 5 | 8개 계정 로그인·권한 확인(`step6-judge-guide.md`), 다른 학교 404, 모의 경보 표시 | 결과 기록(devlog) |
 
 ## 3. 롤백
-**애플리케이션 롤백**(DB 변경이 없는 릴리스):
-```bash
-ln -sfn /srv/safe-school/<env>/releases/<이전 해시> /srv/safe-school/<env>/current
-sudo systemctl restart safe-school@<env>
-```
-- 이전 릴리스 폴더는 최소 2개 이상 보관합니다.
-
-**DB 변경이 있었던 릴리스**:
-- 마이그레이션은 앞으로만 진행합니다. 이전 코드는 새 컬럼·테이블이 있어도 대부분 동작하지만, 실제 동작 여부는 릴리스마다 확인해 기록합니다.
-- **마이그레이션이 실패하면**: 서비스는 시작되지 않습니다(`deploy-start`가 중단). Prisma 출력에서 실패한 마이그레이션 이름을 확인 → 원인을 고침 → `npx prisma migrate resolve --rolled-back <이름>`(운영자 판단, 해당 마이그레이션이 아무것도 적용하지 않은 경우에만) → 다시 `deploy:migrate`. `migrate reset`·`db push --force-reset`은 쓰지 않습니다.
-- **데이터 복구가 필요하면**: 백업을 **새 스키마 이름**에 복원해 비교합니다. 기존 스키마를 덮어쓰지 않습니다.
-  ```bash
-  # 덤프 안의 스키마 이름을 바꿔 복원하는 방법은 운영자 판단(pg_restore 목록 편집 등). 기존 스키마 DROP 금지.
-  pg_restore --list <덤프> | head
-  ```
-  어느 쪽을 쓸지는 비교한 뒤 사용자가 결정하고, `DEPLOY_DB_SCHEMA`/`DATABASE_URL`을 바꿔 전환합니다.
-
-## 4. 하지 않는 것
-- 자동 배포(푸시하면 바로 배포), VPS에서 DB 테스트 실행, `prisma migrate reset`, 스키마 DROP, 강제 push, 승인 없는 마이그레이션
-- 시범운영(`pilot`)에서 `judge:setup`·`db:seed` 실행(코드가 거부하고, `ss_pilot` 계정은 심사 스키마 권한도 없음)
-- 한 환경의 env 파일·SESSION_SECRET·DB 계정을 다른 환경에 복사해 쓰기
+- 코드: Replit 배포 기록에서 이전 배포로 되돌리거나, 이전 태그 커밋으로 다시 배포합니다.
+- 심사 데이터 정리: `npm run judge:setup -- --reset-active`(진행 중 상황만 종료, 삭제 없음). 스키마 DROP·`migrate reset`은 쓰지 않습니다.
+- 기존 Replit 개발 DB의 `public`·`safeschool_test`·`safeschool_browser_demo`는 배포·롤백에서 건드리지 않습니다.

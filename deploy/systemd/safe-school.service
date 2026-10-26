@@ -1,0 +1,61 @@
+# /etc/systemd/system/safe-school.service — 국내 VPS: 실제 학교 시범운영 앱 1개(스키마 safeschool_prod_pilot)
+#   sudo systemctl daemon-reload && sudo systemctl enable --now safe-school
+# 공모전 심사 환경은 이 서버에서 실행하지 않습니다(Replit 배포에서 별도 운영).
+#
+# 시작 순서
+#   1) ExecStartPre: 배포 대상 검증 + DB 읽기 전용 점검(--check). 실패하면 서버를 시작하지 않음. 점검 프로세스는 끝나고 메모리 반환
+#   2) ExecStart  : 서버만 실행. 마이그레이션은 자동으로 하지 않습니다(재시작만으로 DB 구조가 바뀌지 않게).
+#      마이그레이션은 백업 후 운영자가 `npm run deploy:migrate`로 따로 실행합니다(step7-vps-operations.md).
+[Unit]
+Description=SAFE SCHOOL 시범운영
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=ss-pilot
+Group=ss-pilot
+WorkingDirectory=/srv/safe-school/current
+EnvironmentFile=/etc/safe-school/pilot.env
+Environment=NODE_ENV=production
+# 2GB 서버: V8 힙 상한(실측 후 조정). 넘으면 이 앱만 재시작되고 DB·Caddy는 영향 없음
+Environment=NODE_OPTIONS=--max-old-space-size=320
+ExecStartPre=/usr/bin/node dist/deploy-start.js --check
+ExecStart=/usr/bin/node dist/server/index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+# 메모리: 450MB부터 회수 압박, 600MB에서 강제 종료(이 앱만). PostgreSQL·Caddy 몫을 지킴
+MemoryHigh=450M
+MemoryMax=600M
+TasksMax=200
+# 격리
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadOnlyPaths=/srv/safe-school
+UMask=0077
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectProc=invisible
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# MemoryDenyWriteExecute 는 쓰지 않음(Node.js V8 JIT와 충돌)
+SyslogIdentifier=safe-school
+
+[Install]
+WantedBy=multi-user.target

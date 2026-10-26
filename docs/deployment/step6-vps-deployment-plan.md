@@ -2,7 +2,10 @@
 
 작성 2026-10-26 · 브랜치 `step-6-deployment`(GitHub) · **계획 문서 — 서버 구매·접속·배포는 아직 하지 않았습니다.**
 
-> **2026-10-26 갱신 — 한 VPS에 두 환경**
+> **2026-10-26 오후 — 이 문서는 대체되었습니다.** 공모전 심사 환경은 Replit 배포(11월)로, 국내 VPS(iwinv 2GB)는 실제 학교 시범운영 앱 1개로 확정했습니다.
+> 현재 절차: `docs/step7/step7-vps-setup.md`, `step7-vps-operations.md`, `step7-security-checklist.md`, `step7-2gb-memory.md`, 분리 구조 `step6-environment-isolation.md`. 아래 내용은 기록용입니다.
+>
+> **(폐기) 2026-10-26 오전 갱신 — 한 VPS에 두 환경**
 > - 공모전 심사(judge)와 실제 학교 시범운영(pilot)을 같은 서버에서 **호스트명·앱 프로세스·포트·DB 스키마·DB 계정·SESSION_SECRET·로그를 나눠** 운영합니다.
 > - 아래 본문의 단일 앱 예시(`safe-school.service`, 포트 5000, `safe-school.env`)는 환경별 설정으로 바뀌었습니다: `safe-school@judge`/`@pilot`, 5001/5002, `judge.env`/`pilot.env`, `deploy/sql/roles.sql`.
 > - 분리 설계·자원·장애 영향·로컬 권한 검증은 **`step6-environment-isolation.md`**를 따르세요.

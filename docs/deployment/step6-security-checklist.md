@@ -22,7 +22,7 @@
 | 운영 DB 대상 | 프로필·스키마 필수, public·test·demo 거부, 운영 프로필인데 NODE_ENV가 다르면 시작 거부 | [기존] deploy-db-target / [신규] step6-deploy |
 | 새 스키마 생성 오용 | 서버 시작 때는 만들지 않음. `deploy:migrate`에서 플래그가 있을 때만 | [신규] |
 | 모의 경보 | 환경 역할별: 심사(judge)만 허용, 시범운영·기타 운영은 거부 | [신규] `assertMockAllowed`·`alertProviderErrors`(step6-deploy·step7-pilot) |
-| 환경 분리(심사·시범운영) | 스키마·DB 계정·SESSION_SECRET·프로세스·포트·호스트명 분리 | [신규] 로컬 PostgreSQL 16에서 권한 격리 확인(`step6-environment-isolation.md` 3절) / [서버] |
+| 환경 분리(심사·시범운영) | 심사=Replit 배포, 시범운영=국내 VPS(서버·DB·비밀값·도메인 모두 다름) | [신규] 시범운영 네트워크 설정 강제(step7-vps), 로컬 PostgreSQL 16 확인 / [서버] |
 | 심사 도구의 시범운영 실행 차단 | 코드: 스키마가 정확히 `safeschool_prod_judge`이고 확인 값이 있어야 쓰기. DB: 시범운영 스키마 권한이 있는 계정이면 거부 | [신규] 대상·권한 판정 테스트, 가짜 Prisma 흐름 |
 | 공식 재난문자 API 키 | env 파일에만, 오류 기록에서 가림, 심사 환경에서 켜면 시작 거부 | [신규] step7-pilot(가짜 HTTP) |
 | 보안 헤더 | 프록시에서 HSTS, nosniff, frame DENY, Referrer-Policy를 붙임. 앱은 x-powered-by를 끔 | [신규] x-powered-by 없음 / [서버] `curl -I`로 헤더 확인 |
@@ -35,20 +35,13 @@
 | 운영 프로필인데 `NODE_ENV`가 빠지면(systemd 설정 실수) DB 보호 검사를 건너뛰고 개발 모드로 실행 | 그 조합이면 시작 거부 |
 | 심사 계정 생성 중 오류가 나면 "아무것도 바꾸지 않았습니다"라고 잘못 안내 | 쓰기를 시작한 뒤에는 "일부 생성됨 — 다시 실행하면 건너뜀"으로 안내 |
 
-## 3. 서버에서 직접 확인할 것([서버], 배포 후)
-- 외부에서 5001·5002·5432 포트가 닫혀 있는지, SSH 비밀번호 로그인이 거부되는지, `ufw status`
-- `curl -I`로 HSTS·보안 헤더 확인, 인증서 자동 갱신 시험(Nginx는 `certbot renew --dry-run`)
-- 로그인 쿠키에 `Secure; HttpOnly; SameSite=Lax`가 붙는지(브라우저 개발자 도구)
-- 로그인 31회 → 429 응답(실제 접속 IP 기준)
-- 심사 계정(A학교)으로 로그인한 상태에서 B학교 주소를 직접 입력 → 차단(404)
-- 심사 호스트의 세션 쿠키로 시범운영 호스트에 접속 → 로그인 안 됨(호스트·SESSION_SECRET 분리)
-- `ss_judge`로 시범운영 스키마 조회 → permission denied, 시범운영 서버에서 `npm run judge:setup` → 거부
-- 재부팅 뒤 자동 시작, `journalctl`에 비밀번호·DB 주소가 없는지
-- 백업 파일 권한(600)과 복원 시험(새 스키마 이름으로 복원, `step6-release-rollback.md`)
+## 3. 서버에서 직접 확인할 것
+2026-10-26 오후 수정: 심사 환경은 Replit 배포, 국내 VPS는 실제 학교 시범운영 전용입니다.
+- 국내 VPS: `docs/step7/step7-security-checklist.md`, 읽기 전용 점검 `deploy/scripts/vps-check.sh`
+- Replit 심사 배포(11월): 로그인 31회 → 429(다른 망에서는 정상), 심사 계정(A학교)으로 B학교 주소 직접 입력 → 404, 쿠키 `Secure; HttpOnly; SameSite=Lax`, 모의 경보에 '[모의]' 표시
 
 ## 4. 남은 위험·한계
-- 요청 제한은 앱 프로세스 메모리 기준입니다(환경마다 앱 1개). 서버를 재시작하면 기록이 사라집니다.
-- 한 VPS 구성이므로 PostgreSQL·디스크·VPS 장애는 두 환경에 함께 영향을 줍니다(`step6-environment-isolation.md` 5절).
+- 요청 제한은 앱 프로세스 메모리 기준입니다(환경마다 앱 1개). 재시작하면 기록이 사라집니다.
 - 공개 회원가입: 운영 서버에 메일 발송을 설정하지 않으면 인증코드를 보낼 수 없어 가입을 마칠 수 없습니다. 심사 계정은 운영자가 미리 만듭니다. 학교 등록은 운영자 승인이 필요합니다.
 - CSP(Content-Security-Policy)는 적용하지 않았습니다. 빌드 결과를 확인한 뒤 프록시에서 추가할지 검토합니다.
 - 외부 보안 진단(취약점 점검)은 하지 않았습니다.

@@ -1,5 +1,14 @@
-# /etc/caddy/Caddyfile — 한 VPS, 호스트명 2개(인증서 자동 발급·갱신). <…> 를 실제 값으로 바꾸세요.
-(common) {
+# /etc/caddy/Caddyfile — 국내 VPS, 시범운영 호스트 1개(인증서 자동 발급·갱신). <시범운영 호스트명>을 실제 값으로 바꾸세요.
+# - Caddy는 신뢰하지 않는 클라이언트가 보낸 X-Forwarded-For 를 버리고 실제 접속 IP로 다시 씁니다(trusted_proxies 미설정).
+#   앱은 같은 서버의 Caddy 1단만 믿습니다 → pilot.env 의 TRUST_PROXY_HOPS=1 (앱이 다른 값이면 시작 거부)
+# - 접속 로그: Caddy 2.5+ 기본값으로 Cookie·Set-Cookie·Authorization 헤더는 가려집니다. 여기서는 요청·응답 헤더를
+#   아예 남기지 않습니다(filter). 본문은 원래 기록하지 않습니다.
+#   남는 개인정보: 접속 IP·경로·시각 → 보관 기간(30일)을 넘기지 않게 roll 설정
+{
+	email <인증서 만료 알림을 받을 운영자 메일>
+}
+
+<시범운영 호스트명> {
 	encode zstd gzip
 	header {
 		Strict-Transport-Security "max-age=31536000"
@@ -12,28 +21,19 @@
 	request_body {
 		max_size 1MB
 	}
-}
-
-# 공모전 심사(가상 학교) → 앱 judge(5001)
-<심사 호스트명> {
-	import common
-	reverse_proxy 127.0.0.1:5001
-	log {
-		output file /var/log/caddy/judge-access.log {
-			roll_size 20MiB
-			roll_keep 10
-		}
-	}
-}
-
-# 실제 학교 시범운영 → 앱 pilot(5002). 접속 로그에는 IP·경로만(본문·쿠키 기록 안 함)
-<시범운영 호스트명> {
-	import common
-	reverse_proxy 127.0.0.1:5002
+	reverse_proxy 127.0.0.1:5000
 	log {
 		output file /var/log/caddy/pilot-access.log {
 			roll_size 20MiB
-			roll_keep 10
+			roll_keep 5
+			roll_keep_for 720h
+		}
+		format filter {
+			wrap json
+			fields {
+				request>headers delete
+				resp_headers delete
+			}
 		}
 	}
 }

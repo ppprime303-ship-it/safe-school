@@ -1,7 +1,7 @@
 # STEP 6 심사위원 시연 데이터 계획(확정: 가상 학교 2곳 × 역할별 계정 4개 = 8개)
 
 도구: `scripts/judge-demo-setup.ts`(`npm run judge:setup`), 계획: `server/src/deploy/judgeDemo.ts`, 모의 경보: `deploy/judge/mock-alerts.json`
-**아직 어느 DB에도 실행하지 않았습니다.** 국내 VPS 심사 환경(`safeschool_prod_judge`)에서 마이그레이션을 마친 뒤, 승인을 받아 실행합니다.
+**아직 어느 DB에도 실행하지 않았습니다.** Replit 심사 배포(2026년 11월 공개 예정, 스키마 `safeschool_prod_judge`)에서 마이그레이션을 마친 뒤, 승인을 받아 실행합니다(`step6-environment-isolation.md` 4절). 국내 VPS(실제 학교 시범운영)에서는 실행할 수 없습니다.
 
 ## 1. 학교와 계정
 | 학교 | 계정(이메일 `judge-<키>@judge.safeschool.invalid`) | 기존 구조 | 할 수 있는 일 / 할 수 없는 일 |
@@ -43,7 +43,7 @@ JUDGE_SETUP_CONFIRM=safeschool_prod_judge npm run judge:setup -- --reset-active 
 | 겹 | 방법 | 확인 |
 | --- | --- | --- |
 | 코드 | `DEPLOY_PROFILE=production` + `DEPLOY_DB_SCHEMA=safeschool_prod_judge`(정확히 일치)일 때만 실행. 시범운영(`safeschool_prod_pilot`)·기타 운영·Replit 시연 거부. 쓰기 작업은 확인 문구(스키마 이름)가 있어야 함 | 단위 테스트, 가짜 DB 실행 |
-| DB 권한 | 실행 계정이 심사 외 SAFE SCHOOL 스키마에 USAGE 권한이 있으면 거부(관리자·시범운영 계정으로 실행하면 막힘). 심사 스키마에 시연 학교가 아닌 학교가 있으면 거부. 심사 계정 `ss_judge`는 시범운영 스키마에 권한이 없음(`deploy/sql/roles.sql`) | 로컬 PostgreSQL 16에서 실제 확인(`step6-environment-isolation.md`) |
+| DB 권한 | 실행 계정이 심사 외 운영 스키마(`safeschool_prod*`)에 USAGE 권한이 있으면 거부 — 국내 VPS의 시범운영 계정(`ss_pilot`)은 항상 거부됨. Replit 배포 DB의 개발용 가상 스키마(test·browser_demo) 접근은 허용(2026-10-26 오후 수정). 심사 스키마에 시연 학교가 아닌 학교가 있으면 거부 | 로컬 PostgreSQL 16에서 `ss_pilot` 실제 권한 조회 결과로 확인(`docs/step7/step7-test-results.md`) |
 - 데모 시드(`db:seed`)도 시범운영 스키마에서는 실행을 거부하도록 막았습니다(`ALLOW_DEMO_SEED`로도 허용되지 않음).
 
 ## 5. 비밀번호
@@ -56,4 +56,4 @@ JUDGE_SETUP_CONFIRM=safeschool_prod_judge npm run judge:setup -- --reset-active 
 | --- | --- |
 | 계획·권한(8계정의 할 수 있는 일/없는 일)·가상 주소 매칭·모의 경보 파일·비밀번호·파일·대상 차단·DB 권한 판정 단위 테스트(`step6-deploy`) | 작업공간 대체 실행기 통과 |
 | 도구 흐름(가짜 DB): 시범운영 스키마 거부, 관리자급 DB 계정 거부, 계획 표시, 초기화 확인 문구 없음 거부, 구성 적용(계정 8 + 가상 담임 22, 학급 24, 직책·업무 8), 비밀번호 화면 노출 0/8, DB 비밀번호 노출 0 | 기대대로 |
-| 예시 훈련·초기화의 실제 DB 동작(발령·보고·종료·훈련일지 서비스) | **미검증 — 실제 DB 필요.** VPS에서 시험 스키마로 먼저 확인 권장 |
+| 예시 훈련·초기화의 실제 DB 동작(발령·보고·종료·훈련일지 서비스) | **미검증 — 실제 DB 필요.** Replit 배포 DB의 심사 스키마에서 승인 후 확인 |

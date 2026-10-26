@@ -148,6 +148,15 @@ describe("심사 도구: 실제 학교 환경 차단(코드·DB)", () => {
     expect(judgeDbIsolationErrors([{ schema: "safeschool_prod_judge", usage: true }, { schema: "safeschool_prod_pilot", usage: false }], "ss_judge")).toEqual([]);
     expect(judgeDbIsolationErrors([{ schema: "safeschool_prod_judge", usage: true }, { schema: "safeschool_prod_pilot", usage: true }], "postgres").join()).toContain("safeschool_prod_pilot");
   });
+  it("Replit 배포 DB: 같은 DB의 개발용 가상 스키마(test·browser_demo) 접근은 허용, 다른 운영 스키마는 거부", () => {
+    const replit = [
+      { schema: "safeschool_prod_judge", usage: true },
+      { schema: "safeschool_test", usage: true },
+      { schema: "safeschool_browser_demo", usage: true },
+    ];
+    expect(judgeDbIsolationErrors(replit, "replit_owner")).toEqual([]);
+    expect(judgeDbIsolationErrors([...replit, { schema: "safeschool_prod", usage: true }], "replit_owner").join()).toContain("safeschool_prod");
+  });
   it("심사 스키마에 시연 학교가 아닌 학교가 있으면 거부", () => {
     expect(judgeDataIsolationErrors(0)).toEqual([]);
     expect(judgeDataIsolationErrors(1).length).toBe(1);
