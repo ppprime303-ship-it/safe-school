@@ -63,7 +63,7 @@ export function AlertsPage({ schoolId, isAdmin }: { schoolId: string; isAdmin: b
           </Link>
         </div>
         <p className="rounded-control border border-line bg-card px-3 py-2 text-sm text-ink-muted">
-          공식 경보 원문을 그대로 보여 줍니다. 이 앱은 119·112 신고, 공식 비상연락망, 교육청 공문을 대신하지 않습니다.
+          공식 경보 원문을 그대로 보여 줍니다. 이 앱은 공식 재난 경보·대응 시스템, 119·112 신고, 공식 비상연락망, 교육청 공문을 대신하지 않습니다.
         </p>
 
         {load.kind === "loading" && <LoadingState label="경보를 불러오는 중…" />}
@@ -74,7 +74,7 @@ export function AlertsPage({ schoolId, isAdmin }: { schoolId: string; isAdmin: b
               우리 학교 대상 경보 <span className="text-ink-muted">· 읽지 않음 {load.unreadCount}건</span>
             </h2>
             {targets.length === 0 ? (
-              <EmptyState icon="check-circle" title="우리 학교 지역에 해당하는 경보가 없습니다" message="새 경보는 30초마다 확인합니다." />
+              <EmptyState icon="check-circle" title="새 재난문자 없음" message="우리 학교 지역에 해당하는 경보가 없습니다. 이 화면을 열어 두면 30초마다 새 경보를 확인합니다." />
             ) : (
               <ul className="space-y-3">
                 {targets.map((a) => (

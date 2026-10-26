@@ -1,0 +1,44 @@
+[
+  {
+    "id": "judge-mock-001",
+    "kind": "weather",
+    "severity": "warning",
+    "issuer": "기상청(모의)",
+    "title": "[모의] 호우경보",
+    "body": "[모의 경보·심사 시연용] 인천광역시 남동구 호우경보 발효. 하천변·지하차도 접근을 피하세요. 실제 경보가 아닙니다.",
+    "areas": "인천광역시 남동구",
+    "issuedAt": "2026-10-20T00:30:00+09:00"
+  },
+  {
+    "id": "judge-mock-002",
+    "kind": "disaster_text",
+    "severity": "advisory",
+    "issuer": "행정안전부(모의)",
+    "title": "[모의] 폭염 안전안내",
+    "body": "[모의 경보·심사 시연용] 경기도 전역 폭염특보. 야외활동 자제, 물 자주 마시기. 실제 경보가 아닙니다.",
+    "areas": "경기도",
+    "issuedAt": "2026-10-21T13:00:00+09:00"
+  },
+  {
+    "id": "judge-mock-003",
+    "kind": "disaster_text",
+    "severity": "emergency",
+    "issuer": "행정안전부(모의)",
+    "title": "[모의] 지진 위급재난문자",
+    "body": "[모의 경보·심사 시연용] 전국 대상 지진 발생 가정 문자입니다. 실제 경보가 아닙니다.",
+    "areas": "전국",
+    "issuedAt": "2026-10-22T10:15:00+09:00"
+  },
+  {
+    "id": "judge-mock-004",
+    "kind": "weather",
+    "severity": "warning",
+    "msgType": "cancel",
+    "refId": "judge-mock-001",
+    "issuer": "기상청(모의)",
+    "title": "[모의] 호우경보 해제",
+    "body": "[모의 경보·심사 시연용] 인천광역시 남동구 호우경보 해제. 실제 경보가 아닙니다.",
+    "areas": "인천광역시 남동구",
+    "issuedAt": "2026-10-20T06:00:00+09:00"
+  }
+]

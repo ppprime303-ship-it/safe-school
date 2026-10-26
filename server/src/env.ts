@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { productionDbGuard } from "./deploy/dbTarget.js";
+import { alertProviderErrors, deploymentRole } from "./deploy/environment.js";
 
 // 환경변수를 시작할 때 한 번 검사합니다. 값은 Replit Secrets(또는 로컬 .env)에 넣고,
 // 코드나 GitHub에는 절대 적지 않습니다.
@@ -17,6 +18,12 @@ const schema = z.object({
   // STEP 3-B 경보 수집(기본 꺼짐). 모의 경보 파일은 개발·시연에서만 사용(운영에서는 거부)
   ALERT_MOCK_FEED: z.string().optional(),
   ALERT_COLLECT_INTERVAL_SEC: z.coerce.number().int().min(30).max(3600).default(60),
+  // STEP 7: 수집 공급자(쉼표 구분: mock, mois_cbs). 비우면 ALERT_MOCK_FEED 가 있을 때만 모의 수집(기존 동작)
+  ALERT_PROVIDERS: z.string().optional(),
+  // 공식 긴급재난문자 API 인증키(재난안전데이터 공유플랫폼). 로그·화면에 출력 금지
+  MOIS_CBS_SERVICE_KEY: z.string().optional(),
+  // 공식 API 최소 수집 간격(초). 일일 호출 한도를 넘지 않게 기본 300초
+  MOIS_CBS_INTERVAL_SEC: z.coerce.number().int().min(120).max(3600).default(300),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -42,5 +49,14 @@ const dbGuardErrors = productionDbGuard(process.env);
 if (dbGuardErrors.length) {
   console.error("[설정 오류] 배포 DB 대상 검증 실패 — DB에 연결하지 않고 중단합니다:");
   for (const e of dbGuardErrors) console.error(` - ${e}`);
+  process.exit(1);
+}
+
+// STEP 7: 환경 역할(심사·시범운영)에 맞지 않는 경보 공급자 설정이면 시작 거부(모의 자료가 실제 학교 환경에 섞이지 않게)
+export const deployRole = deploymentRole(process.env);
+const providerErrors = alertProviderErrors(deployRole, process.env);
+if (providerErrors.length) {
+  console.error("[설정 오류] 경보 공급자 설정을 확인하세요:");
+  for (const e of providerErrors) console.error(` - ${e}`);
   process.exit(1);
 }

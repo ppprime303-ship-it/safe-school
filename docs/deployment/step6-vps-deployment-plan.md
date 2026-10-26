@@ -1,6 +1,13 @@
 # STEP 6 국내 VPS 배포 계획(공모전 심사 시연)
 
 작성 2026-10-26 · 브랜치 `step-6-deployment`(GitHub) · **계획 문서 — 서버 구매·접속·배포는 아직 하지 않았습니다.**
+
+> **2026-10-26 갱신 — 한 VPS에 두 환경**
+> - 공모전 심사(judge)와 실제 학교 시범운영(pilot)을 같은 서버에서 **호스트명·앱 프로세스·포트·DB 스키마·DB 계정·SESSION_SECRET·로그를 나눠** 운영합니다.
+> - 아래 본문의 단일 앱 예시(`safe-school.service`, 포트 5000, `safe-school.env`)는 환경별 설정으로 바뀌었습니다: `safe-school@judge`/`@pilot`, 5001/5002, `judge.env`/`pilot.env`, `deploy/sql/roles.sql`.
+> - 분리 설계·자원·장애 영향·로컬 권한 검증은 **`step6-environment-isolation.md`**를 따르세요.
+> - 앱이 2개이므로 **4GB를 권장**합니다.
+> - 각 단계 명령은 환경별 계정(`sudo -u ss-judge` / `ss-pilot`)과 그 환경의 env 파일로 실행합니다. DB·스키마는 `roles.sql`로 미리 만들므로 ② 단계의 `DEPLOY_ALLOW_NEW_SCHEMA=true`는 '마이그레이션 기록이 없는 빈 스키마'에 첫 마이그레이션을 적용할 때만 씁니다.
 서버 주소, IP, 도메인, 가격은 정해지지 않아 `<시연 도메인>`처럼 빈칸으로 둡니다.
 
 ## 0. 구성 요약
