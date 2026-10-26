@@ -1,0 +1,33 @@
+# /etc/systemd/system/safe-school.service (예시 — 경로·사용자는 서버에 맞게)
+# 시작: 검증 → 읽기 전용 점검 → 적용 대기 마이그레이션(데이터 삭제 없음) → 서버(NODE_ENV=production)
+# 새 스키마는 서버 시작 단계에서 만들지 않습니다(처음 한 번만 deploy:migrate 로 따로 생성).
+[Unit]
+Description=SAFE SCHOOL (심사 시연)
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=safeschool
+Group=safeschool
+WorkingDirectory=/srv/safe-school/current
+# 비밀값은 저장소 밖 파일(권한 600, root:safeschool 소유 또는 safeschool 전용)에서 읽음
+EnvironmentFile=/etc/safe-school/safe-school.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node dist/deploy-start.js
+Restart=on-failure
+RestartSec=5
+# 같은 실패가 계속되면 반복 재시작을 멈춤(마이그레이션 실패 시 로그 확인)
+StartLimitIntervalSec=300
+StartLimitBurst=5
+# 메모리 상한(2GB 서버 기준 예시, 실측 후 조정)
+MemoryMax=700M
+# 기본 보호
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

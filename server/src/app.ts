@@ -48,10 +48,11 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   res.status(500).json({ code: "internal_error", message: "서버 오류가 발생했습니다. 잠시 후 다시 시도하세요." });
 };
 
-export async function createApp(options: { mode: "development" | "production" | "test"; httpServer?: Server }) {
+export async function createApp(options: { mode: "development" | "production" | "test"; httpServer?: Server; trustProxyHops?: number }) {
   const app: Express = express();
   app.disable("x-powered-by");
-  app.set("trust proxy", 1); // Replit 앞단 프록시 뒤에서 실제 접속 IP를 쓰기 위함
+  // 앞단 프록시(Replit·Caddy·Nginx) 뒤에서 실제 접속 IP를 쓰기 위함. 지정한 단계 수만큼만 X-Forwarded-For를 믿음(맨 왼쪽 위조값 무시)
+  app.set("trust proxy", options.trustProxyHops ?? 1);
   app.use(express.json({ limit: "100kb" }));
 
   app.use("/api", createApiRouter());
