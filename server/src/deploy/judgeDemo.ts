@@ -249,9 +249,11 @@ export function judgeApplyErrors(target: DeployTargetOk, confirm: string | undef
  * rows = pg_namespace 에서 'safeschool_%' 스키마별 USAGE 권한 조회 결과
  */
 export function judgeDbIsolationErrors(rows: { schema: string; usage: boolean }[], currentUser: string): string[] {
-  const leaks = rows.filter((r) => r.schema !== JUDGE_SCHEMA && r.usage).map((r) => r.schema);
+  // 2026-10-26 오후: 심사 환경은 Replit 배포 DB(개발용 가상 스키마 safeschool_test·safeschool_browser_demo 가 같은 DB에 있음).
+  // 실제 학교 자료가 있을 수 있는 운영 스키마(safeschool_prod*, 특히 시범운영)에 접근 가능한 계정이면 거부합니다.
+  const leaks = rows.filter((r) => r.schema !== JUDGE_SCHEMA && r.schema.startsWith("safeschool_prod") && r.usage).map((r) => r.schema);
   return leaks.length
-    ? [`DB 계정(${currentUser.slice(0, 40)})이 심사 외 스키마(${leaks.join(", ")})에 접근할 수 있습니다. 심사 전용 DB 계정(최소 권한)으로 실행하세요(deploy/sql/roles.sql).`]
+    ? [`DB 계정(${currentUser.slice(0, 40)})이 심사 외 스키마(${leaks.join(", ")})에 접근할 수 있습니다. 실제 학교(시범운영) DB이거나 권한이 넓은 계정입니다. 심사 배포(Replit) DB에서만 실행하세요.`]
     : [];
 }
 

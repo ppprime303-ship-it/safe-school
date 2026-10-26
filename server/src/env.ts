@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { productionDbGuard } from "./deploy/dbTarget.js";
-import { alertProviderErrors, deploymentRole } from "./deploy/environment.js";
+import { alertProviderErrors, deploymentRole, pilotNetworkErrors, pilotReadinessWarnings } from "./deploy/environment.js";
 
 // 환경변수를 시작할 때 한 번 검사합니다. 값은 Replit Secrets(또는 로컬 .env)에 넣고,
 // 코드나 GitHub에는 절대 적지 않습니다.
@@ -60,3 +60,12 @@ if (providerErrors.length) {
   for (const e of providerErrors) console.error(` - ${e}`);
   process.exit(1);
 }
+
+// 국내 VPS 시범운영: 네트워크·DB 위치 설정이 맞지 않으면 시작 거부, 기능 설정이 빠졌으면 경고만(값은 출력하지 않음)
+const pilotErrors = pilotNetworkErrors(deployRole, process.env);
+if (pilotErrors.length) {
+  console.error("[설정 오류] 시범운영 서버 설정을 확인하세요:");
+  for (const e of pilotErrors) console.error(` - ${e}`);
+  process.exit(1);
+}
+for (const w of pilotReadinessWarnings(deployRole, process.env)) console.warn(`[시범운영 점검] ${w}`);

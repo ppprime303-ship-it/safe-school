@@ -1,0 +1,8 @@
+# /etc/postgresql/16/main/pg_hba.conf — 국내 VPS(시범운영). 기존 파일을 백업한 뒤 이 내용으로 바꿉니다.
+#   sudo cp /etc/postgresql/16/main/pg_hba.conf /etc/postgresql/16/main/pg_hba.conf.orig
+# 위에서부터 처음 맞는 줄이 적용됩니다. 외부 주소(0.0.0.0/0 등) 줄은 두지 않습니다.
+# TYPE  DATABASE    USER       ADDRESS        METHOD
+local   all         postgres                  peer
+host    safeschool  ss_pilot   127.0.0.1/32   scram-sha-256
+host    safeschool  ss_pilot   ::1/128        scram-sha-256
+# 그 밖의 접속은 거부(줄이 없으면 거부됨)
