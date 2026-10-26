@@ -11,7 +11,7 @@
 // - reset·삭제·시드는 하지 않습니다.
 import { spawn, spawnSync } from "node:child_process";
 import { PrismaClient } from "@prisma/client";
-import { resolveDeployTarget } from "../server/src/deploy/dbTarget.js";
+import { newSchemaDecision, resolveDeployTarget } from "../server/src/deploy/dbTarget.js";
 import { safeErrorSummary } from "../server/src/security/safeLog.js";
 
 const mode = process.argv.includes("--check") ? "check" : process.argv.includes("--migrate-only") ? "migrate" : "start";
@@ -31,10 +31,12 @@ async function preflight(url: string, schema: string, profile: "demo" | "product
              to_regclass(format('%I.schools', ${schema}::text)) IS NOT NULL AS has_schools,
              to_regclass(format('%I.users', ${schema}::text)) IS NOT NULL AS has_users`;
     const r = rows[0]!;
-    if (!r.schema_exists || !r.has_migrations) {
-      if (profile === "demo") fail([`시연 스키마(${schema})가 없거나 마이그레이션 기록이 없습니다. 새 스키마를 만들지 않습니다(잘못된 DB에 연결했을 가능성).`]);
-      if (process.env.DEPLOY_ALLOW_NEW_SCHEMA !== "true") fail([`운영 스키마(${schema})가 아직 없습니다. 처음 만드는 경우에만 DEPLOY_ALLOW_NEW_SCHEMA=true를 일시적으로 지정하세요.`]);
-      log(`새 운영 스키마(${schema})를 마이그레이션으로 만듭니다(DEPLOY_ALLOW_NEW_SCHEMA=true).`);
+    // STEP 6: 새 스키마 생성은 '--migrate-only' 단계에서만(서버 시작 때 플래그가 남아 있어도 만들지 않음)
+    const d = newSchemaDecision({ profile, mode, schemaReady: r.schema_exists && r.has_migrations, allowFlag: process.env.DEPLOY_ALLOW_NEW_SCHEMA === "true" });
+    if (d.warn) log(`경고: ${d.warn}`);
+    if (d.action === "refuse") fail([`${schema}: ${d.message}`]);
+    if (d.action === "create") {
+      log(`새 운영 스키마(${schema})를 마이그레이션으로 만듭니다(DEPLOY_ALLOW_NEW_SCHEMA=true, 이 단계에서만). 끝나면 플래그를 제거하세요.`);
       return;
     }
     // 읽기 전용 확인: 대상이 맞는지 사람이 볼 수 있게 건수만(이름·이메일은 출력하지 않음)

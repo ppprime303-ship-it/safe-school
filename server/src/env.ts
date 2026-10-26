@@ -6,6 +6,11 @@ import { productionDbGuard } from "./deploy/dbTarget.js";
 const schema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.coerce.number().int().positive().default(5000),
+  // STEP 6: 서버가 연결을 받을 주소. Replit은 0.0.0.0(기본). VPS는 127.0.0.1 로 두고 리버스 프록시(HTTPS)만 외부에 열어,
+  // 프록시를 거치지 않은 직접 접속(X-Forwarded-For 위조로 요청 제한 회피)을 막습니다.
+  LISTEN_HOST: z.string().regex(/^[0-9a-fA-F:.]+$/, "LISTEN_HOST는 IP 주소로 지정하세요(예: 127.0.0.1)").default("0.0.0.0"),
+  // STEP 6: 앞단 프록시 단계 수(Express trust proxy). Caddy/Nginx 하나 = 1(기본). CDN을 앞에 더 두면 2.
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(3).default(1),
   DATABASE_URL: z.string().min(1, "DATABASE_URL이 없습니다. Replit에서 PostgreSQL을 추가하세요."),
   SESSION_SECRET: z.string().optional(),
   APP_BASE_URL: z.string().url().optional(),

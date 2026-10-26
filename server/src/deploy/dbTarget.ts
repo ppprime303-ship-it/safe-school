@@ -108,7 +108,12 @@ export function resolveDeployTarget(env: Record<string, string | undefined>): De
  * schema 미지정·public·test 스키마로는 DB에 연결하기 전에 멈춥니다. 개발·테스트 모드는 기존 동작 그대로.
  */
 export function productionDbGuard(env: Record<string, string | undefined>): string[] {
-  if (env.NODE_ENV !== "production") return [];
+  if (env.NODE_ENV !== "production") {
+    // STEP 6: 운영 프로필을 지정했는데 개발·테스트 모드로 켜면(systemd에 NODE_ENV 누락 등) 검사를 건너뛰게 되므로 시작 거부
+    return env.DEPLOY_PROFILE?.trim() === "production"
+      ? ["DEPLOY_PROFILE=production 인데 NODE_ENV가 production이 아닙니다. 운영 서버는 NODE_ENV=production 으로 시작하세요(npm start 또는 npm run deploy:start)."]
+      : [];
+  }
   const r = resolveDeployTarget(env);
   if (!r.ok) return r.errors;
   // 서버는 DATABASE_URL을 그대로 쓰므로, 검증한 대상과 실제 주소의 스키마가 같아야 함
@@ -118,4 +123,28 @@ export function productionDbGuard(env: Record<string, string | undefined>): stri
     return ["DATABASE_URL 형식을 읽을 수 없습니다."];
   }
   return [];
+}
+
+/**
+ * STEP 6: 새 스키마(마이그레이션 기록 없음) 처리 정책 — 사전 점검 결과로 결정(순수 함수)
+ *  - demo: 언제나 거부(시연 데이터가 있어야 하는 대상)
+ *  - production: '--migrate-only' 단계에서 DEPLOY_ALLOW_NEW_SCHEMA=true 일 때만 생성 허용.
+ *    서버 시작(deploy:start)·점검(--check)에서는 플래그가 남아 있어도 새 스키마를 만들지 않음 → 잘못된 DB 주소로 바뀌었을 때 조용히 새로 만드는 사고 방지
+ *  - 이미 있는 스키마인데 플래그가 남아 있으면 경고(제거 안내)
+ */
+export type DeployMode = "check" | "migrate" | "start";
+export function newSchemaDecision(p: { profile: DeployProfile; mode: DeployMode; schemaReady: boolean; allowFlag: boolean }): { action: "proceed" | "create" | "refuse"; message?: string; warn?: string } {
+  const flagWarn = p.allowFlag ? "DEPLOY_ALLOW_NEW_SCHEMA=true 가 남아 있습니다. 첫 생성이 끝났으면 즉시 제거하세요." : undefined;
+  if (p.schemaReady) return { action: "proceed", warn: flagWarn };
+  if (p.profile === "demo") return { action: "refuse", message: "시연 스키마가 없거나 마이그레이션 기록이 없습니다. 새 스키마를 만들지 않습니다(잘못된 DB에 연결했을 가능성)." };
+  if (p.mode !== "migrate") {
+    return {
+      action: "refuse",
+      message: p.allowFlag
+        ? "새 운영 스키마는 서버 시작 단계에서 만들지 않습니다. 'npm run deploy:migrate'(DEPLOY_ALLOW_NEW_SCHEMA=true 일시 지정)로 먼저 생성하세요."
+        : "운영 스키마가 아직 없습니다. 처음 만드는 경우에만 DEPLOY_ALLOW_NEW_SCHEMA=true 를 일시적으로 지정하고 'npm run deploy:migrate'를 실행하세요.",
+    };
+  }
+  if (!p.allowFlag) return { action: "refuse", message: "운영 스키마가 아직 없습니다. 처음 만드는 경우에만 DEPLOY_ALLOW_NEW_SCHEMA=true 를 일시적으로 지정하세요." };
+  return { action: "create" };
 }
