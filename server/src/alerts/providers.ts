@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import type { AlertKind, AlertMsgType, AlertProvider, AlertSeverity } from "@prisma/client";
 import { parseAreas, type Area } from "./region.js";
+import { mockAlertsAllowed, type DeploymentRole } from "../deploy/environment.js";
 
 export interface NormalizedAlert {
   externalId: string;
@@ -85,6 +86,8 @@ export const mockFileSource = (path: string) =>
     return data as MockAlertInput[];
   });
 
-export function assertMockAllowed(nodeEnv: string) {
-  if (nodeEnv === "production") throw new Error("운영 환경에서는 모의 경보 공급자를 사용할 수 없습니다.");
+/** STEP 7: 모의 경보는 개발·심사(judge) 환경만. 역할을 모르면(이전 호출) 운영 모드에서 거부 */
+export function assertMockAllowed(nodeEnv: string, role?: DeploymentRole) {
+  const allowed = role ? mockAlertsAllowed(role) : nodeEnv !== "production";
+  if (!allowed) throw new Error("이 운영 환경에서는 모의 경보 공급자를 사용할 수 없습니다(심사 환경 전용).");
 }

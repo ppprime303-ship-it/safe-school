@@ -18,7 +18,8 @@ git diff --stat HEAD origin/step-6-deployment -- .replit   # .replit 은 Replit 
   - (나) Replit 로컬 커밋을 GitHub에 올릴 수 없는 사정이 있으면 차이 목록을 기록하고, 사용자 승인을 받은 뒤 GitHub 쪽에 같은 내용을 반영합니다.
 - 승인한 커밋에 태그를 답니다: `git tag -a judge-v1 <해시> -m "심사 시연 1차(564+ 통과)"` → `git push origin judge-v1`
 
-## 2. 배포 순서(VPS, 매번)
+## 2. 배포 순서(VPS, 매번, **환경별로 따로**)
+2026-10-26 갱신: 한 VPS에 심사(`judge`)·시범운영(`pilot`) 두 환경이 있습니다(`step6-environment-isolation.md`). 아래 `<env>`는 `judge` 또는 `pilot`이고, 폴더는 `/srv/safe-school/<env>/`, 서비스는 `safe-school@<env>`입니다. 한 번에 한 환경만 배포하고, 심사 기간에는 시범운영 배포를 피합니다. 태그도 환경별로 답니다(`judge-v1`, `pilot-v1`).
 | 순서 | 할 일 | 확인 |
 | --- | --- | --- |
 | 1 | 릴리스 태그와 해시 확인: `git rev-parse judge-v1^{commit}` | 승인 기록의 해시와 같음 |
@@ -27,15 +28,15 @@ git diff --stat HEAD origin/step-6-deployment -- .replit   # .replit 은 Replit 
 | 4 | DB 대상 확인: `npm run deploy:check` | 운영 스키마, 학교·사용자 수가 예상과 같음 |
 | 5 | **마이그레이션이 있는 릴리스면** 변경 전 백업: `deploy/scripts/pg-backup.sh` | 덤프 읽기 확인 메시지 |
 | 6 | (승인 후) 마이그레이션: `npm run deploy:migrate` | 적용 결과 확인. 실패하면 7번으로 넘어가지 않음 |
-| 7 | 링크 전환 → 재시작: `ln -sfn releases/<새 해시> current && sudo systemctl restart safe-school` | `systemctl is-active` |
-| 8 | 확인: HTTPS 접속, `/api/health`, 심사 계정 로그인, 상황판, 훈련일지 HWPX 내려받기, 안전교육·시설 자료 | 이상 없음 |
+| 7 | 링크 전환 → 재시작: `ln -sfn releases/<새 해시> current && sudo systemctl restart safe-school@<env>` | `systemctl is-active` |
+| 8 | 확인: 그 환경의 HTTPS 접속, `/api/health`, (judge) 심사 계정 로그인·상황판·훈련일지 HWPX·모의 경보 / (pilot) 학교 검색·로그인. **다른 환경이 영향 없이 계속 동작하는지도 확인** | 이상 없음 |
 | 9 | 기록: 배포 시각·해시·확인 결과를 `docs/devlog`에 남김 | — |
 
 ## 3. 롤백
 **애플리케이션 롤백**(DB 변경이 없는 릴리스):
 ```bash
-ln -sfn /srv/safe-school/releases/<이전 해시> /srv/safe-school/current
-sudo systemctl restart safe-school
+ln -sfn /srv/safe-school/<env>/releases/<이전 해시> /srv/safe-school/<env>/current
+sudo systemctl restart safe-school@<env>
 ```
 - 이전 릴리스 폴더는 최소 2개 이상 보관합니다.
 
@@ -51,3 +52,5 @@ sudo systemctl restart safe-school
 
 ## 4. 하지 않는 것
 - 자동 배포(푸시하면 바로 배포), VPS에서 DB 테스트 실행, `prisma migrate reset`, 스키마 DROP, 강제 push, 승인 없는 마이그레이션
+- 시범운영(`pilot`)에서 `judge:setup`·`db:seed` 실행(코드가 거부하고, `ss_pilot` 계정은 심사 스키마 권한도 없음)
+- 한 환경의 env 파일·SESSION_SECRET·DB 계정을 다른 환경에 복사해 쓰기

@@ -1,7 +1,6 @@
-# /etc/caddy/Caddyfile 예시 — <시연 도메인>을 실제 도메인으로 바꾸세요. Caddy가 HTTPS 인증서를 자동 발급·갱신합니다.
-<시연 도메인> {
+# /etc/caddy/Caddyfile — 한 VPS, 호스트명 2개(인증서 자동 발급·갱신). <…> 를 실제 값으로 바꾸세요.
+(common) {
 	encode zstd gzip
-	# 보안 헤더(앱 코드 변경 없이 프록시에서 추가)
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
@@ -13,10 +12,26 @@
 	request_body {
 		max_size 1MB
 	}
-	# Caddy는 X-Forwarded-For·X-Forwarded-Proto 를 자동으로 붙입니다(앱 TRUST_PROXY_HOPS=1)
-	reverse_proxy 127.0.0.1:5000
+}
+
+# 공모전 심사(가상 학교) → 앱 judge(5001)
+<심사 호스트명> {
+	import common
+	reverse_proxy 127.0.0.1:5001
 	log {
-		output file /var/log/caddy/safe-school-access.log {
+		output file /var/log/caddy/judge-access.log {
+			roll_size 20MiB
+			roll_keep 10
+		}
+	}
+}
+
+# 실제 학교 시범운영 → 앱 pilot(5002). 접속 로그에는 IP·경로만(본문·쿠키 기록 안 함)
+<시범운영 호스트명> {
+	import common
+	reverse_proxy 127.0.0.1:5002
+	log {
+		output file /var/log/caddy/pilot-access.log {
 			roll_size 20MiB
 			roll_keep 10
 		}

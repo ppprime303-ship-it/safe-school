@@ -1,12 +1,13 @@
 # Nginx를 쓸 경우 예시(/etc/nginx/sites-available/safe-school). 인증서는 certbot --nginx 로 발급·자동 갱신.
+# 아래 블록은 심사 환경(5001). 시범운영은 server_name 을 <시범운영 호스트명>, proxy_pass 를 127.0.0.1:5002 로 바꾼 같은 블록을 하나 더 둡니다.
 server {
     listen 80;
-    server_name <시연 도메인>;
+    server_name <심사 호스트명>;
     return 301 https://$host$request_uri;
 }
 server {
     listen 443 ssl http2;
-    server_name <시연 도메인>;
+    server_name <심사 호스트명>;
     # certbot 이 ssl_certificate 줄을 채웁니다
     client_max_body_size 1m;
     server_tokens off;
@@ -15,7 +16,7 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     location / {
-        proxy_pass http://127.0.0.1:5000;
+        proxy_pass http://127.0.0.1:5001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         # 클라이언트가 보낸 X-Forwarded-For 를 이어 붙이지 않고 실제 접속 IP로 덮어씀
