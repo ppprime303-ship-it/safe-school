@@ -43,7 +43,7 @@ const currentSchoolYear = () => Number(new Intl.DateTimeFormat("en", { timeZone:
 // ───────────── 학교 검색(학교알리미 목록) ─────────────
 schoolsRouter.get("/school-directory", requireVerified, searchLimiter, async (req, res) => {
   const input = parse(directorySearchSchema, req.query);
-  const result = await searchDirectory(prisma, getSchoolinfoClient(), { q: input.q, kindCode: input.kind, sidoCode: input.sido });
+  const result = await searchDirectory(prisma, getSchoolinfoClient(), { q: input.q, kindCode: input.kind, sidoCode: input.sido, sggCode: input.sgg });
   res.json(result);
 });
 

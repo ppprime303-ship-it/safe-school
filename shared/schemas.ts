@@ -35,11 +35,15 @@ export const loginSchema = z.object({
 export const reauthSchema = z.object({ password: z.string().min(1).max(200) });
 export const resendSchema = z.object({ email: emailSchema });
 
-export const directorySearchSchema = z.object({
-  q: z.string().trim().min(2, "학교명을 2자 이상 입력하세요.").max(40),
-  kind: z.enum(["02", "03", "04", "05", "06", "07"]),
-  sido: z.string().regex(/^\d{2}$/).optional(),
-});
+export const directorySearchSchema = z
+  .object({
+    q: z.string().trim().min(2, "학교명을 2자 이상 입력하세요.").max(40),
+    kind: z.enum(["02", "03", "04", "05", "06", "07"]),
+    sido: z.string().regex(/^\d{2}$/).optional(),
+    // STEP A: 학교알리미 시군구 코드(5자리, 앞 2자리 = 시도)
+    sgg: z.string().regex(/^\d{5}$/, "시군구 코드 형식이 올바르지 않습니다.").optional(),
+  })
+  .refine((v) => !v.sgg || !v.sido || v.sgg.startsWith(v.sido), { message: "선택한 시도와 시군구가 맞지 않습니다.", path: ["sgg"] });
 
 export const registrationApplySchema = z.object({
   externalCode: z.string().trim().min(1).max(40),

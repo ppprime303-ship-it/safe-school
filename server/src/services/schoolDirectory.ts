@@ -1,6 +1,8 @@
 // 학교 검색: 학교알리미 학교기본정보(apiType 0)를 DB 목록(school_directory_entries)에 저장해 두고 검색합니다.
 // - 공식 API에는 '학교명 검색' 인자가 없어서, 학교급·시도 단위로 받아 저장한 뒤 이름으로 거릅니다.
 // - API 장애나 인증키 미설정 시에는 마지막으로 저장된 목록으로 검색합니다(stale 표시).
+// - STEP A: 시군구(sggCode, 5자리)를 주면 그 시군구 단위로 받고 최신 여부도 그 단위로 판단합니다.
+//   SCHOOLINFO_SGG_REQUIRED=true(시군구가 필수인 인증키)면 시군구 없는 요청은 API를 부르지 않고 저장된 목록으로만 검색합니다.
 import type { Prisma, PrismaClient } from "@prisma/client";
 import {
   API_TYPE_BASIC_INFO,
@@ -10,18 +12,34 @@ import {
   SchoolinfoError,
   type SchoolinfoClient,
 } from "../integrations/schoolinfo.js";
+import { isSggCode } from "../../../shared/schoolinfoRegions.js";
 
 export const DIRECTORY_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7일
+
+// 2026-07-01 전남광주통합특별시(12) 출범 전 코드로 저장된 목록 행. 지우거나 고치지 않고, 12로 검색할 때 함께 보여 줍니다(읽기만).
+// API 요청 코드는 공식 코드표(shared/schoolinfoRegions.ts)를 따르고, 예전 코드 요청을 막지도 않습니다(제공기관 응답으로 판단).
+export const LEGACY_SIDO_FOR: Record<string, string[]> = { "12": ["29", "46"] };
+
+/** 시군구 코드가 필수인 인증키(공식 페이지는 '선택' — 발급받은 키 조건에 따라 운영자가 켬) */
+export const isSggRequired = () => process.env.SCHOOLINFO_SGG_REQUIRED === "true";
 
 export async function syncDirectory(
   prisma: PrismaClient,
   client: SchoolinfoClient,
-  scope: { kindCode: string; sidoCode?: string },
+  scope: { kindCode: string; sidoCode?: string; sggCode?: string },
 ): Promise<{ upserted: number; skipped: number }> {
+  if (scope.sggCode !== undefined && !isSggCode(scope.sggCode)) {
+    throw new SchoolinfoError(`학교알리미 시군구 코드가 공식 코드표에 없습니다(${scope.sggCode.slice(0, 10)}).`, "params");
+  }
+  if (!scope.sggCode && isSggRequired()) {
+    throw new SchoolinfoError("이 학교알리미 인증키는 시군구를 지정해야 목록을 받을 수 있습니다.", "params");
+  }
+  const sidoCode = scope.sggCode ? scope.sggCode.slice(0, 2) : scope.sidoCode;
   const { rows } = await client.fetch({
     apiType: API_TYPE_BASIC_INFO,
     schulKndCode: scope.kindCode,
-    sidoCode: scope.sidoCode,
+    sidoCode,
+    sggCode: scope.sggCode,
   });
 
   // 기대한 필드가 없는 응답(명세 변경 등)은 저장하지 않고 형식 오류로 멈춥니다(기존 목록 보존).
@@ -44,7 +62,8 @@ export async function syncDirectory(
     const data = {
       name: info.name,
       kindCode: info.kindCode ?? scope.kindCode,
-      sidoCode: scope.sidoCode ?? null,
+      sidoCode: sidoCode ?? null,
+      sggCode: scope.sggCode ?? null,
       eduOfficeName: info.eduOfficeName,
       address: info.address,
       closed: info.closed,
@@ -73,18 +92,29 @@ export interface DirectorySearchResult {
 export async function searchDirectory(
   prisma: PrismaClient,
   client: SchoolinfoClient | null,
-  params: { q: string; kindCode: string; sidoCode?: string },
+  params: { q: string; kindCode: string; sidoCode?: string; sggCode?: string },
 ): Promise<{ results: DirectorySearchResult[]; stale: boolean; syncedAt: Date | null; warning?: string }> {
-  const scopeWhere = { source: "schoolinfo" as const, kindCode: params.kindCode, ...(params.sidoCode ? { sidoCode: params.sidoCode } : {}) };
+  // 시군구를 주면 그 시군구에서 받은 목록만으로 최신 여부를 판단하고 검색합니다.
+  const scopeWhere = {
+    source: "schoolinfo" as const,
+    kindCode: params.kindCode,
+    ...(params.sggCode ? { sggCode: params.sggCode } : params.sidoCode ? { sidoCode: params.sidoCode } : {}),
+  };
+
+  // 검색 범위: 통합 시도(12)면 예전 코드(29·46) 행도 포함(최신 여부 판단에는 넣지 않음)
+  const legacy = !params.sggCode && params.sidoCode ? LEGACY_SIDO_FOR[params.sidoCode] : undefined;
+  const searchWhere = legacy ? { ...scopeWhere, sidoCode: { in: [params.sidoCode!, ...legacy] } } : scopeWhere;
 
   // 1) 저장된 목록이 없거나 오래됐으면 새로 받기를 시도
   const newest = await prisma.schoolDirectoryEntry.findFirst({ where: scopeWhere, orderBy: { syncedAt: "desc" }, select: { syncedAt: true } });
   let stale = !newest || Date.now() - newest.syncedAt.getTime() > DIRECTORY_MAX_AGE_MS;
   let warning: string | undefined;
   let syncedAt = newest?.syncedAt ?? null;
-  if (stale && client) {
+  if (stale && client && !params.sggCode && isSggRequired()) {
+    warning = "학교 목록을 새로 받으려면 시군구를 선택하세요. 지금은 저장된 목록으로 검색합니다.";
+  } else if (stale && client) {
     try {
-      await syncDirectory(prisma, client, { kindCode: params.kindCode, sidoCode: params.sidoCode });
+      await syncDirectory(prisma, client, { kindCode: params.kindCode, sidoCode: params.sidoCode, sggCode: params.sggCode });
       stale = false;
       syncedAt = new Date();
     } catch (error) {
@@ -102,7 +132,7 @@ export async function searchDirectory(
   if (q.length < 2) return { results: [], stale, syncedAt, warning };
 
   const entries = await prisma.schoolDirectoryEntry.findMany({
-    where: { ...scopeWhere, closed: false, name: { contains: q } },
+    where: { ...searchWhere, closed: false, name: { contains: q } },
     orderBy: { name: "asc" },
     take: 30,
   });

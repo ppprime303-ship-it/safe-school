@@ -14,6 +14,7 @@ import {
   type SchoolinfoRow,
 } from "../integrations/schoolinfo.js";
 import { writeAudit } from "./audit.js";
+import { isSggRequired } from "./schoolDirectory.js";
 
 export const DATASET_BASIC = "basic_info";
 export const DATASET_GRADE_CLASS = "grade_class_students";
@@ -107,14 +108,19 @@ export async function refreshGradeClassData(
 
   const entry = await prisma.schoolDirectoryEntry.findUnique({
     where: { source_externalCode: { source: "schoolinfo", externalCode: code } },
-    select: { sidoCode: true },
+    select: { sidoCode: true, sggCode: true },
   });
+  // STEP A: 시군구가 필수인 인증키인데 이 학교의 시군구를 모르면 부르지 않음(반드시 실패하는 호출 방지)
+  if (!entry?.sggCode && isSggRequired()) {
+    return fallback("이 학교의 시군구 코드가 없어 학교알리미 자료를 받을 수 없습니다. 학교 검색에서 시군구를 선택해 목록을 다시 받아 주세요.");
+  }
 
   try {
     const { rows, sourceUrl } = await client.fetch({
       apiType: API_TYPE_GRADE_CLASS_STUDENTS,
       schulKndCode: kindCode,
       sidoCode: entry?.sidoCode ?? undefined,
+      sggCode: entry?.sggCode ?? undefined, // STEP A: 시군구 단위로 받은 학교면 같은 범위로 요청
       pbanYr: params.disclosureYear,
     });
     const row = rows.find((r) => String(r.SCHUL_CODE ?? "").trim() === code);

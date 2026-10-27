@@ -5,14 +5,18 @@
 // - 학교기본정보 apiType=0, 요청인자 apiKey(필수)·apiType(필수)·schulKndCode(필수)·sidoCode·sggCode(선택)
 // - 응답: { resultCode: 'success'|'fail', resultMsg, list: [...] }
 //
-// 확인이 필요한 사항(공식 개발자 활용가이드 PDF로 대조해야 함)
-// - 학년별·학급별 학생수 apiType=09 와 열 이름(COL_C1 학급수, COL_S1 학생수 …)은 공개 오픈소스 구현에서 확인한 값입니다.
-// - 시도 코드표(SIDO_CODES)도 같은 출처입니다.
-// - 응답에 '공시 기준일' 필드가 있는지 확인되지 않아, 기준일은 있으면 저장하고 없으면 비워 둡니다.
+// 2026-10-27 공식 자료로 다시 확인(학교알리미 OpenAPI 학교기본정보 페이지·시도시군구코드.xlsx·OpenAPI 출력값.xlsx)
+// - 요청인자: apiKey(필수)·apiType(필수)·schulKndCode(필수)·sidoCode(선택)·sggCode(선택, 5자리)
+//   ※ '2026-01-01 이후 신규 인증키는 시군구 필수' 정책은 위 공식 페이지에서 확인하지 못했습니다(페이지는 '선택').
+//     두 경우 모두 동작하도록 API 호출은 항상 시군구 단위로 합니다(services/schoolDirectory.ts).
+// - 시도 코드: 2026-07-01 전남광주통합특별시(12) 신설, 광주(29)·전남(46) 삭제 → shared/schoolinfoRegions.ts(공식 코드표에서 생성)
+// - apiType 09 '학년별·학급별 학생수', 출력 열: 초·중·고 모두 n학년 = COL_Cn(학급수)·COL_Sn(학생수), 합계 COL_C_SUM·COL_S_SUM
+// - 응답에 '공시 기준일' 필드는 출력값 정의에 없어, 기준일은 있으면 저장하고 없으면 비워 둡니다.
 //
 // 이 API는 학년별 합계만 제공합니다. 학급별 학생 수를 임의로 나누지 않습니다.
 
 import { createHash } from "node:crypto";
+import { SCHOOLINFO_SIDO } from "../../../shared/schoolinfoRegions.js";
 
 export const SCHOOLINFO_BASE_URL = "https://www.schoolinfo.go.kr/openApi.do";
 
@@ -26,32 +30,13 @@ export const SCHOOL_KIND_CODES = {
 } as const;
 export type SchoolKindCode = keyof typeof SCHOOL_KIND_CODES;
 
-// 확인 필요: 공식 코드표와 대조 전
-export const SIDO_CODES: Record<string, string> = {
-  "11": "서울특별시",
-  "26": "부산광역시",
-  "27": "대구광역시",
-  "28": "인천광역시",
-  "29": "광주광역시",
-  "30": "대전광역시",
-  "31": "울산광역시",
-  "36": "세종특별자치시",
-  "41": "경기도",
-  "43": "충청북도",
-  "44": "충청남도",
-  "46": "전라남도",
-  "47": "경상북도",
-  "48": "경상남도",
-  "50": "제주특별자치도",
-  "51": "강원특별자치도",
-  "52": "전북특별자치도",
-};
-
+// 공식 코드표(shared/schoolinfoRegions.ts)에서 만듦
+export const SIDO_CODES: Record<string, string> = Object.fromEntries(SCHOOLINFO_SIDO);
 export const API_TYPE_BASIC_INFO = "0";
-export const API_TYPE_GRADE_CLASS_STUDENTS = "09"; // 확인 필요
+export const API_TYPE_GRADE_CLASS_STUDENTS = "09"; // 학년별·학급별 학생수(공식 출력값 정의 확인)
 
-// 응답 필드 검증: 공식 출력값 정의를 아직 확인하지 못했으므로, 실제 응답에 아래 필드가 있는지 검사합니다.
-// (npm run schoolinfo:verify 로 실제 응답을 확인한 뒤 docs/data-sources.md 에 기록)
+// 응답 필드 검증: 아래 필드는 공식 출력값 정의(2026-10-27)에 있는 항목입니다. 실제 응답에도 있는지는
+// 인증키 발급 후 npm run schoolinfo:verify 로 확인하고 docs/data-sources.md 에 기록합니다(아직 실제 호출 없음).
 export const EXPECTED_BASIC_FIELDS = ["SCHUL_CODE", "SCHUL_NM", "SCHUL_KND_SC_CODE", "ATPT_OFCDC_ORG_NM", "SCHUL_RDNMA", "ABSCH_YN"] as const;
 export const REQUIRED_BASIC_FIELDS = ["SCHUL_CODE", "SCHUL_NM"] as const;
 export const EXPECTED_GRADE_FIELDS = ["SCHUL_CODE", "COL_C1", "COL_S1", "COL_C_SUM", "COL_S_SUM"] as const;
@@ -87,7 +72,7 @@ export interface SchoolinfoClient {
 export class SchoolinfoError extends Error {
   constructor(
     message: string,
-    public readonly kind: "not_configured" | "network" | "http" | "api" | "format",
+    public readonly kind: "not_configured" | "network" | "http" | "api" | "format" | "params",
   ) {
     super(message);
   }
@@ -202,11 +187,13 @@ export interface GradeClassStudents {
   baseDate: string | null; // 응답에 기준일이 있을 때만(형식 YYYY-MM-DD)
 }
 
-// 학교급별 학년 → 열 번호(확인 필요: 공식 출력값 엑셀과 대조)
+// 학교급별 학년 → 열 번호(공식 출력값 정의: 초·중·고 모두 n학년 = COL_Cn·COL_Sn).
+// 2026-10-27 이전에는 중학교 COL_C9~11, 고등학교 COL_C14~16 으로 잘못 읽고 있었음(학년별 자료는 기본 꺼짐이라 사용된 적 없음).
+// 특수학교(05)는 학부별로 열 배치가 달라 지원하지 않습니다.
 const GRADE_COLUMNS: Record<string, { grade: number; col: number }[]> = {
   "02": [1, 2, 3, 4, 5, 6].map((g) => ({ grade: g, col: g })),
-  "03": [1, 2, 3].map((g) => ({ grade: g, col: 8 + g })),
-  "04": [1, 2, 3].map((g) => ({ grade: g, col: 13 + g })),
+  "03": [1, 2, 3].map((g) => ({ grade: g, col: g })),
+  "04": [1, 2, 3].map((g) => ({ grade: g, col: g })),
 };
 
 const BASE_DATE_FIELDS = ["BASE_DATE", "BASE_DT", "CRTR_YMD", "STDR_YMD"];

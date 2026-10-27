@@ -26,6 +26,7 @@
     "operator": "tsx scripts/operator.ts",
     "directory:sync": "tsx scripts/sync-school-directory.ts",
     "schoolinfo:verify": "tsx scripts/verify-schoolinfo.ts",
+    "neis:verify": "tsx scripts/verify-neis.ts",
     "e2e:step2": "tsx scripts/e2e-step2.ts",
     "e2e:step3": "tsx scripts/e2e-step3.ts",
     "e2e:step3b": "tsx scripts/e2e-step3b.ts",

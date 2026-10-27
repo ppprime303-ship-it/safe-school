@@ -10,6 +10,7 @@ import { Icon } from "../components/ui/Icon";
 import { PrimaryButton } from "../components/ui/PrimaryButton";
 import { Badge } from "../components/ui/StatusBadge";
 import { EmptyState, ErrorState } from "../components/ui/States";
+import { SCHOOLINFO_SIDO, sggOf } from "@shared/schoolinfoRegions";
 
 const KINDS = [
   ["02", "초등"],
@@ -18,11 +19,8 @@ const KINDS = [
   ["05", "특수"],
 ] as const;
 
-// 학교알리미 시도 코드(서버 integrations/schoolinfo.ts 와 같음 — 공식 코드표 대조 필요)
-const SIDOS: [string, string][] = [
-  ["", "전체 시도"], ["11", "서울"], ["26", "부산"], ["27", "대구"], ["28", "인천"], ["29", "광주"], ["30", "대전"], ["31", "울산"],
-  ["36", "세종"], ["41", "경기"], ["51", "강원"], ["43", "충북"], ["44", "충남"], ["52", "전북"], ["46", "전남"], ["47", "경북"], ["48", "경남"], ["50", "제주"],
-];
+// 학교알리미 시도·시군구 코드(공식 코드표 — shared/schoolinfoRegions.ts, 2026-07-01 전남광주통합특별시 반영)
+const SIDOS: (readonly [string, string])[] = [["", "전체 시도"], ...SCHOOLINFO_SIDO];
 
 interface SearchResult {
   externalCode: string;
@@ -45,6 +43,7 @@ export function SchoolSelectPage() {
   const { me, selectSchool, refresh } = useSession();
   const [kind, setKind] = useState<string>("02");
   const [sido, setSido] = useState("");
+  const [sgg, setSgg] = useState("");
   const [q, setQ] = useState("");
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<SearchResult[] | null>(null);
@@ -68,7 +67,7 @@ export function SchoolSelectPage() {
     setError(null);
     setDone(null);
     try {
-      const params = new URLSearchParams({ q, kind, ...(sido ? { sido } : {}) });
+      const params = new URLSearchParams({ q, kind, ...(sido ? { sido } : {}), ...(sido && sgg ? { sgg } : {}) });
       const res = await api<{ results: SearchResult[]; stale: boolean; warning?: string }>("GET", `/school-directory?${params}`);
       setResults(res.results);
       setNotice(res.warning ?? null);
@@ -159,7 +158,14 @@ export function SchoolSelectPage() {
             </fieldset>
             <label className="block text-base font-bold">
               시도
-              <select value={sido} onChange={(e) => setSido(e.target.value)} className="mt-1.5 block min-h-touch w-full rounded-control border-2 border-line-strong bg-card px-3 text-lg">
+              <select
+                value={sido}
+                onChange={(e) => {
+                  setSido(e.target.value);
+                  setSgg("");
+                }}
+                className="mt-1.5 block min-h-touch w-full rounded-control border-2 border-line-strong bg-card px-3 text-lg"
+              >
                 {SIDOS.map(([v, l]) => (
                   <option key={v} value={v}>
                     {l}
@@ -167,6 +173,19 @@ export function SchoolSelectPage() {
                 ))}
               </select>
             </label>
+            {sido && (
+              <label className="block text-base font-bold">
+                시군구 <span className="font-normal text-ink-muted">(선택하면 최신 목록을 받아옵니다)</span>
+                <select value={sgg} onChange={(e) => setSgg(e.target.value)} className="mt-1.5 block min-h-touch w-full rounded-control border-2 border-line-strong bg-card px-3 text-lg">
+                  <option value="">전체 시군구</option>
+                  {sggOf(sido).map(([v, l]) => (
+                    <option key={v} value={v}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <FormField label="학교명" value={q} onChange={(e) => setQ(e.target.value)} placeholder="예: 안전초" minLength={2} required />
             <PrimaryButton type="submit" fullWidth icon="search" loading={searching} loadingText="찾는 중…" disabled={q.trim().length < 2}>
               학교 검색

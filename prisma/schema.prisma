@@ -167,6 +167,8 @@ model SchoolDirectoryEntry {
   name          String
   kindCode      String?    @map("kind_code")
   sidoCode      String?    @map("sido_code")
+  /// STEP A: 학교알리미 시군구 코드(5자리). 이 시군구 단위로 받아 저장한 항목만 값이 있음(최신 여부 판단 단위)
+  sggCode       String?    @map("sgg_code")
   eduOfficeName String?    @map("edu_office_name")
   address       String?
   closed        Boolean    @default(false)
@@ -175,6 +177,7 @@ model SchoolDirectoryEntry {
 
   @@unique([source, externalCode], map: "school_directory_entries_source_code_key")
   @@index([kindCode, sidoCode], map: "school_directory_entries_kind_sido_idx")
+  @@index([kindCode, sggCode], map: "school_directory_entries_kind_sgg_idx")
   @@map("school_directory_entries")
 }
 
