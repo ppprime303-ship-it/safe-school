@@ -17,9 +17,12 @@ export const signupSchema = z.object({
   password: passwordSchema,
 });
 
+// STEP 7-D: 비밀번호·이름은 인증코드를 확인할 때 확정합니다(가입 요청만으로는 로그인 자격이 생기지 않음).
 export const verifyEmailSchema = z.object({
   email: emailSchema,
   code: z.string().trim().regex(/^\d{6}$/, "6자리 숫자를 입력하세요."),
+  password: passwordSchema,
+  displayName: z.string().trim().min(1, "이름을 입력하세요.").max(50).optional(),
   deviceKind: deviceKindSchema,
 });
 

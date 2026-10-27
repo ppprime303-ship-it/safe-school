@@ -52,13 +52,17 @@ async function signupAndVerify(agent: Agent, email: string, name: string) {
   const takeover = await agent.call("POST", "/auth/signup", {
     email, displayName: "제3자 변경 시도", password: "attacker-password-5678",
   });
-  check(`${name} 미인증 계정 재가입으로 비밀번호 변경 차단`,
-    takeover.status === 409 && takeover.body.code === "email_pending_verification",
+  // STEP 7-D: 인증 전 재가입은 코드만 다시 보냄(1분 안이면 429) — 비밀번호는 어느 쪽도 저장되지 않음
+  check(`${name} 미인증 계정 재가입으로 비밀번호 설정 불가`,
+    takeover.status === 429 || takeover.status === 201,
     { status: takeover.status, code: takeover.body.code });
-  const wrong = await agent.call("POST", "/auth/verify-email", { email, code: "000000" === s.body.devCode ? "111111" : "000000", deviceKind: "personal" });
+  const code = takeover.status === 201 ? takeover.body.devCode : s.body.devCode;
+  const wrong = await agent.call("POST", "/auth/verify-email", { email, code: "000000" === code ? "111111" : "000000", password: "test-password-1234", deviceKind: "personal" });
   check(`${name} 틀린 인증코드 거부`, wrong.status === 400 && wrong.body.code === "invalid_code", wrong.body);
-  const v = await agent.call("POST", "/auth/verify-email", { email, code: s.body.devCode, deviceKind: "personal" });
+  const v = await agent.call("POST", "/auth/verify-email", { email, code, password: "test-password-1234", displayName: name, deviceKind: "personal" });
   check(`${name} 이메일 인증 → 로그인됨`, v.status === 200 && agent.cookie.startsWith("ss_session="), v.body);
+  const attacker = await new Agent().call("POST", "/auth/login", { email, password: "attacker-password-5678" });
+  check(`${name} 선점 시도 비밀번호로 로그인 불가`, attacker.status === 401, { status: attacker.status });
 }
 
 async function main() {

@@ -41,7 +41,16 @@ export async function sendMail(message: MailMessage): Promise<{ delivered: MailD
     console.log(`[mail:모의 발송·실제 미발송] 받는 사람 ${masked} · 제목 ${message.subject}`);
     return { delivered: "test_console" };
   }
-  throw new AppError(
+  throw mailNotConfigured();
+}
+
+/** 계정·코드를 만들기 전에 호출: 보낼 수 없으면 아무것도 쓰지 않고 503 */
+export function requireMailConfigured(): void {
+  if (mailMode() === "none") throw mailNotConfigured();
+}
+
+function mailNotConfigured() {
+  return new AppError(
     503,
     "mail_not_configured",
     process.env.NODE_ENV === "production"

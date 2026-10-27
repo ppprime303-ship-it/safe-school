@@ -77,7 +77,7 @@ export function LoginPage() {
       });
     } else {
       void run(async () => {
-        await api("POST", "/auth/verify-email", { email, code, deviceKind });
+        await api("POST", "/auth/verify-email", { email, code, password, ...(displayName.trim() ? { displayName } : {}), deviceKind });
         await afterLogin();
       });
     }
@@ -131,18 +131,17 @@ export function LoginPage() {
             {mode === "signup" && (
               <FormField label="이름" autoComplete="name" required value={displayName} onChange={(e) => setDisplayName(e.target.value)} error={fieldErrors.displayName} />
             )}
-            {mode !== "verify" && (
-              <FormField
-                label="비밀번호"
-                type="password"
-                autoComplete={mode === "signup" ? "new-password" : "current-password"}
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                error={fieldErrors.password}
-                hint={mode === "signup" ? "10자 이상" : undefined}
-              />
-            )}
+            {/* STEP 7-D: 비밀번호는 인증코드와 함께 확정(가입 요청만으로는 저장하지 않음) */}
+            <FormField
+              label={mode === "verify" ? "사용할 비밀번호" : "비밀번호"}
+              type="password"
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              error={fieldErrors.password}
+              hint={mode === "signup" ? "10자 이상" : mode === "verify" ? "10자 이상 · 인증이 끝나면 이 비밀번호로 로그인합니다" : undefined}
+            />
             {mode === "verify" && (
               <FormField
                 label="인증코드 6자리"
