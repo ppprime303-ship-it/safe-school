@@ -43,6 +43,11 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     res.status(400).json({ code: "invalid_json", message: "요청 형식(JSON)이 올바르지 않습니다." });
     return;
   }
+  // STEP 8: 본문 처리 단계의 요청 오류(너무 큼 413, 압축 본문 415 등)는 500이 아니라 해당 4xx로
+  if (typeof err?.type === "string" && err.expose === true && Number.isInteger(err.status) && err.status >= 400 && err.status < 500) {
+    res.status(err.status).json({ code: "invalid_request_body", message: "요청 본문을 처리할 수 없습니다." });
+    return;
+  }
   // STEP 3-E: 오류 객체를 통째로 남기지 않음(요청 값·개인정보 노출 방지) — security/safeLog.ts
   console.error("[server] 처리하지 못한 오류", safeErrorSummary(err));
   res.status(500).json({ code: "internal_error", message: "서버 오류가 발생했습니다. 잠시 후 다시 시도하세요." });
@@ -53,7 +58,9 @@ export async function createApp(options: { mode: "development" | "production" | 
   app.disable("x-powered-by");
   // 앞단 프록시(Replit·Caddy·Nginx) 뒤에서 실제 접속 IP를 쓰기 위함. 지정한 단계 수만큼만 X-Forwarded-For를 믿음(맨 왼쪽 위조값 무시)
   app.set("trust proxy", options.trustProxyHops ?? 1);
-  app.use(express.json({ limit: "100kb" }));
+  // inflate: false — 압축(gzip·deflate·br) 요청 본문은 받지 않음(화면은 압축 본문을 보내지 않음).
+  // body-parser 2.0~2.3 압축 본문 서비스 거부 취약점(GHSA-27r3-jxmh-p828) 경로를 버전 변경 없이 차단(STEP 8)
+  app.use(express.json({ limit: "100kb", inflate: false }));
 
   app.use("/api", createApiRouter());
   app.use("/api", errorHandler);

@@ -51,3 +51,24 @@ describe("미인증·CSRF", () => {
     expect((await fetch(`${base}/api/auth/me`)).headers.get("x-powered-by")).toBe(null);
   });
 });
+
+describe("요청 본문 처리(STEP 8)", () => {
+  it("압축(gzip) 요청 본문 → 415(압축 해제 안 함), 서버 오류 아님", async () => {
+    const { gzipSync } = await import("node:zlib");
+    const res = await fetch(`${base}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "content-encoding": "gzip", "x-forwarded-for": "203.0.113.77" },
+      body: gzipSync(Buffer.from(JSON.stringify({ email: "a@b.kr", password: "x" }))),
+    });
+    expect(res.status).toBe(415);
+    expect((await res.json()).code).toBe("invalid_request_body");
+  });
+  it("100kb 넘는 본문 → 413, 서버 오류 아님", async () => {
+    const res = await fetch(`${base}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.78" },
+      body: JSON.stringify({ email: "a@b.kr", password: "x".repeat(110 * 1024) }),
+    });
+    expect(res.status).toBe(413);
+  });
+});
