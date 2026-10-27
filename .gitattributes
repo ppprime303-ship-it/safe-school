@@ -1,0 +1,2 @@
+# 모든 OS에서 LF로 체크아웃(Windows core.autocrlf=true 로 배포 설정·스크립트에 CR이 섞이는 것 방지)
+* text=auto eol=lf

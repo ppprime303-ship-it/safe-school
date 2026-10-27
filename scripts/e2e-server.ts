@@ -1,7 +1,7 @@
 // E2E용 테스트 서버 시작·종료 도우미
 // - 시작 전에 포트가 비어 있는지 확인합니다. 이전 실행의 서버가 남아 있으면 그 서버(옛 코드)로 검사하게 되므로 중단합니다.
 // - 서버를 별도 프로세스 그룹으로 띄우고 종료 시 그룹 전체를 끝내 tsx 하위 프로세스가 남지 않게 합니다.
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import net from "node:net";
 import path from "node:path";
 
@@ -16,6 +16,8 @@ function portInUse(port: number): Promise<boolean> {
   });
 }
 
+const isWindows = process.platform === "win32";
+
 export interface TestServer {
   stop(): Promise<void>;
   exited(): boolean;
@@ -28,11 +30,14 @@ export async function startTestServer(port: number, env: NodeJS.ProcessEnv): Pro
         `옛 서버로 검사하지 않도록 중단합니다. 'ps -ef | grep "server/src/index.ts"'로 확인 후 해당 PID만 종료하세요.`,
     );
   }
-  const tsx = path.resolve(process.cwd(), "node_modules/.bin/tsx");
-  const child: ChildProcess = spawn(tsx, ["server/src/index.ts"], {
-    env: { ...env, PORT: String(port) },
+  // tsx CLI를 node로 직접 실행(.bin/tsx 셸 래퍼는 Windows에서 실행할 수 없음)
+  const tsxCli = path.resolve(process.cwd(), "node_modules/tsx/dist/cli.mjs");
+  const child: ChildProcess = spawn(process.execPath, [tsxCli, "server/src/index.ts"], {
+    // 테스트 서버는 이 PC 안에서만 접속(앱 기본값 0.0.0.0이면 학교·사내 네트워크에 열림). 요청도 127.0.0.1로 보냄
+    env: { ...env, PORT: String(port), LISTEN_HOST: "127.0.0.1" },
     stdio: ["ignore", "ignore", "inherit"],
-    detached: true, // 새 프로세스 그룹(종료 시 -pid로 그룹 전체 종료)
+    detached: !isWindows, // 새 프로세스 그룹(종료 시 -pid로 그룹 전체 종료). Windows는 taskkill /T 로 하위까지 종료
+    windowsHide: true,
   });
   let done = false;
   const exitedPromise = new Promise<void>((resolve) => child.once("exit", () => ((done = true), resolve())));
@@ -53,6 +58,11 @@ export async function startTestServer(port: number, env: NodeJS.ProcessEnv): Pro
     exited: () => done,
     async stop() {
       if (done || child.pid === undefined) return;
+      if (isWindows) {
+        spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+        await exitedPromise;
+        return;
+      }
       try {
         process.kill(-child.pid, "SIGTERM");
       } catch {
