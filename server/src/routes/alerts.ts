@@ -4,6 +4,7 @@ import { prisma } from "../db.js";
 import { parse } from "../validate.js";
 import { requireVerified } from "../auth/session.js";
 import { resolveAccess } from "../services/access.js";
+import { getAlertFeedStatus } from "../alerts/feedStatus.js";
 import { confirmSchoolRegion, getSchoolRegion, listSchoolAlerts, markAlertRead } from "../services/alerts.js";
 import { regionSchema } from "../../../shared/schemas.js";
 
@@ -14,7 +15,11 @@ const schoolOf = (req: Request) => param(req.params.schoolId);
 alertsRouter.get("/schools/:schoolId/alerts", requireVerified, async (req, res) => {
   const a = await resolveAccess(prisma, { userId: req.auth!.userId, schoolId: schoolOf(req) });
   // 미판정 경보는 소재지를 확인할 수 있는 사람(기존 관리자·앱 운영담당)에게만
-  res.json(await listSchoolAlerts(prisma, { schoolId: schoolOf(req), userId: req.auth!.userId, role: a.can("region.manage") ? "admin" : a.membership.role }));
+  const [list, feed] = await Promise.all([
+    listSchoolAlerts(prisma, { schoolId: schoolOf(req), userId: req.auth!.userId, role: a.can("region.manage") ? "admin" : a.membership.role }),
+    getAlertFeedStatus(prisma), // STEP A: 수집 상태(공식/모의, 마지막 성공·실패) — 경보 없음과 수집 장애를 구분
+  ]);
+  res.json({ ...list, feed });
 });
 
 alertsRouter.post("/schools/:schoolId/alerts/:matchId/read", requireVerified, async (req, res) => {

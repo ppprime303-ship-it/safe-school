@@ -1,19 +1,21 @@
 // 교직원 경보함: 우리 학교 지역 대상 공식 경보(원문 그대로)와 읽음 상태
-// - 모의 경보는 항상 '모의' 표시. 실제 공식 API 연동은 아직 없습니다.
+// - 모의 경보는 항상 '모의(가상)' 표시. 공식 API는 응답 형식 확인 전입니다.
+// - STEP A: 수집 상태(공식 미연결·한 번도 성공 못 함·실패·지연)를 함께 보여 줘 '경보 없음'과 '확인 못 함'을 구분합니다.
 // - 경보를 받아도 학교 재난 발령·학부모 발송은 자동으로 하지 않습니다(관리자 판단).
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "../../lib/api";
-import { KIND_LABEL, MSG_LABEL, SEVERITY_META, type AlertItem, type RegionInfo } from "../../lib/alerts";
-import { formatDateTime } from "../../lib/format";
+import { FEED_ERROR_LABEL, KIND_LABEL, MSG_LABEL, SEVERITY_META, type AlertFeedStatus, type AlertItem, type RegionInfo } from "../../lib/alerts";
+import { formatDateTime, formatElapsed } from "../../lib/format";
 import { Link } from "../../lib/router";
 import { AppShell } from "../../components/layout/AppShell";
 import { EmptyState, ErrorState, LoadingState } from "../../components/ui/States";
 import { PrimaryButton } from "../../components/ui/PrimaryButton";
 import { FormField } from "../../components/ui/FormField";
+import { Icon } from "../../components/ui/Icon";
 
 const POLL_MS = 30_000;
 
-type Load = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; alerts: AlertItem[]; unreadCount: number };
+type Load = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; alerts: AlertItem[]; unreadCount: number; feed?: AlertFeedStatus };
 
 export function AlertsPage({ schoolId, isAdmin }: { schoolId: string; isAdmin: boolean }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
@@ -21,7 +23,7 @@ export function AlertsPage({ schoolId, isAdmin }: { schoolId: string; isAdmin: b
 
   const fetchAlerts = useCallback(async () => {
     try {
-      const data = await api<{ alerts: AlertItem[]; unreadCount: number }>("GET", `/schools/${schoolId}/alerts`);
+      const data = await api<{ alerts: AlertItem[]; unreadCount: number; feed?: AlertFeedStatus }>("GET", `/schools/${schoolId}/alerts`);
       setLoad({ kind: "ready", ...data });
     } catch (e) {
       setLoad((prev) => (prev.kind === "ready" ? prev : { kind: "error", message: e instanceof ApiError ? e.message : "불러오지 못했습니다." }));
@@ -70,11 +72,20 @@ export function AlertsPage({ schoolId, isAdmin }: { schoolId: string; isAdmin: b
         {load.kind === "error" && <ErrorState message={load.message} onRetry={() => void fetchAlerts()} />}
         {load.kind === "ready" && (
           <>
+            {load.feed && <FeedStatusNotice feed={load.feed} />}
             <h2 className="text-lg font-bold">
               우리 학교 대상 경보 <span className="text-ink-muted">· 읽지 않음 {load.unreadCount}건</span>
             </h2>
             {targets.length === 0 ? (
-              <EmptyState icon="check-circle" title="새 재난문자 없음" message="우리 학교 지역에 해당하는 경보가 없습니다. 이 화면을 열어 두면 30초마다 새 경보를 확인합니다." />
+              load.feed && load.feed.official.state !== "ok" ? (
+                <EmptyState
+                  icon="info"
+                  title="표시할 경보 없음"
+                  message="위의 수집 상태 안내를 확인하세요. 공식 재난문자를 받아오지 못하는 동안에는 경보가 없다는 뜻이 아닐 수 있습니다."
+                />
+              ) : (
+                <EmptyState icon="check-circle" title="새 재난문자 없음" message="우리 학교 지역에 해당하는 경보가 없습니다. 이 화면을 열어 두면 30초마다 새 경보를 확인합니다." />
+              )
             ) : (
               <ul className="space-y-3">
                 {targets.map((a) => (
@@ -110,7 +121,7 @@ function AlertCard({ item, open, onToggle, schoolId, isAdmin }: { item: AlertIte
       <button type="button" onClick={onToggle} aria-expanded={open} className="block w-full p-4 text-left">
         <div className="flex flex-wrap items-center gap-1.5">
           {unread && <span className="rounded-full bg-brand px-2 py-0.5 text-sm font-bold text-white">새 경보</span>}
-          {a.isMock && <span className="rounded-full border-2 border-dashed border-warning px-2 py-0.5 text-sm font-bold text-warning-strong">모의</span>}
+          {a.isMock && <span className="rounded-full border-2 border-dashed border-warning px-2 py-0.5 text-sm font-bold text-warning-strong">모의(가상)</span>}
           <span className={`rounded-full px-2 py-0.5 text-sm font-bold ${sev.badge}`}>{sev.label}</span>
           <span className="rounded-full bg-neutral-soft px-2 py-0.5 text-sm font-semibold text-neutral">{KIND_LABEL[a.kind]}</span>
           {msg && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-sm font-bold text-accent">{msg}</span>}
@@ -126,7 +137,7 @@ function AlertCard({ item, open, onToggle, schoolId, isAdmin }: { item: AlertIte
       </button>
       {open && (
         <div className="border-t border-line px-4 pb-4 pt-3">
-          <p className="text-sm font-bold text-ink-muted">공식 경보 원문(수정되지 않음)</p>
+          <p className="text-sm font-bold text-ink-muted">{a.isMock ? "모의 경보 내용(시연용 가상 — 공식 경보 아님)" : "공식 경보 원문(수정되지 않음)"}</p>
           <blockquote className="mt-1 whitespace-pre-wrap rounded-control border-l-4 border-line-strong bg-page px-3 py-2 text-base">{a.body}</blockquote>
           <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
             <dt className="font-semibold text-ink-muted">출처</dt>
@@ -180,6 +191,49 @@ function AlertCard({ item, open, onToggle, schoolId, isAdmin }: { item: AlertIte
         </div>
       )}
     </li>
+  );
+}
+
+// STEP A: 수집 상태 안내. 공식 수집이 최근 성공한 경우에도 '실시간'이라고 하지 않고 마지막 확인 시각만 보여 줍니다.
+function FeedStatusNotice({ feed }: { feed: AlertFeedStatus }) {
+  const o = feed.official;
+  const now = new Date(feed.checkedAt);
+  const ago = (iso: string) => `${formatDateTime(iso)}(${formatElapsed(iso, now)} 전)`;
+  const failure = o.lastFailureAt ? `마지막 실패 ${ago(o.lastFailureAt)}${o.lastFailureKind ? ` · ${FEED_ERROR_LABEL[o.lastFailureKind]}` : ""}` : null;
+  const box = (tone: "danger" | "warning", title: string, body: string) => (
+    <div role="status" className={`flex gap-2 rounded-control border-2 p-3 ${tone === "danger" ? "border-danger bg-danger-soft text-danger" : "border-warning bg-warning-soft text-warning-strong"}`}>
+      <Icon name="alert" size={22} />
+      <div>
+        <p className="font-bold">{title}</p>
+        <p className="mt-0.5 text-sm">{body}</p>
+      </div>
+    </div>
+  );
+  const official =
+    o.state === "not_configured"
+      ? box("warning", "공식 재난문자 수집이 연결되어 있지 않습니다", "이 경보함에는 행정안전부 긴급재난문자가 표시되지 않습니다. 재난 정보는 휴대전화 긴급재난문자·방송 등 공식 경로로 확인하세요.")
+      : o.state === "never_succeeded"
+        ? box("danger", "공식 재난문자를 아직 한 번도 받아오지 못했습니다", `${failure ?? "수집 기록이 아직 없습니다."} 공식 경로로 재난 정보를 확인하세요.`)
+        : o.state === "failing"
+          ? box("danger", "공식 재난문자를 받아오지 못하고 있습니다", `마지막 성공 ${ago(o.lastSuccessAt!)} · ${failure}. 그 뒤의 경보는 이 화면에 없을 수 있습니다.`)
+          : o.state === "stale"
+            ? box("warning", "공식 재난문자 확인이 늦어지고 있습니다", `마지막 확인 ${ago(o.lastSuccessAt!)}. 그 뒤의 경보는 이 화면에 없을 수 있습니다.`)
+            : (
+              <p className="flex items-center gap-1.5 text-sm text-ink-muted">
+                <Icon name="clock" size={18} />
+                공식 재난문자 마지막 확인 {ago(o.lastSuccessAt!)}
+                {!o.contractVerified && " · 응답 형식 확인 전 시범 수집"}
+              </p>
+            );
+  return (
+    <div className="space-y-2">
+      {official}
+      {feed.mock.active && (
+        <p className="rounded-control border-2 border-dashed border-warning bg-warning-soft px-3 py-2 text-sm font-semibold text-warning-strong">
+          모의(가상) 경보를 함께 받고 있습니다. 시연·평가용 가상 경보이며 공식 경보가 아닙니다.
+        </p>
+      )}
+    </div>
   );
 }
 

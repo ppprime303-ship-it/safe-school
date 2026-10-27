@@ -6,6 +6,7 @@ import { safeErrorSummary } from "./security/safeLog.js";
 import { startCollector } from "./alerts/collector.js";
 import { assertMockAllowed, mockFileSource, type AlertSource } from "./alerts/providers.js";
 import { MoisCbsSource } from "./alerts/moisCbs.js";
+import { setConfiguredAlertSources } from "./alerts/feedStatus.js";
 
 async function main() {
   const httpServer = http.createServer();
@@ -28,6 +29,11 @@ async function main() {
   const official: AlertSource[] = (env.ALERT_PROVIDERS ?? "").split(",").map((s) => s.trim()).includes("mois_cbs") && env.MOIS_CBS_SERVICE_KEY ? [new MoisCbsSource(env.MOIS_CBS_SERVICE_KEY)] : [];
   if (official.length) console.log(`[alerts] 공식 긴급재난문자 수집 사용(${env.MOIS_CBS_INTERVAL_SEC}초 간격, 응답 형식 확인 전이면 실패가 기록될 수 있음)`);
   const stopOfficial = startCollector(prisma, official, env.MOIS_CBS_INTERVAL_SEC * 1000);
+  // STEP A: 경보함 수집 상태 표시용 — 실제로 켠 공급자만 등록(꺼져 있으면 경보함에 '공식 수집 미연결')
+  setConfiguredAlertSources([
+    ...sources.map((s) => ({ provider: s.provider, isMock: s.isMock, intervalMs: env.ALERT_COLLECT_INTERVAL_SEC * 1000 })),
+    ...official.map((s) => ({ provider: s.provider, isMock: s.isMock, intervalMs: env.MOIS_CBS_INTERVAL_SEC * 1000 })),
+  ]);
 
   // Replit이 서버를 멈출 때 DB 연결을 깔끔하게 닫습니다.
   const shutdown = async (signal: string) => {

@@ -46,3 +46,6 @@ export const SEVERITY_META: Record<AlertItem["alert"]["severity"], { label: stri
 };
 
 export const MSG_LABEL: Record<AlertItem["alert"]["msgType"], string | null> = { new: null, update: "정정 안내", cancel: "해제 안내" };
+
+// STEP A: 경보 수집 상태(shared/alertFeed.ts)
+export { FEED_ERROR_LABEL, type AlertFeedStatus, type FeedErrorKind, type OfficialFeedState } from "@shared/alertFeed";
