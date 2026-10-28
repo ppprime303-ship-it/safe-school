@@ -54,6 +54,7 @@ export function SchoolSelectPage() {
   const [position, setPosition] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
+  const [withdrawBusy, setWithdrawBusy] = useState(false);
 
   const memberships = me?.memberships ?? [];
 
@@ -99,6 +100,21 @@ export function SchoolSelectPage() {
       return `${r.name} 등록 신청이 접수되었습니다. 관리자 자격 확인 후 학교 공간이 열립니다.`;
     });
 
+  const withdraw = async (registrationId: string) => {
+    if (!window.confirm("학교 등록 신청을 철회하시겠습니까? 승인 대기 중인 신청만 철회할 수 있습니다.")) return;
+    setWithdrawBusy(true);
+    setError(null);
+    try {
+      await api("POST", `/school-registrations/${registrationId}/withdraw`);
+      setDone("학교 등록 신청을 철회했습니다.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "신청 철회에 실패했습니다.");
+    } finally {
+      setWithdrawBusy(false);
+    }
+  };
+
   const join = (r: SearchResult, role: "homeroom" | "staff") =>
     act(async () => {
       await api("POST", `/schools/${r.registeredSchool!.id}/join-requests`, { role });
@@ -118,6 +134,7 @@ export function SchoolSelectPage() {
             )}
             {memberships.map((m) => {
               const usable = m.status === "approved" && m.school.status === "active";
+              const pendingRegistration = me?.registrations.find((r) => r.schoolId === m.school.id && r.status === "pending_verification");
               return (
                 <article key={m.id} className="rounded-card border border-line bg-card p-4 shadow-card">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -133,7 +150,15 @@ export function SchoolSelectPage() {
                       이 학교로 시작
                     </PrimaryButton>
                   ) : (
-                    m.status === "pending" && <p className="mt-2 text-sm text-ink-muted">승인되면 이 화면에서 바로 시작할 수 있습니다.</p>
+                    pendingRegistration ? (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-sm text-ink-muted">관리자 자격 확인을 기다리고 있습니다.</p>
+                        <PrimaryButton variant="secondary" fullWidth loading={withdrawBusy} disabled={withdrawBusy}
+                          onClick={() => void withdraw(pendingRegistration.id)}>
+                          학교 등록 신청 철회
+                        </PrimaryButton>
+                      </div>
+                    ) : m.status === "pending" ? <p className="mt-2 text-sm text-ink-muted">승인되면 이 화면에서 바로 시작할 수 있습니다.</p> : null
                   )}
                 </article>
               );
@@ -211,6 +236,17 @@ export function SchoolSelectPage() {
                     <PrimaryButton className="mt-3" variant="secondary" fullWidth onClick={() => { setActionFor(r.externalCode); setPosition(""); }}>
                       {registered ? "이 학교에 가입 신청" : "이 학교 처음 등록하기"}
                     </PrimaryButton>
+                  ) : registered?.status === "pending_verification" ? (
+                    <div className="mt-3 space-y-3">
+                      <p className="text-sm text-ink-muted">이 학교는 최초 등록 심사 중입니다. 기존 신청이 철회·거절되어 대기 건이 없을 때만 새 관리자 신청이 가능합니다.</p>
+                      <FormField label="직위(선택)" value={position} onChange={(e) => setPosition(e.target.value)} placeholder="예: 안전업무 담당" maxLength={50} />
+                      <PrimaryButton fullWidth loading={busy} disabled={busy} onClick={() => void act(async () => {
+                        await api("POST", `/schools/${registered.id}/registrations`, { applicantPosition: position || undefined });
+                        return "학교 관리자 등록 신청이 접수되었습니다.";
+                      })}>
+                        최초 관리자 재신청
+                      </PrimaryButton>
+                    </div>
                   ) : registered ? (
                     <div className="mt-3">
                       <p className="text-base font-bold">맡은 역할을 고르세요</p>

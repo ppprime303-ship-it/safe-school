@@ -4,7 +4,7 @@ import { createTestClient, resetTestData } from "./test-db.js";
 import { FakeSchoolinfoClient, gradeClassRow } from "./fixtures/schoolinfo.js";
 import { searchDirectory, syncDirectory } from "../server/src/services/schoolDirectory.js";
 import { buildSourceUrl } from "../server/src/integrations/schoolinfo.js";
-import { applyForSchoolRegistration, reviewSchoolRegistration } from "../server/src/services/schoolRegistration.js";
+import { applyForSchoolRegistration, reviewSchoolRegistration, withdrawSchoolRegistration, reapplyForPendingSchool } from "../server/src/services/schoolRegistration.js";
 import { decideMemberships, requestToJoinSchool, resolveSchoolAccess, revokeMembership, setAssignments } from "../server/src/services/membership.js";
 import { applyClassStructure, confirmEnrollment, getClassStructureProposal, refreshGradeClassData } from "../server/src/services/publicData.js";
 
@@ -41,7 +41,8 @@ describe("최초 학교 등록", () => {
   it("1·2) 학교를 검색해 등록 신청하면 학교알리미 기본정보가 자동으로 채워진다", async () => {
     const search = await searchDirectory(prisma, client, { q: "안 전", kindCode: "02" }); // 공백은 무시
     expect(search.stale).toBe(false);
-    expect(search.results.map((r) => r.name)).toEqual(["안전중앙초등학교", "안전초등학교"]); // 폐교 제외
+    expect(search.results.map((r) => r.name)).toHaveLength(2); // 폐교 제외, DB 로캘에 따른 정렬 순서는 달라질 수 있음
+    expect(new Set(search.results.map((r) => r.name))).toEqual(new Set(["안전중앙초등학교", "안전초등학교"]));
     expect(search.results.every((r) => r.registeredSchool === null)).toBe(true);
 
     const { school, registration, membership } = await applyForSchoolRegistration(prisma, {
@@ -86,6 +87,36 @@ describe("최초 학교 등록", () => {
     const unverified = (await prisma.user.create({ data: { email: "c@school.kr", displayName: "C" } })).id;
     await searchDirectory(prisma, client, { q: "안전초", kindCode: "02" });
     await expect(applyForSchoolRegistration(prisma, { userId: unverified, externalCode: "S000000001" })).rejects.toMatchObject({ code: "forbidden" });
+  });
+});
+
+describe("학교 등록 신청 철회", () => {
+  it("신청자가 대기 신청을 철회하면 이력은 보존되고 새 교직원이 신청할 수 있다", async () => {
+    await searchDirectory(prisma, client, { q: "안전초", kindCode: "02" });
+    const first = await applyForSchoolRegistration(prisma, { userId: userA, externalCode: "S000000001" });
+    const result = await withdrawSchoolRegistration(prisma, { registrationId: first.registration.id, userId: userA });
+    expect(result.status).toBe("withdrawn");
+    expect((await prisma.schoolRegistration.findUniqueOrThrow({ where: { id: first.registration.id } })).status).toBe("withdrawn");
+    expect((await prisma.school.findUniqueOrThrow({ where: { id: first.school.id } })).status).toBe("pending_verification");
+    expect((await prisma.schoolMembership.findUniqueOrThrow({ where: { schoolId_userId: { schoolId: first.school.id, userId: userA } } })).status).toBe("rejected");
+    const next = await reapplyForPendingSchool(prisma, { schoolId: first.school.id, userId: userB });
+    expect(next.status).toBe("pending_verification");
+    expect(await prisma.school.count()).toBe(1);
+  });
+
+  it("다른 사용자는 철회할 수 없고 이미 철회한 신청은 다시 철회할 수 없다", async () => {
+    await searchDirectory(prisma, client, { q: "안전초", kindCode: "02" });
+    const first = await applyForSchoolRegistration(prisma, { userId: userA, externalCode: "S000000001" });
+    await expect(withdrawSchoolRegistration(prisma, { registrationId: first.registration.id, userId: userB })).rejects.toMatchObject({ code: "not_found" });
+    await withdrawSchoolRegistration(prisma, { registrationId: first.registration.id, userId: userA });
+    await expect(withdrawSchoolRegistration(prisma, { registrationId: first.registration.id, userId: userA })).rejects.toMatchObject({ code: "registration_not_pending" });
+  });
+
+  it("승인된 학교 등록은 철회할 수 없다", async () => {
+    await searchDirectory(prisma, client, { q: "안전초", kindCode: "02" });
+    const first = await applyForSchoolRegistration(prisma, { userId: userA, externalCode: "S000000001" });
+    await reviewSchoolRegistration(prisma, { registrationId: first.registration.id, decision: "approve", reviewer: "운영자", verificationMethod: "공문 확인" });
+    await expect(withdrawSchoolRegistration(prisma, { registrationId: first.registration.id, userId: userA })).rejects.toMatchObject({ code: "registration_not_pending" });
   });
 });
 
