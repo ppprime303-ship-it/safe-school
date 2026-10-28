@@ -10,7 +10,7 @@ import { getSchoolinfoClient } from "../integrations/client.js";
 import { rateLimit } from "../middleware/security.js";
 import { resolveAccess } from "../services/access.js";
 import { searchDirectory } from "../services/schoolDirectory.js";
-import { applyForSchoolRegistration, reapplyForPendingSchool } from "../services/schoolRegistration.js";
+import { applyForSchoolRegistration, reapplyForPendingSchool, withdrawSchoolRegistration } from "../services/schoolRegistration.js";
 import {
   decideMemberships,
   requestToJoinSchool,
@@ -66,6 +66,16 @@ schoolsRouter.post("/school-registrations", requireVerified, async (req, res) =>
     status: result.registration.status,
     message: "학교 등록 신청이 접수되었습니다. 관리자 자격 확인 후 학교 공간이 활성화됩니다.",
   });
+});
+
+// 최초 신청자 본인의 승인 대기 신청 철회 (승인·반려와 별개)
+schoolsRouter.post("/school-registrations/:registrationId/withdraw", requireVerified, async (req, res) => {
+  const result = await withdrawSchoolRegistration(prisma, {
+    registrationId: param(req.params.registrationId),
+    userId: req.auth!.userId,
+    ip: req.ip,
+  });
+  res.json(result);
 });
 
 // 승인 대기 학교(이전 신청이 거절됨)에 다른 교직원이 다시 등록 신청
