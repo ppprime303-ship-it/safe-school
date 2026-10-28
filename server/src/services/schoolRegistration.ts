@@ -117,8 +117,8 @@ export async function reviewSchoolRegistration(
       throw conflict("registration_not_pending", `이미 처리된 신청입니다(${reg.status}).`);
     }
     const now = new Date();
-    const updated = await tx.schoolRegistration.update({
-      where: { id: reg.id },
+    const changed = await tx.schoolRegistration.updateMany({
+      where: { id: reg.id, status: "pending_verification" },
       data: {
         status: params.decision === "approve" ? "approved" : "rejected",
         verificationMethod: params.verificationMethod?.trim() || null,
@@ -127,6 +127,8 @@ export async function reviewSchoolRegistration(
         reviewedAt: now,
       },
     });
+    if (changed.count !== 1) throw conflict("registration_not_pending", "이미 처리된 신청입니다.");
+    const updated = await tx.schoolRegistration.findUniqueOrThrow({ where: { id: reg.id } });
 
     if (params.decision === "approve") {
       await tx.school.update({ where: { id: reg.schoolId }, data: { status: "active", activatedAt: now } });
