@@ -127,6 +127,12 @@ export function SchoolSelectPage() {
       setWithdrawBusy(false);
     }
   };
+  const reapply = (schoolId: string, schoolName: string) =>
+    act(async () => {
+      await api("POST", `/schools/${schoolId}/registrations`, { applicantPosition: position || undefined });
+      return `${schoolName} 등록 재신청이 접수되었습니다. 관리자 자격 확인을 기다려 주세요.`;
+    });
+
   const join = (r: SearchResult, body: JoinBody) =>
     act(async () => {
       await api("POST", `/schools/${r.registeredSchool!.id}/join-requests`, body);
@@ -174,6 +180,17 @@ export function SchoolSelectPage() {
                       >
                         학교 등록 신청 철회
                       </PrimaryButton>
+                    </div>
+                  ) : m.school.status === "pending_verification" && m.status === "rejected" ? (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-sm text-ink-muted">기존 신청이 철회 또는 반려되었습니다. 같은 학교에 다시 신청할 수 있습니다.</p>
+                      <PrimaryButton variant="secondary" fullWidth onClick={() => { setActionFor(m.school.id); setPosition(""); }}>학교 등록 다시 신청</PrimaryButton>
+                      {actionFor === m.school.id && (
+                        <div className="space-y-2">
+                          <FormField label="직위(선택)" value={position} onChange={(e) => setPosition(e.target.value)} placeholder="예: 교감, 안전업무 담당" maxLength={50} />
+                          <PrimaryButton fullWidth loading={busy} onClick={() => void reapply(m.school.id, m.school.name)}>재신청 제출</PrimaryButton>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     m.status === "pending" && <p className="mt-2 text-sm text-ink-muted">승인되면 이 화면에서 바로 시작할 수 있습니다.</p>
@@ -263,7 +280,10 @@ export function SchoolSelectPage() {
             {results && results.length === 0 && <EmptyState icon="search" title="검색 결과가 없습니다" message="학교급과 시도를 확인하고 다시 검색하세요." />}
             {results?.map((r) => {
               const registered = r.registeredSchool;
-              const mine = memberships.some((m) => m.school.id === registered?.id);
+              const myMembership = memberships.find((m) => m.school.id === registered?.id);
+              const pendingSchool = registered?.status === "pending_verification";
+              const myPendingRegistration = me?.registrations.some((reg) => reg.schoolId === registered?.id && reg.status === "pending_verification");
+              const mine = !!myMembership && (!pendingSchool || !!myPendingRegistration || myMembership.status === "approved");
               const open = actionFor === r.externalCode;
               return (
                 <article key={r.externalCode} className="rounded-card border border-line bg-card p-4 shadow-card">
@@ -284,9 +304,9 @@ export function SchoolSelectPage() {
                     <p className="mt-2 text-base font-semibold text-ink-muted">이미 신청했거나 소속된 학교입니다(왼쪽 '내 학교').</p>
                   ) : !open ? (
                     <PrimaryButton className="mt-3" variant="secondary" fullWidth onClick={() => { setActionFor(r.externalCode); setPosition(""); }}>
-                      {registered ? "이 학교에 가입 신청" : "이 학교 처음 등록하기"}
+                      {pendingSchool ? "학교 등록 신청" : registered ? "이 학교에 가입 신청" : "이 학교 처음 등록하기"}
                     </PrimaryButton>
-                  ) : registered ? (
+                  ) : registered && !pendingSchool ? (
                     <JoinForm kindCode={kind} busy={busy} onSubmit={(body) => void join(r, body)} />
                   ) : (
                     <div className="mt-3 space-y-3">
@@ -294,8 +314,8 @@ export function SchoolSelectPage() {
                         첫 등록자에게 관리자 권한이 자동으로 주어지지 <strong>않습니다</strong>. SAFE SCHOOL 운영자가 관리자 자격을 확인한 뒤 학교 공간이 열립니다.
                       </p>
                       <FormField label="직위(선택)" value={position} onChange={(e) => setPosition(e.target.value)} placeholder="예: 교감, 안전업무 담당" maxLength={50} />
-                      <PrimaryButton fullWidth onClick={() => void register(r)} loading={busy} loadingText="신청 중…">
-                        등록 신청
+                      <PrimaryButton fullWidth onClick={() => void (pendingSchool ? reapply(registered!.id, r.name) : register(r))} loading={busy} loadingText="신청 중…">
+                        {pendingSchool ? "등록 재신청" : "등록 신청"}
                       </PrimaryButton>
                     </div>
                   )}
