@@ -4,6 +4,7 @@ on:
     branches:
       - feature/school-registration-withdrawal
       - integration/registration-withdrawal
+      - integration/production-preservation
   workflow_dispatch:
 
 jobs:
