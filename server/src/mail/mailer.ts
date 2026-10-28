@@ -2,6 +2,9 @@
 // - MAIL_PROVIDER=resend + MAIL_API_KEY + MAIL_FROM: Resend HTTP API로 실제 발송(미검증: 실제 수신 확인 필요)
 // - MAIL_PROVIDER=console: 개발·테스트 전용 모의 발송. 메일을 보내지 않고 서버 로그에만 남기며,
 //   운영(NODE_ENV=production)에서는 설정되어 있어도 거부합니다.
+// - MAIL_PROVIDER=manual: 자동 발송 없이 '운영자 수동 전달'. 가입 시 계정만 만들고, 운영자가 CLI(npm run operator -- email-code)로
+//   코드를 발급해 자신의 메일함에서 그 주소로 직접 보냅니다. 코드를 받은 사람만 인증할 수 있으므로 이메일 소유 확인은 그대로입니다.
+//   (운영자 확인만으로 '인증됨'을 기록하지 않습니다.)
 // - 아무것도 설정하지 않으면 발송 불가(503). 실제로 보내지 않았는데 보낸 것처럼 응답하지 않습니다.
 import { AppError } from "../errors.js";
 
@@ -13,15 +16,20 @@ export interface MailMessage {
 
 export type MailDelivery = "email" | "test_console";
 
-export function mailMode(): "resend" | "console" | "none" {
+export function mailMode(): "resend" | "console" | "manual" | "none" {
   const provider = process.env.MAIL_PROVIDER;
   if (provider === "resend" && process.env.MAIL_API_KEY && process.env.MAIL_FROM) return "resend";
   if (provider === "console" && process.env.NODE_ENV !== "production") return "console";
+  if (provider === "manual") return "manual";
   return "none";
 }
 
+/** 운영자가 수동으로 전달하는 인증코드의 유효 시간(자동 발송 10분보다 김. 코드당 5회 오답 제한은 같음) */
+export const MANUAL_CODE_TTL_MS = 24 * 3600_000;
+
 export async function sendMail(message: MailMessage): Promise<{ delivered: MailDelivery }> {
   const mode = mailMode();
+  if (mode === "manual") throw new AppError(500, "mail_manual_mode", "수동 전달 모드에서는 자동 메일을 보내지 않습니다.");
   if (mode === "resend") {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",

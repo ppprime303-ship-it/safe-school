@@ -10,6 +10,8 @@ import { resolveSchoolAccess } from "../services/membership.js";
 import { resolveAccess } from "../services/access.js";
 import type { Capability } from "../../../shared/permissions.js";
 import { addEventType, closeEvent, getActiveEvent, getBoard, issueEvent, myClasses, submitReport, summarize, updateEvent } from "../services/events.js";
+import { assignDelegate, delegationSuggestions, endDelegation } from "../services/delegations.js";
+import { z } from "zod";
 import {
   addEventTypeSchema,
   closeEventSchema,
@@ -98,4 +100,33 @@ eventsRouter.post("/schools/:schoolId/events/:eventId/close", requireVerified, i
   await closer(req);
   const input = parse(closeEventSchema, req.body ?? {});
   res.json(await closeEvent(prisma, { ...ids(req), actorUserId: req.auth!.userId, confirmClose: input.confirmClose, ip: req.ip }));
+});
+
+// ───────────── v0.1 대리 보고(발령 권한자만 지정·종료, 사건 범위) ─────────────
+const delegationSchema = z.object({
+  delegateMembershipId: z.string().uuid("교직원을 고르세요."),
+  reason: z.enum(["unreachable", "unable", "admin_decision"], { message: "사유를 고르세요(연락 미확인·보고 불가·관리자 판단)." }),
+  basis: z.string().trim().max(200, "지정 근거는 200자 이내로 적으세요.").optional(),
+  replacesDelegationId: z.string().uuid().optional(), // 재지정 시 지금 유효한 지정 ID
+});
+const endDelegationSchema = z.object({ reason: z.enum(["returned", "revoked"]) });
+const classIdOf = (req: Request) => parse(z.object({ classId: z.string().uuid() }), { classId: param(req.params.classId) }).classId;
+
+eventsRouter.get("/schools/:schoolId/events/:eventId/classes/:classId/delegation-suggestions", requireVerified, async (req, res) => {
+  await issuer(req);
+  res.json(await delegationSuggestions(prisma, { ...ids(req), classId: classIdOf(req) }));
+});
+
+eventsRouter.post("/schools/:schoolId/events/:eventId/classes/:classId/delegation", requireVerified, issueLimiter, async (req, res) => {
+  await issuer(req);
+  const input = parse(delegationSchema, req.body);
+  const row = await assignDelegate(prisma, { ...ids(req), classId: classIdOf(req), actorUserId: req.auth!.userId, ...input, ip: req.ip });
+  res.status(201).json({ delegationId: row.id });
+});
+
+eventsRouter.post("/schools/:schoolId/events/:eventId/delegations/:delegationId/end", requireVerified, issueLimiter, async (req, res) => {
+  await issuer(req);
+  const input = parse(endDelegationSchema, req.body);
+  const delegationId = parse(z.object({ id: z.string().uuid() }), { id: param(req.params.delegationId) }).id;
+  res.json(await endDelegation(prisma, { ...ids(req), delegationId, actorUserId: req.auth!.userId, reason: input.reason, ip: req.ip }));
 });

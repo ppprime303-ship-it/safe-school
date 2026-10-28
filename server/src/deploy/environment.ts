@@ -75,7 +75,8 @@ export function pilotNetworkErrors(role: DeploymentRole, env: Record<string, str
 export function pilotReadinessWarnings(role: DeploymentRole, env: Record<string, string | undefined>): string[] {
   if (role !== "pilot") return [];
   const w: string[] = [];
-  if (env.MAIL_PROVIDER !== "resend" || !env.MAIL_API_KEY || !env.MAIL_FROM) w.push("메일 발송 미설정 — 교직원 가입(이메일 인증)이 503으로 거부됩니다.");
+  if (env.MAIL_PROVIDER === "manual") w.push("메일 수동 전달 모드 — 가입자마다 운영자가 'npm run operator -- email-code' 로 인증코드를 발급해 직접 보내야 합니다.");
+  else if (env.MAIL_PROVIDER !== "resend" || !env.MAIL_API_KEY || !env.MAIL_FROM) w.push("메일 발송 미설정 — 교직원 가입(이메일 인증)이 503으로 거부됩니다.");
   if (!env.SCHOOLINFO_API_KEY) w.push("학교알리미 인증키 미설정 — 저장된 학교 목록으로만 검색합니다.");
   if (!(env.ALERT_PROVIDERS ?? "").includes("mois_cbs")) w.push("공식 재난문자 수집 꺼짐(승인·응답 형식 확인 전 기본값).");
   return w;

@@ -101,23 +101,33 @@ export async function reviewSchoolRegistration(
     registrationId: string;
     decision: "approve" | "reject";
     reviewer: string;
+    reviewerUserId?: string | null;
+    via?: "cli" | "web";
     verificationMethod?: string;
     note?: string;
+    ip?: string | null;
   },
 ) {
   if (!params.reviewer.trim()) throw new AppError(400, "bad_request", "확인자(운영자) 이름이 필요합니다.");
   if (params.decision === "approve" && !params.verificationMethod?.trim()) {
     throw new AppError(400, "bad_request", "승인하려면 자격 확인 방법을 적어야 합니다(예: 공문, 학교 대표전화 확인).");
   }
+  const via = params.via ?? "cli";
+  if (via === "web" && !params.reviewerUserId) throw forbidden("로그인한 운영자만 처리할 수 있습니다.");
 
   return prisma.$transaction(async (tx) => {
     const reg = await tx.schoolRegistration.findUnique({ where: { id: params.registrationId } });
     if (!reg) throw notFound("등록 신청을 찾을 수 없습니다.");
-    if (reg.status !== "pending_verification") {
-      throw conflict("registration_not_pending", `이미 처리된 신청입니다(${reg.status}).`);
+    if (params.reviewerUserId) {
+      if (params.reviewerUserId === reg.applicantUserId) throw forbidden("자신이 신청한 학교 등록은 직접 승인·거절할 수 없습니다.");
+      const reviewer = await tx.user.findUnique({ where: { id: params.reviewerUserId }, select: { status: true, emailVerifiedAt: true } });
+      if (!reviewer || reviewer.status !== "active" || !reviewer.emailVerifiedAt) throw forbidden("사용할 수 없는 처리자 계정입니다.");
     }
+    const notPending = () => conflict("registration_not_pending", "이미 처리되었거나 처리 중인 신청입니다. 목록을 새로 고쳐 확인하세요.");
+    if (reg.status !== "pending_verification") throw notPending();
+
     const now = new Date();
-    const changed = await tx.schoolRegistration.updateMany({
+    const claimed = await tx.schoolRegistration.updateMany({
       where: { id: reg.id, status: "pending_verification" },
       data: {
         status: params.decision === "approve" ? "approved" : "rejected",
@@ -127,35 +137,33 @@ export async function reviewSchoolRegistration(
         reviewedAt: now,
       },
     });
-    if (changed.count !== 1) throw conflict("registration_not_pending", "이미 처리된 신청입니다.");
-    const updated = await tx.schoolRegistration.findUniqueOrThrow({ where: { id: reg.id } });
+    if (claimed.count !== 1) throw notPending();
 
+    const applicant = { schoolId: reg.schoolId, userId: reg.applicantUserId, status: "pending" as const };
     if (params.decision === "approve") {
-      await tx.school.update({ where: { id: reg.schoolId }, data: { status: "active", activatedAt: now } });
-      await tx.schoolMembership.update({
-        where: { schoolId_userId: { schoolId: reg.schoolId, userId: reg.applicantUserId } },
-        data: { status: "approved", role: "admin", approvalMethod: "bootstrap", approvedAt: now },
-      });
+      const school = await tx.school.updateMany({ where: { id: reg.schoolId, status: "pending_verification" }, data: { status: "active", activatedAt: now } });
+      if (school.count !== 1) throw conflict("school_not_pending", "학교가 '등록 확인 대기' 상태가 아닙니다. 처리를 되돌렸습니다.");
+      const member = await tx.schoolMembership.updateMany({ where: applicant, data: { status: "approved", role: "admin", approvalMethod: "bootstrap", approvedAt: now } });
+      if (member.count !== 1) throw conflict("applicant_not_pending", "신청자의 소속이 '승인 대기' 상태가 아닙니다. 처리를 되돌렸습니다.");
     } else {
       // 거절: 신청자 소속만 거절. 학교는 '승인 대기'로 남아 다른 교직원이 다시 신청할 수 있음
-      await tx.schoolMembership.update({
-        where: { schoolId_userId: { schoolId: reg.schoolId, userId: reg.applicantUserId } },
-        data: { status: "rejected" },
-      });
+      await tx.schoolMembership.updateMany({ where: applicant, data: { status: "rejected" } });
     }
 
+    const updated = await tx.schoolRegistration.findUniqueOrThrow({ where: { id: reg.id } });
     await writeAudit(tx, {
       schoolId: reg.schoolId,
+      actorUserId: params.reviewerUserId ?? null,
       action: params.decision === "approve" ? "school.registration_approved" : "school.registration_rejected",
       targetType: "school_registration",
       targetId: reg.id,
-      after: { reviewer: updated.reviewedBy, method: updated.verificationMethod, note: updated.verificationNote },
+      before: { status: reg.status },
+      after: { status: updated.status, reviewer: updated.reviewedBy, via, method: updated.verificationMethod, note: updated.verificationNote },
+      ip: params.ip ?? null,
     });
     return updated;
   });
 }
-
-// 신청자 본인만 승인 대기 중인 학교 최초 등록 신청을 철회할 수 있습니다.
 // 학교와 학교알리미 매핑은 유지해 학교 중복 생성 및 과거 이력 소실을 방지합니다.
 export async function withdrawSchoolRegistration(
   prisma: PrismaClient,
@@ -174,10 +182,11 @@ export async function withdrawSchoolRegistration(
       data: { status: "withdrawn" },
     });
     if (changed.count !== 1) throw conflict("registration_not_pending", "이미 처리된 신청입니다.");
-    await tx.schoolMembership.updateMany({
+    const membershipChanged = await tx.schoolMembership.updateMany({
       where: { schoolId: registration.schoolId, userId: params.userId, role: "admin", status: "pending" },
       data: { status: "rejected" },
     });
+    if (membershipChanged.count !== 1) throw conflict("applicant_not_pending", "신청자 소속이 승인 대기 상태가 아닙니다. 철회를 취소했습니다.");
     await writeAudit(tx, {
       schoolId: registration.schoolId,
       actorUserId: params.userId,

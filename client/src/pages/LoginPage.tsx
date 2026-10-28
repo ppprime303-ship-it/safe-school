@@ -7,10 +7,11 @@ import { useSession } from "../lib/session";
 import { FormField } from "../components/ui/FormField";
 import { PrimaryButton } from "../components/ui/PrimaryButton";
 import { Icon } from "../components/ui/Icon";
+import { PrototypeNotice } from "../components/ui/PrototypeNotice";
 
 type Mode = "login" | "signup" | "verify";
 type DeviceKind = "personal" | "shared";
-type SendResult = { delivery?: "email" | "test_console"; devCode?: string };
+type SendResult = { delivery?: "email" | "test_console" | "manual_operator"; devCode?: string };
 
 export function LoginPage() {
   const { refresh, notice, clearNotice } = useSession();
@@ -51,6 +52,9 @@ export function LoginPage() {
       setInfo(`${email.trim().toLowerCase()} 으로 인증코드를 ${when === "again" ? "다시 " : ""}보냈습니다. 10분 안에 입력하세요.`);
     } else if (res.delivery === "test_console") {
       setInfo(null);
+    } else if (res.delivery === "manual_operator") {
+      // 시범운영: 자동 메일 대신 운영자가 확인 후 이 주소로 직접 코드를 보냄(코드를 받아야만 이메일 인증 완료)
+      setInfo(`가입 신청을 접수했습니다. 운영자가 확인한 뒤 ${email.trim().toLowerCase()} 으로 인증코드를 직접 보내 드립니다(24시간 유효). 메일로 받은 코드를 아래에 입력하세요.`);
     } else {
       setInfo("인증코드 요청을 접수했습니다. 메일이 오지 않으면 이메일 주소를 확인하세요.");
     }
@@ -101,6 +105,9 @@ export function LoginPage() {
       </header>
 
       <main className="mx-auto w-full max-w-md flex-1 px-4 py-6">
+        <div className="mb-4">
+          <PrototypeNotice />
+        </div>
         <form onSubmit={onSubmit} className="rounded-card border border-line bg-card p-5 shadow-card" noValidate>
           <h1 className="text-2xl font-bold">{titles[mode]}</h1>
 
@@ -127,9 +134,53 @@ export function LoginPage() {
           )}
 
           <div className="mt-4 space-y-4">
-            <FormField label="기관 이메일" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} error={fieldErrors.email} placeholder="name@school.go.kr" />
+            {/* v0.1 개인정보 최소 수집: 가입 화면에서만 메일·이름 칸에 안내를 붙임(이메일 형식 검증·인증 절차는 그대로) */}
+            <FormField
+              label={
+                mode === "signup" ? (
+                  <>
+                    메일 <strong className="font-extrabold text-brand">(개인정보 보호를 위해 현재는 업무용 메일을 권장합니다)</strong>
+                  </>
+                ) : (
+                  "기관 이메일"
+                )
+              }
+              hint={
+                mode === "signup"
+                  ? "본인이 인증코드를 실제로 수신할 수 있는 이메일을 입력해 주세요."
+                  : undefined
+              }
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              error={fieldErrors.email}
+              placeholder="name@school.go.kr"
+            />
             {mode === "signup" && (
-              <FormField label="이름" autoComplete="name" required value={displayName} onChange={(e) => setDisplayName(e.target.value)} error={fieldErrors.displayName} />
+              <FormField
+                label={
+                  <>
+                    이름 <strong className="font-extrabold text-brand">(개인정보 보호를 위해 현재는 닉네임을 입력해 주세요)</strong>
+                  </>
+                }
+                autoComplete="nickname"
+                placeholder="예: 이수, 보건쌤, 교사01"
+                required
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                error={fieldErrors.displayName}
+              />
+            )}
+            {mode === "signup" && (
+              <div className="rounded-control border border-line bg-page p-3 text-sm text-ink-muted">
+                <p className="font-bold text-ink">개인정보 수집 안내(Prototype v0.1)</p>
+                <p className="mt-1 font-semibold text-ink">
+                  입력한 닉네임, 이메일, 소속 학교 및 담당 업무 정보는 Prototype v0.1 사용성 평가 목적으로 이용하며, 2026년 11월 10일 삭제 예정입니다. 실제 학생 개인정보는 입력하지 마세요.
+                </p>
+                <p className="mt-1">삭제 요청 등 문의는 평가 운영자에게 해 주세요(처리 방법은 평가 안내문 참고).</p>
+              </div>
             )}
             {/* STEP 7-D: 비밀번호는 인증코드와 함께 확정(가입 요청만으로는 저장하지 않음) */}
             <FormField

@@ -1,5 +1,6 @@
 // 화면·서버 공통 입력 검증 규칙(zod)
 import { z } from "zod";
+import { POSITIONS, REQUESTED_DUTIES, type RequestedDuty, type RequestedPosition } from "./joinRequest.js";
 
 export const emailSchema = z
   .string()
@@ -50,8 +51,24 @@ export const registrationApplySchema = z.object({
   applicantPosition: z.string().trim().max(50).optional(),
 });
 
+// 2026-10-28: 신청 업무·희망 학급·메모(권한 아님, 승인 담당자 참고용). 기존 role 만 보내는 요청도 그대로 받습니다.
+// v0.1: 교직원 구분(position) 추가, 담당 학급 한 줄 설명은 '담임 3학년 2반 · 학년부장 3학년'처럼 최대 100자. 학생 수는 받지 않음
 export const joinRequestSchema = z.object({
   role: z.enum(["homeroom", "staff"]),
+  position: z.enum(POSITIONS as [RequestedPosition, ...RequestedPosition[]]).optional(),
+  requestedDuties: z
+    .array(z.enum(REQUESTED_DUTIES as [RequestedDuty, ...RequestedDuty[]]))
+    .max(REQUESTED_DUTIES.length)
+    .default([])
+    .transform((v) => [...new Set(v)]),
+  requestedClass: z
+    .string()
+    .trim()
+    .max(100, "담당 학급 정보는 100자 이내로 적으세요.")
+    .regex(/^[0-9가-힣a-zA-Z ·\-]*$/, "담당 학급은 '3학년 2반'처럼 숫자·한글로 적으세요.")
+    .optional()
+    .transform((v) => v || undefined),
+  note: z.string().trim().max(200, "메모는 200자 이내로 적으세요.").optional().transform((v) => v || undefined),
 });
 
 export const membershipDecisionSchema = z.object({

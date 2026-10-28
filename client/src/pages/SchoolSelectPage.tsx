@@ -1,6 +1,7 @@
 // 학교 선택: 내 소속 학교로 시작하거나, 학교를 검색해 등록 신청(최초) 또는 가입 신청(이미 등록된 학교)
 import { useState, type FormEvent } from "react";
 import { api, ApiError } from "../lib/api";
+import { formatDateTime } from "../lib/format";
 import { homePath, roleSummary } from "../lib/permissions";
 import { navigate } from "../lib/router";
 import { useSession, type Membership } from "../lib/session";
@@ -11,6 +12,8 @@ import { PrimaryButton } from "../components/ui/PrimaryButton";
 import { Badge } from "../components/ui/StatusBadge";
 import { EmptyState, ErrorState } from "../components/ui/States";
 import { SCHOOLINFO_SIDO, sggOf } from "@shared/schoolinfoRegions";
+import { JoinForm, type JoinBody } from "./JoinForm";
+import { PlatformConsoleLink } from "./platform/PlatformPages";
 
 const KINDS = [
   ["02", "초등"],
@@ -21,6 +24,15 @@ const KINDS = [
 
 // 학교알리미 시도·시군구 코드(공식 코드표 — shared/schoolinfoRegions.ts, 2026-07-01 전남광주통합특별시 반영)
 const SIDOS: (readonly [string, string])[] = [["", "전체 시도"], ...SCHOOLINFO_SIDO];
+
+// STEP B: 학교 목록의 출처·받은 시각(서버 services/schoolDirectory.ts searchDirectory)
+interface SearchMeta {
+  stale: boolean;
+  syncedAt: string | null;
+  source: "schoolinfo";
+  sggRequired: boolean;
+  refreshFailed: boolean;
+}
 
 interface SearchResult {
   externalCode: string;
@@ -47,6 +59,7 @@ export function SchoolSelectPage() {
   const [q, setQ] = useState("");
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<SearchResult[] | null>(null);
+  const [listInfo, setListInfo] = useState<SearchMeta | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [actionFor, setActionFor] = useState<string | null>(null);
@@ -69,8 +82,9 @@ export function SchoolSelectPage() {
     setDone(null);
     try {
       const params = new URLSearchParams({ q, kind, ...(sido ? { sido } : {}), ...(sido && sgg ? { sgg } : {}) });
-      const res = await api<{ results: SearchResult[]; stale: boolean; warning?: string }>("GET", `/school-directory?${params}`);
+      const res = await api<{ results: SearchResult[]; warning?: string } & SearchMeta>("GET", `/school-directory?${params}`);
       setResults(res.results);
+      setListInfo({ stale: res.stale, syncedAt: res.syncedAt, source: res.source, sggRequired: res.sggRequired, refreshFailed: res.refreshFailed });
       setNotice(res.warning ?? null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "검색하지 못했습니다.");
@@ -113,10 +127,9 @@ export function SchoolSelectPage() {
       setWithdrawBusy(false);
     }
   };
-
-  const join = (r: SearchResult, role: "homeroom" | "staff") =>
+  const join = (r: SearchResult, body: JoinBody) =>
     act(async () => {
-      await api("POST", `/schools/${r.registeredSchool!.id}/join-requests`, { role });
+      await api("POST", `/schools/${r.registeredSchool!.id}/join-requests`, body);
       return `${r.name} 가입을 신청했습니다. 학교 관리자가 승인하면 사용할 수 있습니다.`;
     });
 
@@ -128,6 +141,7 @@ export function SchoolSelectPage() {
             내 학교
           </h2>
           <div className="mt-3 space-y-3">
+            <PlatformConsoleLink />
             {memberships.length === 0 && (
               <EmptyState icon="school" title="아직 소속된 학교가 없습니다" message="오른쪽에서 학교를 찾아 가입을 신청하세요." />
             )}
@@ -148,16 +162,21 @@ export function SchoolSelectPage() {
                     <PrimaryButton className="mt-3" fullWidth icon="chevron-right" onClick={() => start(m)}>
                       이 학교로 시작
                     </PrimaryButton>
+                  ) : pendingRegistration ? (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-sm text-ink-muted">관리자 자격 확인을 기다리고 있습니다.</p>
+                      <PrimaryButton
+                        variant="secondary"
+                        fullWidth
+                        loading={withdrawBusy}
+                        disabled={withdrawBusy}
+                        onClick={() => void withdraw(pendingRegistration.id)}
+                      >
+                        학교 등록 신청 철회
+                      </PrimaryButton>
+                    </div>
                   ) : (
-                    pendingRegistration ? (
-                      <div className="mt-3 space-y-2">
-                        <p className="text-sm text-ink-muted">관리자 자격 확인을 기다리고 있습니다.</p>
-                        <PrimaryButton variant="secondary" fullWidth loading={withdrawBusy} disabled={withdrawBusy}
-                          onClick={() => void withdraw(pendingRegistration.id)}>
-                          학교 등록 신청 철회
-                        </PrimaryButton>
-                      </div>
-                    ) : m.status === "pending" ? <p className="mt-2 text-sm text-ink-muted">승인되면 이 화면에서 바로 시작할 수 있습니다.</p> : null
+                    m.status === "pending" && <p className="mt-2 text-sm text-ink-muted">승인되면 이 화면에서 바로 시작할 수 있습니다.</p>
                   )}
                 </article>
               );
@@ -200,7 +219,10 @@ export function SchoolSelectPage() {
             </label>
             {sido && (
               <label className="block text-base font-bold">
-                시군구 <span className="font-normal text-ink-muted">(선택하면 최신 목록을 받아옵니다)</span>
+                시군구{" "}
+                <span className="font-normal text-ink-muted">
+                  {listInfo?.sggRequired ? "(학교알리미에서 목록을 받으려면 꼭 선택하세요)" : "(선택하면 최신 목록을 받아옵니다)"}
+                </span>
                 <select value={sgg} onChange={(e) => setSgg(e.target.value)} className="mt-1.5 block min-h-touch w-full rounded-control border-2 border-line-strong bg-card px-3 text-lg">
                   <option value="">전체 시군구</option>
                   {sggOf(sido).map(([v, l]) => (
@@ -229,6 +251,14 @@ export function SchoolSelectPage() {
                 <Icon name="wifi-off" size={22} /> {notice}
               </p>
             )}
+            {listInfo && results && (
+              <p className="text-sm text-ink-muted">
+                출처: 학교알리미 공시정보 ·{" "}
+                {listInfo.syncedAt ? `목록 받은 시각 ${formatDateTime(listInfo.syncedAt)}` : "받은 목록 없음"}
+                {listInfo.stale && " · 오래되었거나 새로 받지 못한 목록"}
+                {listInfo.refreshFailed && " · 이번 검색에서 새로 받기 실패"}
+              </p>
+            )}
             {error && <ErrorState title="처리하지 못했습니다" message={error} />}
             {results && results.length === 0 && <EmptyState icon="search" title="검색 결과가 없습니다" message="학교급과 시도를 확인하고 다시 검색하세요." />}
             {results?.map((r) => {
@@ -241,6 +271,7 @@ export function SchoolSelectPage() {
                     <div>
                       <h3 className="text-lg font-bold">{r.name}</h3>
                       <p className="text-sm text-ink-muted">{[r.eduOfficeName, r.address].filter(Boolean).join(" · ")}</p>
+                      <p className="text-xs text-ink-muted">학교알리미 학교코드 {r.externalCode}</p>
                     </div>
                     {registered ? (
                       registered.status === "active" ? <Badge tone="info">등록된 학교</Badge> : <Badge tone="warning" icon="clock">등록 확인 중</Badge>
@@ -255,30 +286,8 @@ export function SchoolSelectPage() {
                     <PrimaryButton className="mt-3" variant="secondary" fullWidth onClick={() => { setActionFor(r.externalCode); setPosition(""); }}>
                       {registered ? "이 학교에 가입 신청" : "이 학교 처음 등록하기"}
                     </PrimaryButton>
-                  ) : registered?.status === "pending_verification" ? (
-                    <div className="mt-3 space-y-3">
-                      <p className="text-sm text-ink-muted">이 학교는 최초 등록 심사 중입니다. 기존 신청이 철회·거절되어 대기 건이 없을 때만 새 관리자 신청이 가능합니다.</p>
-                      <FormField label="직위(선택)" value={position} onChange={(e) => setPosition(e.target.value)} placeholder="예: 안전업무 담당" maxLength={50} />
-                      <PrimaryButton fullWidth loading={busy} disabled={busy} onClick={() => void act(async () => {
-                        await api("POST", `/schools/${registered.id}/registrations`, { applicantPosition: position || undefined });
-                        return "학교 관리자 등록 신청이 접수되었습니다.";
-                      })}>
-                        최초 관리자 재신청
-                      </PrimaryButton>
-                    </div>
                   ) : registered ? (
-                    <div className="mt-3">
-                      <p className="text-base font-bold">맡은 역할을 고르세요</p>
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        <PrimaryButton onClick={() => void join(r, "homeroom")} loading={busy}>
-                          담임교사
-                        </PrimaryButton>
-                        <PrimaryButton variant="secondary" onClick={() => void join(r, "staff")} disabled={busy}>
-                          교직원
-                        </PrimaryButton>
-                      </div>
-                      <p className="mt-2 text-sm text-ink-muted">학교 관리자가 소속을 확인한 뒤 담당 학급을 배정합니다.</p>
-                    </div>
+                    <JoinForm kindCode={kind} busy={busy} onSubmit={(body) => void join(r, body)} />
                   ) : (
                     <div className="mt-3 space-y-3">
                       <p className="rounded-control bg-brand-soft p-3 text-base">

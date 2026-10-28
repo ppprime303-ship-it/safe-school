@@ -77,7 +77,6 @@ schoolsRouter.post("/school-registrations/:registrationId/withdraw", requireVeri
   });
   res.json(result);
 });
-
 // 승인 대기 학교(이전 신청이 거절됨)에 다른 교직원이 다시 등록 신청
 schoolsRouter.post("/schools/:schoolId/registrations", requireVerified, async (req, res) => {
   const input = parse(registrationApplySchema.pick({ applicantPosition: true }), req.body);
@@ -96,6 +95,7 @@ schoolsRouter.post("/schools/:schoolId/join-requests", requireVerified, async (r
     userId: req.auth!.userId,
     schoolId: param(req.params.schoolId),
     requestedRole: input.role,
+    request: { duties: input.requestedDuties, className: input.requestedClass, note: input.note, position: input.position },
     ip: req.ip,
   });
   res.status(created ? 201 : 200).json({ membershipId: membership.id, status: membership.status });
@@ -121,6 +121,8 @@ schoolsRouter.get("/schools/:schoolId/members", requireVerified, async (req, res
       role: m.role,
       status: m.status,
       requestedAt: m.createdAt,
+      // 가입 신청 정보(권한 아님): 승인 담당자 참고용
+      request: { duties: m.requestedDuties, className: m.requestedClass, note: m.requestNote, position: m.requestedPosition },
       user: m.user,
       assignments: m.assignments.map((a) => ({ duty: a.duty, class: a.schoolClass })),
       duties: m.duties.map((d) => ({ id: d.id, duty: d.duty, isActing: d.isActing, grantedVia: d.grantedVia, startedAt: d.startedAt })),

@@ -43,6 +43,37 @@ for (const [name, aliases] of Object.entries(SIDO)) {
 /** 시군구가 없는 시도(시도 전체가 하나의 지역) */
 const NO_SIGUNGU = new Set(["세종특별자치시"]);
 
+// STEP C: 2026-07-01 행정구역 개편 지역(근거: 학교알리미 공식 코드표 shared/schoolinfoRegions.ts, docs/devlog/2026-10-27.md 12-3)
+// - 재난문자가 이 지역을 옛 이름·새 이름 중 무엇으로 보내는지는 실제 응답으로 확인하지 않았습니다.
+// - 옛 구와 새 구의 경계 대응도 확인하지 않았으므로 '같은 곳/다른 곳'을 단정하지 않습니다(매핑 없음).
+//   · 같은 시기의 서로 다른 이름(옛-옛, 새-새)은 서로 다른 지역이 확실 → 기존 규칙(비대상)
+//   · 옛 이름과 새 이름이 섞이면 → '비대상'으로 단정하지 않고 '미판정'(경보 누락 방지)
+const REORGANIZED_SIGUNGU: Record<string, { before: readonly string[]; after: readonly string[] }> = {
+  인천광역시: { before: ["중구", "동구", "서구"], after: ["제물포구", "영종구", "서해구", "검단구"] },
+};
+/** 통합 출범한 시도의 새 이름 → 통합 이전 시도: 시도 목록에 넣지 않고(옛 시도와 '다른 시도'로 오판 방지)
+ *  이전 시도 학교의 미판정 근거로만 씁니다. 그 밖의 시도 학교에는 해당하지 않습니다(통합 범위는 시도 단위로 확정). */
+const REORGANIZED_SIDO: Record<string, readonly string[]> = {
+  전남광주통합특별시: ["광주광역시", "전라남도"],
+};
+
+/** 같은 시도 안에서 한쪽은 개편 전 이름, 다른 쪽은 개편 후 이름인지 */
+function isMixedReorgSigungu(sido: string, a: string, b: string): boolean {
+  const r = REORGANIZED_SIGUNGU[sido];
+  if (!r) return false;
+  const x = a.split(" ")[0]!;
+  const y = b.split(" ")[0]!;
+  return (r.before.includes(x) && r.after.includes(y)) || (r.after.includes(x) && r.before.includes(y));
+}
+
+/** 경보 지역 원문에 통합 시도의 새 이름이 있으면 그 통합 이전 시도 목록, 없으면 null */
+function reorganizedSidoPredecessors(raw: string): readonly string[] | null {
+  const name = Object.keys(REORGANIZED_SIDO).find((n) => raw.includes(n));
+  return name ? REORGANIZED_SIDO[name]! : null;
+}
+
+export const REORG_UNDETERMINED_REASON = "행정구역 개편(2026-07-01) 전후 지역 이름이 섞여 있어 대상 여부를 단정할 수 없음 — 관리자 확인 필요";
+
 export const SIDO_NAMES = Object.keys(SIDO);
 
 export function normalizeSido(token: string): string | null {
@@ -96,9 +127,13 @@ export function matchRegion(region: Region | null, areas: Area[]): MatchResult {
   if (areas.length === 0) return { result: "undetermined", reason: "경보에 지역 정보가 없음" };
 
   let unclear = false;
+  let reorg = false;
   for (const a of areas) {
     if (!a.sido) {
-      unclear = true;
+      const predecessors = reorganizedSidoPredecessors(a.raw);
+      if (!predecessors) unclear = true;
+      else if (predecessors.includes(region.sido)) reorg = true;
+      // 통합 이전 시도가 아닌 학교: 이 지역과 무관(다른 시도와 같은 처리)
       continue;
     }
     if (a.sido !== region.sido) continue;
@@ -119,7 +154,9 @@ export function matchRegion(region: Region | null, areas: Area[]): MatchResult {
     if (region.sigungu === a.sigungu || region.sigungu.startsWith(`${a.sigungu} `)) {
       return { result: "target", reason: `${a.sido} ${a.sigungu} 대상` };
     }
+    if (isMixedReorgSigungu(region.sido, region.sigungu, a.sigungu)) reorg = true;
   }
+  if (reorg) return { result: "undetermined", reason: REORG_UNDETERMINED_REASON };
   if (unclear) return { result: "undetermined", reason: "경보 지역 표기를 해석하지 못한 부분이 있음 — 관리자 확인 필요" };
   return { result: "non_target", reason: "학교 소재지가 경보 지역에 포함되지 않음" };
 }

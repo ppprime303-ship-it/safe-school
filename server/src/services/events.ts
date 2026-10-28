@@ -5,6 +5,7 @@
 import type { DisasterEvent, DisasterType, EnrolledChangeReason, EventMode, Prisma, PrismaClient } from "@prisma/client";
 import { AppError, conflict, isUniqueViolation, notFound } from "../errors.js";
 import { writeAudit } from "./audit.js";
+import { activeDelegations, delegatedClassIds, endDelegationsForEvent, hasActiveDelegation } from "./delegations.js";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -232,7 +233,12 @@ export async function myClasses(prisma: PrismaClient, params: { schoolId: string
     where: { membershipId: params.membershipId, duty: { in: ["homeroom", "assist"] } },
     select: { classId: true },
   });
-  return classViews(prisma, params.schoolId, event.id, assigned.map((a) => a.classId));
+  // v0.1: 이 사건에서 대리 담당으로 지정된 학급도 함께(학급별 따로 보고, '대리 담당' 표시)
+  const own = new Set(assigned.map((a) => a.classId));
+  const delegated = (await delegatedClassIds(prisma, { eventId: event.id, membershipId: params.membershipId })).filter((id) => !own.has(id));
+  const views = await classViews(prisma, params.schoolId, event.id, [...own, ...delegated]);
+  const delegatedSet = new Set(delegated);
+  return views.map((v) => ({ ...v, responsibility: delegatedSet.has(v.classId) ? ("delegated" as const) : ("own" as const) }));
 }
 
 // ───────────── A2 학급 보고 ─────────────
@@ -278,8 +284,9 @@ export async function submitReport(
       const cls = await tx.schoolClass.findFirst({ where: { id: params.classId, schoolId: params.schoolId, active: true } });
       if (!cls) throw notFound("학급을 찾을 수 없습니다.");
 
-      // 권한: 관리자(대리 보고) 또는 이 학급에 배정된 교직원
+      // 권한: 관리자(대리 보고), 이 학급에 배정된 교직원, 또는 이 사건에서 이 학급의 대리 담당으로 지정된 교직원(v0.1)
       let proxy = false;
+      let delegated = false;
       if (params.role === "admin") {
         const own = await tx.classAssignment.count({ where: { membershipId: params.membershipId, classId: cls.id } });
         proxy = own === 0;
@@ -287,7 +294,10 @@ export async function submitReport(
         const assigned = await tx.classAssignment.count({
           where: { membershipId: params.membershipId, classId: cls.id, duty: { in: ["homeroom", "assist"] } },
         });
-        if (assigned === 0) throw new AppError(403, "class_not_assigned", "배정된 학급만 보고할 수 있습니다.");
+        if (assigned === 0) {
+          delegated = await hasActiveDelegation(tx, { eventId: event.id, classId: cls.id, membershipId: params.membershipId });
+          if (!delegated) throw new AppError(403, "class_not_assigned", "배정된 학급(또는 대리 담당으로 지정된 학급)만 보고할 수 있습니다.");
+        }
       }
 
       const existing = await tx.evacuationReport.findUnique({ where: { eventId_classId: { eventId: event.id, classId: cls.id } } });
@@ -360,7 +370,7 @@ export async function submitReport(
           unconfirmed: report.unconfirmed,
           injured: report.injured,
           note: report.note,
-          changeReason: proxy ? "관리자 대리 보고" : null,
+          changeReason: proxy ? "관리자 대리 보고" : delegated ? "대리 담당 보고" : null,
           idempotencyKey: key,
           changedById: params.actorUserId,
         },
@@ -371,7 +381,7 @@ export async function submitReport(
         action: existing ? "report.updated" : "report.created",
         targetType: "evacuation_report",
         targetId: report.id,
-        after: { classId: cls.id, version: report.version, evacuated: report.evacuated, unconfirmed: report.unconfirmed, injured: report.injured, proxy },
+        after: { classId: cls.id, version: report.version, evacuated: report.evacuated, unconfirmed: report.unconfirmed, injured: report.injured, proxy, delegated },
         ip: params.ip,
       });
       return { report: toReportDto(report), replayed: false };
@@ -391,8 +401,14 @@ export async function submitReport(
 // ───────────── A3 상황판·종료 ─────────────
 export async function getBoard(prisma: PrismaClient, params: { schoolId: string; eventId: string }) {
   const event = await loadEvent(prisma, params.schoolId, params.eventId);
-  const [view, classes] = await Promise.all([toEventView(prisma, event), classViews(prisma, params.schoolId, event.id, null)]);
-  return { event: view, serverTime: new Date().toISOString(), classes };
+  const [view, classes, delegations] = await Promise.all([
+    toEventView(prisma, event),
+    classViews(prisma, params.schoolId, event.id, null),
+    event.status === "active" ? activeDelegations(prisma, { schoolId: params.schoolId, eventId: event.id }) : Promise.resolve([]),
+  ]);
+  // v0.1: 학급별 진행 중 대리 담당(있으면). 집계(summary)는 학급별 보고 그대로 — 대리 여부와 무관
+  const byClass = new Map(delegations.map((d) => [d.classId, d]));
+  return { event: view, serverTime: new Date().toISOString(), classes: classes.map((c) => ({ ...c, delegation: byClass.get(c.classId) ?? null })) };
 }
 
 export function summarize(classes: ClassReportViewDto[]) {
@@ -427,6 +443,7 @@ export async function closeEvent(
     }
     const classes = await classViews(tx, params.schoolId, event.id, null);
     const summary = summarize(classes);
+    await endDelegationsForEvent(tx, { eventId: event.id, actorUserId: params.actorUserId }); // v0.1 대리 담당은 사건 종료와 함께 끝남
     const closed = await tx.disasterEvent.update({
       where: { id: event.id },
       data: { status: "closed", closedAt: new Date(), closedById: params.actorUserId },

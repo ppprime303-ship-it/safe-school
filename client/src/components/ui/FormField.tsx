@@ -8,7 +8,7 @@ export function FormField({
   error,
   className = "",
   ...input
-}: InputHTMLAttributes<HTMLInputElement> & { label: string; hint?: ReactNode; error?: string | null }) {
+}: InputHTMLAttributes<HTMLInputElement> & { label: ReactNode; hint?: ReactNode; error?: string | null }) {
   const id = useId();
   const hintId = `${id}-hint`;
   const errorId = `${id}-error`;

@@ -93,7 +93,16 @@ export async function searchDirectory(
   prisma: PrismaClient,
   client: SchoolinfoClient | null,
   params: { q: string; kindCode: string; sidoCode?: string; sggCode?: string },
-): Promise<{ results: DirectorySearchResult[]; stale: boolean; syncedAt: Date | null; warning?: string }> {
+): Promise<{
+  results: DirectorySearchResult[];
+  stale: boolean;
+  syncedAt: Date | null;
+  warning?: string;
+  /** STEP B: 화면 표시용 — 출처, 시군구 필수 키 여부, 이번 검색에서 새로 받기를 시도했다 실패했는지 */
+  source: "schoolinfo";
+  sggRequired: boolean;
+  refreshFailed: boolean;
+}> {
   // 시군구를 주면 그 시군구에서 받은 목록만으로 최신 여부를 판단하고 검색합니다.
   const scopeWhere = {
     source: "schoolinfo" as const,
@@ -109,6 +118,7 @@ export async function searchDirectory(
   const newest = await prisma.schoolDirectoryEntry.findFirst({ where: scopeWhere, orderBy: { syncedAt: "desc" }, select: { syncedAt: true } });
   let stale = !newest || Date.now() - newest.syncedAt.getTime() > DIRECTORY_MAX_AGE_MS;
   let warning: string | undefined;
+  let refreshFailed = false;
   let syncedAt = newest?.syncedAt ?? null;
   if (stale && client && !params.sggCode && isSggRequired()) {
     warning = "학교 목록을 새로 받으려면 시군구를 선택하세요. 지금은 저장된 목록으로 검색합니다.";
@@ -119,8 +129,11 @@ export async function searchDirectory(
       syncedAt = new Date();
     } catch (error) {
       // 2) 실패하면 기존 목록으로 계속(장애 대응)
+      refreshFailed = true;
       warning =
-        error instanceof SchoolinfoError
+        error instanceof SchoolinfoError && error.kind === "params" && !params.sggCode
+          ? "이 학교알리미 인증키는 시군구를 지정해야 목록을 받을 수 있습니다. 시군구를 선택하세요. 지금은 저장된 목록으로 검색합니다."
+          : error instanceof SchoolinfoError
           ? `${error.message} 저장된 목록으로 검색합니다.`
           : "학교 목록을 새로 받지 못해 저장된 목록으로 검색합니다.";
     }
@@ -129,7 +142,8 @@ export async function searchDirectory(
   }
 
   const q = params.q.replace(/\s+/g, "");
-  if (q.length < 2) return { results: [], stale, syncedAt, warning };
+  const meta = { source: "schoolinfo" as const, sggRequired: isSggRequired(), refreshFailed };
+  if (q.length < 2) return { results: [], stale, syncedAt, warning, ...meta };
 
   const entries = await prisma.schoolDirectoryEntry.findMany({
     where: { ...searchWhere, closed: false, name: { contains: q } },
@@ -155,5 +169,6 @@ export async function searchDirectory(
     stale,
     syncedAt,
     warning,
+    ...meta,
   };
 }

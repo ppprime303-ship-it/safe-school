@@ -10,6 +10,7 @@ import { PrimaryButton } from "../../components/ui/PrimaryButton";
 import { EmptyState, ErrorState, LoadingState, SaveStatus, type SaveState } from "../../components/ui/States";
 import { Badge } from "../../components/ui/StatusBadge";
 import { DutiesSection, DutyBadges, type MemberDutyView } from "./DutiesSection";
+import { POSITION_LABEL, REQUESTED_DUTY_LABEL, type RequestedDuty, type RequestedPosition } from "@shared/joinRequest";
 
 type Role = "admin" | "homeroom" | "staff";
 type Duty = "homeroom" | "assist" | "inspection";
@@ -18,6 +19,8 @@ interface Member {
   role: Role;
   status: "pending" | "approved" | "rejected" | "revoked";
   requestedAt: string;
+  /** 가입 신청 정보(권한 아님) — 승인 판단 참고용. 실제 배정은 아래 '역할·학급'에서 확정 */
+  request?: { duties: string[]; className: string | null; note: string | null; position?: string | null };
   user: { displayName: string; email: string };
   assignments: { duty: Duty; class: { id: string; label: string; schoolYear: number } }[];
   duties?: MemberDutyView[]; // STEP 3-D 직책·업무
@@ -126,6 +129,15 @@ export function MembersPage({ schoolId }: { schoolId: string }) {
                           <span className="block truncate text-sm text-ink-muted">
                             {m.user.email} · {formatDateTime(m.requestedAt)}
                           </span>
+                          {m.request && (m.request.duties.length > 0 || m.request.className || m.request.note || m.request.position) && (
+                            <span className="mt-1 block text-sm">
+                              {m.request.position && <span className="font-semibold">{POSITION_LABEL[m.request.position as RequestedPosition] ?? m.request.position} · </span>}
+                              <span className="font-semibold">신청 업무</span>{" "}
+                              {m.request.duties.map((d) => REQUESTED_DUTY_LABEL[d as RequestedDuty] ?? d).join(", ") || "없음"}
+                              {m.request.className && ` · ${m.request.className}`}
+                              {m.request.note && <span className="block break-words text-ink-muted">메모: {m.request.note}</span>}
+                            </span>
+                          )}
                         </span>
                       </label>
                     </li>

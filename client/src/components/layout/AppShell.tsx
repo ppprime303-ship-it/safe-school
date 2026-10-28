@@ -7,6 +7,7 @@ import { useSession } from "../../lib/session";
 import { capsOf } from "../../lib/permissions";
 import { EmergencyBanner } from "../ui/EmergencyBanner";
 import { Icon, type IconName } from "../ui/Icon";
+import { PrototypeNotice } from "../ui/PrototypeNotice";
 
 export interface NavItem {
   href: string;
@@ -184,6 +185,7 @@ export function AppShell({
       <Sidebar items={items} schoolName={membership?.school.name} />
       <div className="flex min-w-0 flex-1 flex-col">
         {event && <EmergencyBanner event={event} />}
+        <PrototypeNotice compact />
         <AppHeader title={title} schoolName={membership?.school.name} links={items.filter((i) => i.mobile === "header")} />
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-28 lg:pb-10">{children}</main>
       </div>

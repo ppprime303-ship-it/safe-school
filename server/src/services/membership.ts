@@ -31,8 +31,21 @@ export async function resolveSchoolAccess(
 // ───────────── 후속 교직원 가입 신청 ─────────────
 export async function requestToJoinSchool(
   prisma: PrismaClient,
-  params: { userId: string; schoolId: string; requestedRole: "homeroom" | "staff"; ip?: string | null },
+  params: {
+    userId: string;
+    schoolId: string;
+    requestedRole: "homeroom" | "staff";
+    /** 신청 정보(권한 아님): 신청 업무 키, 희망 학급, 메모 — 승인 담당자 참고용 */
+    request?: { duties?: string[]; className?: string; note?: string; position?: string };
+    ip?: string | null;
+  },
 ) {
+  const requestInfo = {
+    requestedDuties: params.request?.duties ?? [],
+    requestedClass: params.request?.className ?? null,
+    requestNote: params.request?.note ?? null,
+    requestedPosition: params.request?.position ?? null,
+  };
   const user = await prisma.user.findUnique({ where: { id: params.userId } });
   if (!user || user.status !== "active") throw forbidden("사용할 수 없는 계정입니다.");
   if (!user.emailVerifiedAt) throw forbidden("이메일 인증을 먼저 완료하세요.");
@@ -50,16 +63,17 @@ export async function requestToJoinSchool(
     // 거절된 경우 다시 신청 가능
     const membership = await prisma.schoolMembership.update({
       where: { id: existing.id },
-      data: { status: "pending", role: params.requestedRole, approvalMethod: null, approvedAt: null, approvedById: null },
+      data: { status: "pending", role: params.requestedRole, approvalMethod: null, approvedAt: null, approvedById: null, ...requestInfo },
     });
-    await writeAudit(prisma, { schoolId: school.id, actorUserId: user.id, action: "membership.requested", targetType: "membership", targetId: membership.id, ip: params.ip });
+    await writeAudit(prisma, { schoolId: school.id, actorUserId: user.id, action: "membership.requested", targetType: "membership", targetId: membership.id, after: { role: params.requestedRole, requestedDuties: requestInfo.requestedDuties }, ip: params.ip });
     return { membership, created: true };
   }
 
   const membership = await prisma.schoolMembership.create({
-    data: { schoolId: school.id, userId: user.id, role: params.requestedRole, status: "pending" },
+    data: { schoolId: school.id, userId: user.id, role: params.requestedRole, status: "pending", ...requestInfo },
   });
-  await writeAudit(prisma, { schoolId: school.id, actorUserId: user.id, action: "membership.requested", targetType: "membership", targetId: membership.id, ip: params.ip });
+  // 감사 로그에는 업무 키만 남기고 메모 원문은 남기지 않습니다(개인정보 최소화)
+  await writeAudit(prisma, { schoolId: school.id, actorUserId: user.id, action: "membership.requested", targetType: "membership", targetId: membership.id, after: { role: params.requestedRole, requestedDuties: requestInfo.requestedDuties }, ip: params.ip });
   return { membership, created: true };
 }
 

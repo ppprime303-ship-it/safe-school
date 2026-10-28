@@ -11,18 +11,29 @@ import {
   requireAuth,
   setSessionCookie,
 } from "../auth/session.js";
-import { requireMailConfigured, sendMail } from "../mail/mailer.js";
-import { rateLimit } from "../middleware/security.js";
+import { mailMode, requireMailConfigured, sendMail } from "../mail/mailer.js";
+import { failureCounter, rateLimit } from "../middleware/security.js";
 import { hashPassword, verifyPassword } from "../security/password.js";
 import { writeAudit } from "../services/audit.js";
 import { loginSchema, reauthSchema, resendSchema, signupSchema, verifyEmailSchema } from "../../../shared/schemas.js";
 
 export const authRouter = Router();
 
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30 });
+// 요청 제한(2026-10-27 개편): 학교처럼 여러 교직원이 같은 공인 IP를 쓰는 환경을 고려합니다.
+// - 가입·인증·재발송·재인증: IP당 15분 150회(30명 × 가입·인증·재발송 여유). 코드 추측은 코드당 5회 제한(emailCode.ts)이 막습니다.
+// - 로그인: 성공은 세지 않고, 실패만 계정당 10회·IP당 30회(15분)로 막습니다. 대량 요청 자체는 IP당 15분 300회.
+const WINDOW_MS = 15 * 60 * 1000;
+const authLimiter = rateLimit({ windowMs: WINDOW_MS, max: 150 });
+const loginFloodLimiter = rateLimit({ windowMs: WINDOW_MS, max: 300 });
+const loginAccountFailures = failureCounter({ windowMs: WINDOW_MS, max: 10 });
+const loginIpFailures = failureCounter({ windowMs: WINDOW_MS, max: 30 });
+const loginLocked = () =>
+  new AppError(429, "login_locked", "로그인 실패가 많아 잠시 막혔습니다. 15분 뒤 다시 시도하거나 운영자에게 문의하세요.");
 
 // 코드 발급 → 메일 발송. 발송에 실패하면 방금 만든 코드를 지워(발송 한도 미소모) 오류를 그대로 돌려줍니다.
 async function sendSignupCode(userId: string, email: string) {
+  // 운영자 수동 전달 모드: 여기서는 코드를 만들지 않습니다(운영자가 CLI 로 발급해 직접 보냄). 화면에는 그 사실만 안내합니다.
+  if (mailMode() === "manual") return { delivery: "manual_operator" as const };
   const { code, id } = await issueEmailCode(prisma, { userId, purpose: "signup" });
   let result;
   try {
@@ -113,13 +124,19 @@ authRouter.post("/auth/verify-email", authLimiter, async (req, res) => {
   res.json({ ok: true });
 });
 
-authRouter.post("/auth/login", authLimiter, async (req, res) => {
+authRouter.post("/auth/login", loginFloodLimiter, async (req, res) => {
   const input = parse(loginSchema, req.body);
+  const ipKey = req.ip ?? "unknown";
+  const accountKey = input.email;
+  if (loginAccountFailures.isBlocked(accountKey) || loginIpFailures.isBlocked(ipKey)) throw loginLocked();
   const user = await prisma.user.findUnique({ where: { email: input.email } });
   const ok = !!user?.passwordHash && (await verifyPassword(input.password, user.passwordHash));
   if (!user || !ok) {
+    loginAccountFailures.fail(accountKey);
+    loginIpFailures.fail(ipKey);
     throw new AppError(401, "invalid_credentials", "이메일 또는 비밀번호가 맞지 않습니다. 가입 인증을 마치지 않았다면 '교직원 가입'에서 인증코드를 다시 받으세요.");
   }
+  loginAccountFailures.reset(accountKey); // 본인이 몇 번 틀린 뒤 성공하면 그 계정 기록만 지움(IP 기록은 유지)
   if (user.status !== "active") throw new AppError(403, "account_disabled", "사용할 수 없는 계정입니다.");
   if (!user.emailVerifiedAt) throw new AppError(403, "email_not_verified", "이메일 인증을 먼저 완료하세요.");
 
@@ -145,7 +162,10 @@ authRouter.post("/auth/logout", async (req, res) => {
 authRouter.post("/auth/reauth", requireAuth, authLimiter, async (req, res) => {
   const input = parse(reauthSchema, req.body);
   const user = await prisma.user.findUnique({ where: { id: req.auth!.userId } });
+  const accountKey = user?.email ?? req.auth!.userId;
+  if (loginAccountFailures.isBlocked(accountKey)) throw loginLocked();
   if (!user?.passwordHash || !(await verifyPassword(input.password, user.passwordHash))) {
+    loginAccountFailures.fail(accountKey); // 세션을 가진 사람의 비밀번호 추측도 같은 계정 한도로 막음
     throw new AppError(401, "invalid_credentials", "비밀번호가 맞지 않습니다.");
   }
   await prisma.session.update({ where: { id: req.auth!.sessionId }, data: { reauthAt: new Date() } });

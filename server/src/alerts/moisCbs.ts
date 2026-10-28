@@ -84,6 +84,14 @@ export function normalizeMoisCbs(r: MoisCbsRecord): NormalizedAlert | null {
   };
 }
 
+function safeJsonParse(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 /** 한국 날짜 YYYYMMDD(기준 시각에서 days 일 전) */
 export function kstYmd(now: Date, daysAgo = 0): string {
   const k = new Date(now.getTime() + 9 * 3600_000 - daysAgo * 86_400_000);
@@ -97,7 +105,61 @@ export function buildRequestUrl(serviceKey: string, pageNo: number, fromYmd: str
   return `${MOIS_CBS_CONTRACT.endpoint}?${q.join("&")}`;
 }
 
-type FetchLike = (url: string, init: { signal: AbortSignal; headers: Record<string, string> }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
+/** 응답 본문 최대 크기(정상 응답 100건 × 1쪽의 수십 배 여유). 넘으면 읽기를 멈추고 형식 오류로 처리 */
+export const MAX_RESPONSE_BYTES = 1_000_000;
+
+// 실제 fetch 응답은 body·text 를 가집니다. json() 만 있는 가짜 응답(기존 시험)도 그대로 받습니다.
+type HttpResponse = {
+  ok: boolean;
+  status: number;
+  json(): Promise<unknown>;
+  text?(): Promise<string>;
+  body?: ReadableStream<Uint8Array> | null;
+};
+type FetchLike = (url: string, init: { signal: AbortSignal; headers: Record<string, string> }) => Promise<HttpResponse>;
+
+/** 본문을 최대 크기까지만 읽습니다. 읽을 방법이 없으면 undefined(→ json() 사용) */
+async function readLimitedText(res: HttpResponse): Promise<string | undefined> {
+  if (res.body && typeof res.body.getReader === "function") {
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_RESPONSE_BYTES) {
+        await reader.cancel().catch(() => {});
+        throw new Error(`공식 재난문자 API 응답이 너무 큽니다(${MAX_RESPONSE_BYTES}바이트 초과, 형식 확인 필요).`);
+      }
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks).toString("utf8");
+  }
+  if (typeof res.text === "function") {
+    const text = await res.text();
+    if (Buffer.byteLength(text, "utf8") > MAX_RESPONSE_BYTES) throw new Error(`공식 재난문자 API 응답이 너무 큽니다(${MAX_RESPONSE_BYTES}바이트 초과, 형식 확인 필요).`);
+    return text;
+  }
+  return undefined;
+}
+
+/**
+ * 공공 OpenAPI 게이트웨이의 XML 오류 응답(OpenAPI_ServiceResponse 등)에서 코드·이름만 꺼내 안전한 문장으로 바꿉니다.
+ * - XML 파서를 쓰지 않습니다. DTD·ENTITY 선언이 있으면 내용을 해석하지 않고 거부합니다(외부 엔터티 차단).
+ * - 꺼내는 값은 숫자 코드(3자리 이하)와 대문자·밑줄 이름(80자 이하)뿐이라 원문(인증키 등)이 기록에 섞이지 않습니다.
+ * - 이름(예: UNREGISTERED_IP_ERROR)은 공공데이터포털 표준 오류 이름입니다. 재난안전데이터 공유플랫폼이 같은 이름을
+ *   쓰는지는 활용 승인 후 실제 응답으로 확인해야 합니다(분류: feedStatus.classifyFeedError, 모르는 이름은 '알 수 없음').
+ */
+export function describeXmlGatewayError(xml: string, httpStatus: number): string {
+  const head = xml.slice(0, 20_000);
+  const http = httpStatus === 200 ? "" : ` HTTP ${httpStatus}`;
+  if (/<!DOCTYPE|<!ENTITY/i.test(head)) return `공식 재난문자 API 응답(XML)에 DTD 선언이 있어 처리하지 않았습니다${http}(형식 확인 필요).`;
+  const code = /<returnReasonCode>\s*(\d{1,3})\s*<\/returnReasonCode>/.exec(head)?.[1] ?? /<resultCode>\s*(\d{1,3})\s*<\/resultCode>/.exec(head)?.[1];
+  const name = /<returnAuthMsg>\s*([A-Z_]{1,80})\s*<\/returnAuthMsg>/.exec(head)?.[1] ?? /<errMsg>\s*([A-Z_ ]{1,80})\s*<\/errMsg>/.exec(head)?.[1]?.trim();
+  if (!code && !name) return `공식 재난문자 API가 JSON이 아닌 XML로 응답했습니다${http}(형식 확인 필요).`;
+  return `공식 재난문자 API 게이트웨이 오류(XML)${http} 코드 ${code ?? "-"} ${name ?? ""}`.trim();
+}
 
 export class MoisCbsSource implements AlertSource {
   readonly provider = "mois_cbs" as const;
@@ -120,8 +182,16 @@ export class MoisCbsSource implements AlertSource {
     for (let page = 1; page <= MOIS_CBS_CONTRACT.maxPages; page++) {
       const res = await this.http(buildRequestUrl(this.serviceKey, page, from), { signal: AbortSignal.timeout(this.timeoutMs), headers: { Accept: "application/json" } });
       if (res.status === 429) throw new Error("공식 재난문자 API 호출 제한(429) — 다음 주기에 다시 시도");
-      if (!res.ok) throw new Error(`공식 재난문자 API 응답 오류(HTTP ${res.status})`);
-      const data = (await res.json().catch(() => null)) as { body?: unknown; header?: { resultCode?: unknown; resultMsg?: unknown }; totalCount?: unknown } | null;
+      if (!res.ok) {
+        // 게이트웨이가 HTTP 오류와 함께 XML 오류 본문을 주면 그 코드·이름으로 더 정확히 기록
+        const errText = await readLimitedText(res).catch(() => undefined);
+        if (errText?.trimStart().startsWith("<")) throw new Error(describeXmlGatewayError(errText, res.status));
+        throw new Error(`공식 재난문자 API 응답 오류(HTTP ${res.status})`);
+      }
+      const text = await readLimitedText(res);
+      if (text !== undefined && text.trimStart().startsWith("<")) throw new Error(describeXmlGatewayError(text, res.status));
+      const parsed = text === undefined ? await res.json().catch(() => null) : safeJsonParse(text);
+      const data = parsed as { body?: unknown; header?: { resultCode?: unknown; resultMsg?: unknown }; totalCount?: unknown } | null;
       if (!data || typeof data !== "object") throw new Error("공식 재난문자 API 응답이 JSON이 아닙니다(형식 확인 필요).");
       const code = data.header?.resultCode;
       if (code !== undefined && code !== null && !["00", "0", 0].includes(code as never)) {

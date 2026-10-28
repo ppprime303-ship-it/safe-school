@@ -11,6 +11,7 @@ import { AppShell } from "../../components/layout/AppShell";
 import { ClassStatusCard } from "../../components/ui/ClassStatusCard";
 import { EmptyState, ErrorState, LoadingState, type SaveState } from "../../components/ui/States";
 import { ReportFormView } from "./ReportFormView";
+import { SPECIAL_CLASS_NOTICE } from "@shared/headcount";
 
 type Load =
   | { kind: "loading" }
@@ -116,6 +117,7 @@ export function ReportPage({ schoolId }: { schoolId: string }) {
   const view = load.kind === "ready" ? load.classes.find((c) => c.classId === selected) ?? null : null;
 
   const assignedClasses = current?.school.id === schoolId ? current.assignments : [];
+  const delegatedClasses = load.kind === "ready" ? load.classes.filter((c) => c.responsibility === "delegated") : [];
 
   return (
     <AppShell title="학급 대피 보고" schoolId={schoolId} event={event}>
@@ -129,6 +131,14 @@ export function ReportPage({ schoolId }: { schoolId: string }) {
           <p className="mt-2 text-base text-ink-muted">배정된 학급이 없습니다. 학교 관리자에게 담당 학급 배정을 요청하세요.</p>
         )}
         <p className="mt-2 text-sm text-ink-muted">담당 학급은 관리자 배정 정보를 기준으로 표시합니다.</p>
+        {delegatedClasses.length > 0 && (
+          <div className="mt-3 rounded-control border-2 border-warning bg-warning-soft p-3">
+            <h3 className="font-bold text-warning-strong">대리 담당 학급(이번 상황 동안만)</h3>
+            <p className="mt-1 text-lg font-extrabold">{delegatedClasses.map((c) => c.label).join(", ")}</p>
+            <p className="mt-1 text-sm">학급마다 따로 보고하세요. 여러 학급 인원을 합쳐서 한 번에 보고하지 마세요.</p>
+          </div>
+        )}
+        <p className="mt-3 text-sm text-ink-muted">{SPECIAL_CLASS_NOTICE}</p>
       </section>
       {load.kind === "loading" && <LoadingState />}
       {load.kind === "error" && <ErrorState message={load.message} onRetry={() => void fetchAll()} />}
@@ -148,11 +158,23 @@ export function ReportPage({ schoolId }: { schoolId: string }) {
       {load.kind === "ready" && !view && load.classes.length > 1 && (
         <div className="mx-auto max-w-xl">
           <h2 className="text-lg font-bold">보고할 학급을 고르세요</h2>
-          <div className="mt-3 grid gap-3">
-            {load.classes.map((c) => (
-              <ClassStatusCard key={c.classId} view={c} onSelect={(v) => { setSelected(v.classId); setSaveState({ kind: "idle" }); }} />
+          {(
+            [
+              ["내 담당 학급", load.classes.filter((c) => c.responsibility !== "delegated")],
+              ["대리 담당 학급", load.classes.filter((c) => c.responsibility === "delegated")],
+            ] as const
+          )
+            .filter(([, list]) => list.length > 0)
+            .map(([title, list]) => (
+              <div key={title} className="mt-3">
+                {delegatedClasses.length > 0 && <h3 className="text-base font-bold text-ink-muted">{title}</h3>}
+                <div className="mt-2 grid gap-3">
+                  {list.map((c) => (
+                    <ClassStatusCard key={c.classId} view={c} onSelect={(v) => { setSelected(v.classId); setSaveState({ kind: "idle" }); }} />
+                  ))}
+                </div>
+              </div>
             ))}
-          </div>
         </div>
       )}
       {event && view && (
@@ -161,6 +183,9 @@ export function ReportPage({ schoolId }: { schoolId: string }) {
             <button type="button" onClick={() => setSelected(null)} className="mx-auto mb-2 block min-h-touch max-w-xl text-base font-bold text-accent underline underline-offset-4">
               ← 다른 학급 보고
             </button>
+          )}
+          {view.responsibility === "delegated" && (
+            <p className="mx-auto mb-2 max-w-xl rounded-control border-2 border-warning bg-warning-soft p-2 text-center font-bold text-warning-strong">대리 담당으로 {view.label}을 보고합니다</p>
           )}
           <ReportFormView
             key={`${view.classId}-${view.report?.version ?? 0}`}

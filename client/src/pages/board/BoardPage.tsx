@@ -7,6 +7,9 @@ import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { EmptyState, ErrorState, LoadingState } from "../../components/ui/States";
 import { BoardView, type Connection } from "./BoardView";
 import { IssueEventForm } from "./IssueEventForm";
+import { DelegationPanel } from "./DelegationPanel";
+import { useSession } from "../../lib/session";
+import { can } from "../../lib/permissions";
 
 const POLL_MS = 5000;
 
@@ -19,6 +22,8 @@ export function BoardPage({ schoolId }: { schoolId: string }) {
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
   const eventIdRef = useRef<string | null>(null);
+  const { usableMemberships } = useSession();
+  const membership = usableMemberships.find((m) => m.school.id === schoolId) ?? null;
 
   const poll = useCallback(async () => {
     try {
@@ -89,6 +94,11 @@ export function BoardPage({ schoolId }: { schoolId: string }) {
       )}
       {load.kind === "error" && <ErrorState message={load.message} onRetry={() => void poll()} />}
       {load.kind === "ready" && <BoardView data={load.data} connection={connection} onCloseEvent={() => setConfirmClose(true)} />}
+      {load.kind === "ready" && can(membership, "event.issue") && (
+        <div className="mt-5">
+          <DelegationPanel schoolId={schoolId} eventId={load.data.event.id} classes={load.data.classes} onChanged={() => void poll()} />
+        </div>
+      )}
 
       <ConfirmDialog
         open={confirmClose}

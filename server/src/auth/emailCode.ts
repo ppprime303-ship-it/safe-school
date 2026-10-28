@@ -14,7 +14,7 @@ const MAX_PER_HOUR = 5;
 
 const hashCode = (userId: string, code: string) => createHash("sha256").update(`${userId}:${code}`).digest("hex");
 
-export async function issueEmailCode(prisma: PrismaClient, params: { userId: string; purpose: VerificationPurpose }) {
+export async function issueEmailCode(prisma: PrismaClient, params: { userId: string; purpose: VerificationPurpose; ttlMs?: number }) {
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${"email_code:" + params.userId}))) AS l`;
     const since = new Date(Date.now() - 3600_000);
@@ -35,7 +35,7 @@ export async function issueEmailCode(prisma: PrismaClient, params: { userId: str
         userId: params.userId,
         purpose: params.purpose,
         codeHash: hashCode(params.userId, code),
-        expiresAt: new Date(Date.now() + CODE_TTL_MS),
+        expiresAt: new Date(Date.now() + (params.ttlMs ?? CODE_TTL_MS)),
       },
     });
     return { code, id: record.id };

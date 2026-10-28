@@ -40,6 +40,10 @@ export interface ClassReportView {
   label: string;
   enrolledCount: number | null; // 발령 시점 재적(관리자 미확인이면 null)
   report: ClassReport | null;
+  /** v0.1 내 학급 목록: 본인 담당(own) / 이 훈련 동안 대리 담당(delegated) */
+  responsibility?: "own" | "delegated";
+  /** v0.1 상황판: 진행 중 대리 담당(있으면) */
+  delegation?: { id: string; delegateMembershipId: string; delegateName: string; reason: "unreachable" | "unable" | "admin_decision"; basis: string | null; assignedAt: string } | null;
 }
 
 export interface BoardData {

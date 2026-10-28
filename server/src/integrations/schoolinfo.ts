@@ -124,7 +124,9 @@ export function createSchoolinfoClient(options: {
       }
       const result = body as { resultCode?: string; resultMsg?: string; list?: unknown };
       if (result.resultCode !== "success") {
-        throw new SchoolinfoError(`학교알리미 오류: ${result.resultMsg ?? "알 수 없음"}`, "api");
+        // 2026-10-27 실제 응답: 시군구 없이 요청하면 resultCode fail, "시군구 코드(sggCode)는 필수 정보입니다."
+        const params = /sggCode|시군구/.test(String(result.resultMsg ?? "")) && /필수/.test(String(result.resultMsg ?? ""));
+        throw new SchoolinfoError(`학교알리미 오류: ${result.resultMsg ?? "알 수 없음"}`, params ? "params" : "api");
       }
       if (!Array.isArray(result.list)) {
         throw new SchoolinfoError("학교알리미 응답에 list가 없습니다.", "format");

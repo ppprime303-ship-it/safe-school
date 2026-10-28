@@ -28,12 +28,16 @@ export function setConfiguredAlertSources(list: ConfiguredAlertSource[]): void {
 /** 수집 실패 기록(이미 비밀값을 가린 문장)을 화면용 종류로 분류 */
 export function classifyFeedError(message: string | null | undefined): FeedErrorKind {
   const m = message ?? "";
-  // 공공데이터포털 관례(결과 코드 22 LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS…) — 재난안전데이터 공유플랫폼 코드는 명세 확인 필요
+  // 게이트웨이 오류 이름은 공공데이터포털 표준(UNREGISTERED_IP_ERROR 등) 기준 — 재난안전데이터 공유플랫폼 적용 여부는 명세 확인 필요.
+  // 숫자 코드만으로는 분류하지 않습니다(플랫폼마다 다를 수 있음). 이름을 모르면 아래 일반 규칙 → 알 수 없음.
+  if (/UNREGISTERED_IP/.test(m)) return "ip_blocked";
   if (/429|호출 제한|한도|LIMITED_NUMBER|EXCEEDS/i.test(m)) return "rate_limited";
-  if (/HTTP 40[13]|결과 코드|SERVICE_KEY|인증/i.test(m)) return "rejected";
-  if (/HTTP 5\d\d/.test(m)) return "server_error";
+  if (/HTTP 40[13]|결과 코드|SERVICE_KEY|DEADLINE_HAS_EXPIRED|SERVICE_ACCESS_DENIED|UNSIGNED_CALL|인증/i.test(m)) return "rejected";
+  if (/HTTP 400|INVALID_REQUEST_PARAMETER|NO_MANDATORY_REQUEST_PARAMETERS|NO_OPENAPI_SERVICE/.test(m)) return "bad_request";
+  if (/HTTP 5\d\d|APPLICATION_ERROR|HTTP_ERROR/.test(m)) return "server_error";
+  if (/게이트웨이 오류/.test(m)) return "unknown"; // 이름을 모르는 게이트웨이 오류
   if (/timeout|timed out|aborted|시간 초과/i.test(m)) return "timeout";
-  if (/형식|JSON|body 배열/i.test(m)) return "format";
+  if (/형식|JSON|XML|body 배열/i.test(m)) return "format";
   if (/fetch failed|ECONN|ENOTFOUND|EAI_AGAIN|network|연결/i.test(m)) return "network";
   return "unknown";
 }

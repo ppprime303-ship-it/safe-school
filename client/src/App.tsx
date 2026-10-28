@@ -20,6 +20,7 @@ import { DrillLogsPage } from "./pages/drill/DrillLogsPage";
 import { DrillLogEditorPage } from "./pages/drill/DrillLogEditorPage";
 import { EducationResourceDetailPage, EducationResourcesPage } from "./pages/education/EducationResourcesPage";
 import { FacilityResourceDetailPage, FacilityResourcesPage } from "./pages/facility/FacilityResourcesPage";
+import { PlatformApprovalDetailPage, PlatformApprovalsPage, PlatformAuditPage } from "./pages/platform/PlatformPages";
 
 function Redirect({ to }: { to: string }) {
   useEffect(() => navigate(to, { replace: true }), [to]);
@@ -50,6 +51,12 @@ function Routes() {
     return <Redirect to={homePath(current)} />;
   }
   if (path === "/schools") return <SchoolSelectPage />;
+
+  // STEP D 플랫폼 운영관리자 콘솔(학교 소속과 무관 — 권한은 서버가 요청마다 확인, 화면은 권한 부족 안내)
+  if (path === "/platform" || path === "/platform/approvals") return <PlatformApprovalsPage />;
+  if (path === "/platform/audit") return <PlatformAuditPage />;
+  const platformRoute = matchPath("/platform/approvals/:id", path);
+  if (platformRoute) return <PlatformApprovalDetailPage key={platformRoute.id} id={platformRoute.id!} />;
 
   // STEP 3-C 안내문 편집(새 안내문은 /s/:schoolId/notices/new?alert=<경보 ID>)
   // STEP 3-D 훈련일지 편집
