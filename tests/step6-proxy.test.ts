@@ -22,17 +22,17 @@ afterAll(async () => {
   await new Promise<void>((r) => server.close(() => r()));
 });
 
-const login = (xff: string) =>
-  fetch(`${base}/api/auth/login`, { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": xff }, body: "{}" });
+const login = (xff: string, n: number) =>
+  fetch(`${base}/api/auth/login`, { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": xff }, body: JSON.stringify({ email: `proxy-failure-${n}@example.com`, password: "invalid-password-123" }) });
 
 describe("프록시 뒤 실제 IP와 로그인 시도 제한", () => {
   it("같은 실제 IP는 15분에 30회 넘으면 429, 다른 IP는 별도", async () => {
-    for (let i = 0; i < 30; i++) expect((await login("203.0.113.10")).status).toBe(400); // 빈 본문 → 입력 오류(DB 조회 전)
-    expect((await login("203.0.113.10")).status).toBe(429);
-    expect((await login("203.0.113.20")).status).toBe(400);
+    for (let i = 0; i < 30; i++) expect((await login("203.0.113.10", i)).status).toBe(401); // 서로 다른 계정으로 유효한 형식의 로그인 실패 30회
+    expect((await login("203.0.113.10", 30)).status).toBe(429); // IP별 인증 실패 한도
+    expect((await login("203.0.113.20", 31)).status).toBe(401); // 다른 IP는 독립
   });
   it("클라이언트가 X-Forwarded-For 앞쪽에 가짜 IP를 넣어도 프록시가 붙인 실제 IP로 제한", async () => {
-    expect((await login("198.51.100.99, 203.0.113.10")).status).toBe(429);
+    expect((await login("198.51.100.99, 203.0.113.10", 32)).status).toBe(429);
   });
 });
 
