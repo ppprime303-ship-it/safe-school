@@ -32,7 +32,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install --no-audit --no-fund
+      - name: Install dependencies with retry and diagnostics
+        shell: bash
+        run: |
+          npm config set fetch-retries 2
+          for n in 1 2; do
+            if npm install --no-audit --no-fund --loglevel warn; then exit 0; fi
+            echo "Dependency installation attempt $n failed"
+            if [ "$n" = 2 ]; then
+              find "$HOME/.npm/_logs" -name '*debug-0.log' -type f -print -exec tail -n 50 {} \; || true
+              exit 1
+            fi
+            npm cache clean --force || true
+          done
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
