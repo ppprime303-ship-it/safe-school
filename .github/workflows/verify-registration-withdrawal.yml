@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feature/school-registration-withdrawal
+      - integration/registration-withdrawal
   workflow_dispatch:
 
 jobs:
@@ -40,7 +41,7 @@ jobs:
           mv package-lock.json "$RUNNER_TEMP/replit-package-lock.json"
           npm config set fetch-retries 2
           for n in 1 2; do
-            if npm install --package-lock=false --no-audit --no-fund --loglevel warn; then exit 0; fi
+            if npm install --legacy-peer-deps --package-lock=false --no-audit --no-fund --loglevel warn; then exit 0; fi
             echo "Dependency installation attempt $n failed"
             if [ "$n" = 2 ]; then
               find "$HOME/.npm/_logs" -name '*debug-0.log' -type f -print -exec tail -n 50 {} \; || true
