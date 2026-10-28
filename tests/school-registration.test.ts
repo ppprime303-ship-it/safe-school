@@ -104,6 +104,22 @@ describe("학교 등록 신청 철회", () => {
     expect(await prisma.school.count()).toBe(1);
   });
 
+  it("철회한 동일 사용자가 같은 학교에 다시 신청하고, 과거 이력과 학교 ID가 보존된다", async () => {
+    await searchDirectory(prisma, client, { q: "안전초", kindCode: "02" });
+    const first = await applyForSchoolRegistration(prisma, { userId: userA, externalCode: "S000000001" });
+    await withdrawSchoolRegistration(prisma, { registrationId: first.registration.id, userId: userA });
+    const second = await reapplyForPendingSchool(prisma, { schoolId: first.school.id, userId: userA, applicantPosition: "안전업무 담당" });
+    expect(second.status).toBe("pending_verification");
+    expect(second.id).not.toBe(first.registration.id);
+    expect(second.applicantPosition).toBe("안전업무 담당");
+    expect(await prisma.school.count()).toBe(1);
+    expect((await prisma.schoolRegistration.findUniqueOrThrow({ where: { id: first.registration.id } })).status).toBe("withdrawn");
+    expect((await prisma.schoolMembership.findUniqueOrThrow({ where: { schoolId_userId: { schoolId: first.school.id, userId: userA } } })).status).toBe("pending");
+    await expect(reapplyForPendingSchool(prisma, { schoolId: first.school.id, userId: userA })).rejects.toMatchObject({ code: "registration_pending" });
+    await reviewSchoolRegistration(prisma, { registrationId: second.id, decision: "approve", reviewer: "운영자", verificationMethod: "학교 대표전화 확인" });
+    expect((await prisma.school.findUniqueOrThrow({ where: { id: first.school.id } })).status).toBe("active");
+  });
+
   it("다른 사용자는 철회할 수 없고 이미 철회한 신청은 다시 철회할 수 없다", async () => {
     await searchDirectory(prisma, client, { q: "안전초", kindCode: "02" });
     const first = await applyForSchoolRegistration(prisma, { userId: userA, externalCode: "S000000001" });
