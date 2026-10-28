@@ -41,7 +41,8 @@ describe("최초 학교 등록", () => {
   it("1·2) 학교를 검색해 등록 신청하면 학교알리미 기본정보가 자동으로 채워진다", async () => {
     const search = await searchDirectory(prisma, client, { q: "안 전", kindCode: "02" }); // 공백은 무시
     expect(search.stale).toBe(false);
-    expect(search.results.map((r) => r.name)).toEqual(["안전중앙초등학교", "안전초등학교"]); // 폐교 제외
+    expect(search.results.map((r) => r.name)).toHaveLength(2); // 폐교 제외, DB 로캘에 따른 정렬 순서는 달라질 수 있음
+    expect(new Set(search.results.map((r) => r.name))).toEqual(new Set(["안전중앙초등학교", "안전초등학교"]));
     expect(search.results.every((r) => r.registeredSchool === null)).toBe(true);
 
     const { school, registration, membership } = await applyForSchoolRegistration(prisma, {
