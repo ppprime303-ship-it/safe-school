@@ -1,5 +1,6 @@
 // SAFE SCHOOL 운영자 도구(학교 사용자 화면에는 없음). Replit Shell에서만 실행합니다.
 //
+//   npm run operator -- email-code <가입이메일> (수동 발송 모드, 미인증 가입자만, 관리자 터미널에 한 번 출력)
 //   npm run operator -- list
 //   npm run operator -- approve <신청ID> --by "운영자 이름" --method "공문 확인" [--note "메모"]
 //   npm run operator -- reject  <신청ID> --by "운영자 이름" [--note "사유"]
@@ -12,6 +13,8 @@
 // 관리자 자격 확인 방식(공문, 학교 대표전화 확인 등)은 학교·교육청과 정해야 합니다.
 // 확인 방식이 정해지기 전에는 승인하지 말고 '관리자 승인 대기'로 둡니다.
 import { PrismaClient } from "@prisma/client";
+import { issueEmailCode } from "../server/src/auth/emailCode.js";
+import { MANUAL_CODE_TTL_MS } from "../server/src/mail/mailer.js";
 import { reviewSchoolRegistration } from "../server/src/services/schoolRegistration.js";
 import { endDuty, grantDutyByPlatformOperator, listDuties } from "../server/src/services/duties.js";
 
@@ -24,6 +27,17 @@ function flag(args: string[], name: string): string | undefined {
 
 async function main() {
   const [command, id, ...rest] = process.argv.slice(2);
+  if (command === "email-code" && id) {
+    if (process.env.MAIL_PROVIDER !== "manual") throw new Error("수동 발송 모드에서만 발급할 수 있습니다.");
+    const email = id.trim().toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email }, select: { id: true, email: true, emailVerifiedAt: true, status: true } });
+    if (!user || user.emailVerifiedAt || user.status !== "active") throw new Error("발급 가능한 미인증 가입 계정이 없습니다.");
+    const { code } = await issueEmailCode(prisma, { userId: user.id, purpose: "signup", ttlMs: MANUAL_CODE_TTL_MS });
+    console.log(`[operator] 인증 대상: ${user.email}`);
+    console.log(`[operator] 인증코드 (이번 실행에서만 표시): ${code}`);
+    console.log("[operator] 24시간 유효. 반드시 위 이메일 주소로 직접 전달하세요. 코드를 채팅이나 서버 로그에 남기지 마세요.");
+    return;
+  }
   if (command === "list" || !command) {
     const pending = await prisma.schoolRegistration.findMany({
       where: { status: "pending_verification" },
@@ -76,7 +90,7 @@ async function main() {
     console.log(`[operator] 종료 완료: ${dutyId}`);
     return;
   }
-  console.log("사용법: npm run operator -- list | approve <ID> --by 이름 --method 방법 | reject <ID> --by 이름 | duties <학교ID> | duty-add <소속ID> <직책> --by 이름 [--method 방법] | duty-end <학교ID> <ID> --by 이름 --reason 사유");
+  console.log("사용법: npm run operator -- email-code <가입이메일> | list | approve <ID> --by 이름 --method 방법 | reject <ID> --by 이름 | duties <학교ID> | duty-add <소속ID> <직책> --by 이름 [--method 방법] | duty-end <학교ID> <ID> --by 이름 --reason 사유");
 }
 
 main()
