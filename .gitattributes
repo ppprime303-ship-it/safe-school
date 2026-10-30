@@ -1,2 +1,5 @@
 # 모든 OS에서 LF로 체크아웃(Windows core.autocrlf=true 로 배포 설정·스크립트에 CR이 섞이는 것 방지)
 * text=auto eol=lf
+# Windows 실행 파일은 CRLF 유지(로컬 미리보기 .cmd)
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
