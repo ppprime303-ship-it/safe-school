@@ -197,6 +197,11 @@ export async function revokeMembership(
       where: { membershipId: membership.id, endedAt: null },
       data: { endedAt: new Date(), endedById: params.actorUserId, endReason: "교직원 권한 회수" },
     });
+    // Beta PILOT 2 Phase 1-7: 진행 중 대리 담당 지정도 함께 종료(행은 보존, 상황판에 회수된 사람이 대리 담당으로 남지 않게)
+    const endedDelegations = await tx.eventReportDelegation.updateMany({
+      where: { delegateMembershipId: membership.id, endedAt: null },
+      data: { endedAt: new Date(), endedById: params.actorUserId, endReason: "membership_revoked" },
+    });
     const { count } = await tx.session.deleteMany({ where: { userId: membership.userId } });
     await writeAudit(tx, {
       schoolId: params.schoolId,
@@ -204,7 +209,7 @@ export async function revokeMembership(
       action: "membership.revoked",
       targetType: "membership",
       targetId: membership.id,
-      after: { sessionsInvalidated: count, dutiesEnded: endedDuties.count },
+      after: { sessionsInvalidated: count, dutiesEnded: endedDuties.count, delegationsEnded: endedDelegations.count },
       ip: params.ip,
     });
     return { sessionsInvalidated: count };
