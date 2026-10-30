@@ -253,3 +253,56 @@ export async function renameMember(
     return { membershipId: membership.id, displayName: params.displayName };
   });
 }
+
+// ───────────── Beta PILOT 2 Phase 1-6 학교 관리자 권한 이양 ─────────────
+// - 현재 학교 관리자(role=admin)가 같은 학교의 승인된 활성 교직원 1명에게 관리자 역할을 넘깁니다(교대: 관리자 수는 그대로 → 0명이 되지 않음).
+// - 이양 후 기존 관리자의 역할: 담임 학급 배정이 있으면 '담임교사', 없으면 '교직원'. 승인 상태·학급 배정·직책(교장·교감·안전업무 담당 등)·대리 지정은 그대로.
+// - 대상의 학급 배정·직책도 그대로(관리자가 되어도 학급 보고 권한은 담임 배정·대리 지정으로만 — Phase 1-3).
+// - 학교 단위 잠금 + 트랜잭션 안에서 두 사람의 현재 상태를 다시 확인하므로, 동시에 여러 번 요청해도 한 번만 적용됩니다.
+// - 플랫폼 운영자 권한·교장·교감 직책은 이 기능으로 바뀌지 않습니다. 권한은 요청마다 다시 계산되므로 다음 요청부터 바로 반영됩니다.
+export async function transferAdmin(
+  prisma: PrismaClient,
+  params: { schoolId: string; actorUserId: string; targetMembershipId: string; ip?: string | null },
+) {
+  return prisma.$transaction(async (tx) => {
+    await lockSchoolOperators(tx, params.schoolId); // 동시 이양·회수가 순서대로 처리되게
+    const actor = await tx.schoolMembership.findUnique({
+      where: { schoolId_userId: { schoolId: params.schoolId, userId: params.actorUserId } },
+      select: { id: true, role: true, status: true, assignments: { where: { duty: "homeroom" }, select: { id: true } } },
+    });
+    // 잠금을 얻은 뒤 다시 확인: 같은 요청이 먼저 처리되었으면 이미 관리자가 아님
+    if (!actor || actor.status !== "approved" || actor.role !== "admin") {
+      throw conflict("not_admin_anymore", "이미 관리자 권한이 이양되었거나 관리자가 아닙니다. 화면을 새로 고쳐 확인하세요.");
+    }
+    const target = await tx.schoolMembership.findFirst({
+      where: { id: params.targetMembershipId, schoolId: params.schoolId },
+      select: { id: true, role: true, status: true, userId: true, user: { select: { status: true, emailVerifiedAt: true, displayName: true } } },
+    });
+    if (!target) throw notFound("교직원을 찾을 수 없습니다.");
+    if (target.id === actor.id) throw badRequest("자기 자신에게는 이양할 수 없습니다.");
+    if (target.status !== "approved" || target.user.status !== "active" || !target.user.emailVerifiedAt) {
+      throw conflict("target_not_eligible", "승인된 활성 교직원에게만 이양할 수 있습니다.");
+    }
+    if (target.role === "admin") throw conflict("target_already_admin", "이미 학교 관리자인 교직원입니다.");
+
+    const actorNewRole: MemberRole = actor.assignments.length > 0 ? "homeroom" : "staff";
+    // 조건부 갱신: 확인한 상태 그대로일 때만(둘 다 1건이어야 함, 아니면 트랜잭션 전체 취소)
+    const promoted = await tx.schoolMembership.updateMany({ where: { id: target.id, role: target.role, status: "approved" }, data: { role: "admin" } });
+    const demoted = await tx.schoolMembership.updateMany({ where: { id: actor.id, role: "admin", status: "approved" }, data: { role: actorNewRole } });
+    if (promoted.count !== 1 || demoted.count !== 1) throw conflict("transfer_conflict", "다른 변경과 겹쳤습니다. 화면을 새로 고친 뒤 다시 시도하세요.");
+    const admins = await tx.schoolMembership.count({ where: { schoolId: params.schoolId, role: "admin", status: "approved" } });
+    if (admins === 0) throw conflict("last_admin", "학교 관리자가 0명이 되는 변경은 할 수 없습니다.");
+
+    await writeAudit(tx, {
+      schoolId: params.schoolId,
+      actorUserId: params.actorUserId,
+      action: "membership.admin_transferred",
+      targetType: "membership",
+      targetId: target.id,
+      before: { from: { membershipId: actor.id, role: "admin" }, to: { membershipId: target.id, role: target.role } },
+      after: { from: { membershipId: actor.id, role: actorNewRole }, to: { membershipId: target.id, userId: target.userId, role: "admin" }, adminCount: admins },
+      ip: params.ip,
+    });
+    return { newAdminMembershipId: target.id, newAdminName: target.user.displayName, previousAdminRole: actorNewRole };
+  });
+}

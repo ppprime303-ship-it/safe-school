@@ -49,3 +49,13 @@ describe("성명 정정 권한(members.rename)", () => {
       }
   });
 });
+
+describe("관리자 권한 이양 권한(admin.transfer, Phase 1-6)", () => {
+  it("학교 관리자만 — 앱 운영담당·교장·교감·안전업무 담당은 없음", () => {
+    expect(capabilitiesFor("admin", [])).toContain("admin.transfer");
+    for (const role of ["homeroom", "staff"] as const)
+      for (const duties of [[], ["app_operator"], ["safety_officer"], ["principal"], ["vice_principal"]] as const) {
+        expect(capabilitiesFor(role, duties)).not.toContain("admin.transfer");
+      }
+  });
+});

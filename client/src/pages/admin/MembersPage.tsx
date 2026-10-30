@@ -46,8 +46,10 @@ export function MembersPage({ schoolId }: { schoolId: string }) {
   const [confirmReject, setConfirmReject] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
-  const { usableMemberships } = useSession();
-  const canRename = can(usableMemberships.find((x) => x.school.id === schoolId) ?? null, "members.rename"); // 서버도 매번 검사
+  const { usableMemberships, me, refresh } = useSession();
+  const myMembership = usableMemberships.find((x) => x.school.id === schoolId) ?? null;
+  const canRename = can(myMembership, "members.rename"); // 서버도 매번 검사
+  const canTransfer = can(myMembership, "admin.transfer");
 
   const load = useCallback(async () => {
     try {
@@ -234,6 +236,20 @@ export function MembersPage({ schoolId }: { schoolId: string }) {
               await load();
             }}
           />
+
+          {/* Beta PILOT 2 Phase 1-6 관리자 권한 이양(현재 학교 관리자에게만) */}
+          {canTransfer && (
+            <AdminTransferSection
+              schoolId={schoolId}
+              me={approved.find((m) => m.user.email === me?.user.email) ?? null}
+              candidates={approved.filter((m) => m.role !== "admin" && m.user.email !== me?.user.email)}
+              onDone={async (message) => {
+                setSaveState({ kind: "saved", at: message });
+                await refresh(); // 내 권한이 바뀌었으므로 메뉴·화면 권한을 바로 다시 받음
+                await load().catch(() => undefined);
+              }}
+            />
+          )}
         </div>
       )}
 
@@ -436,5 +452,132 @@ function NameEditor({ schoolId, member, onDone }: { schoolId: string; member: Me
         {error && <p className="mt-2 font-semibold text-danger">{error}</p>}
       </ConfirmDialog>
     </article>
+  );
+}
+
+const ROLE_AFTER_LABEL = (m: Member) => (m.assignments.some((a) => a.duty === "homeroom") ? "담임교사" : "교직원");
+
+/**
+ * Beta PILOT 2 Phase 1-6: 학교 관리자 권한 이양(현재 학교 관리자만 표시 — 서버도 admin.transfer·비밀번호 재확인 검사)
+ * 대상 선택 → 현재·신규 관리자와 바뀌는 결과 확인('이양' 입력) → 필요하면 비밀번호 재확인 → 이양
+ */
+function AdminTransferSection({ schoolId, me, candidates, onDone }: { schoolId: string; me: Member | null; candidates: Member[]; onDone: (message: string) => Promise<void> }) {
+  const [targetId, setTargetId] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [needReauth, setNeedReauth] = useState(false);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const target = candidates.find((m) => m.id === targetId) ?? null;
+
+  const run = async () => {
+    if (!target) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api("POST", `/schools/${schoolId}/admin-transfer`, { targetMembershipId: target.id, confirm: true });
+      setConfirming(false);
+      await onDone(`학교 관리자 권한을 ${target.user.displayName}에게 이양했습니다.`);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "reauth_required") setNeedReauth(true);
+      else {
+        setConfirming(false);
+        setError(describeError(e).message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reauthThenRun = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api("POST", "/auth/reauth", { password });
+      setPassword("");
+      setNeedReauth(false);
+      await run();
+    } catch (e) {
+      setError(describeError(e).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section aria-labelledby="admin-transfer" className="rounded-card border-2 border-warning bg-card p-4 shadow-card">
+      <h2 id="admin-transfer" className="text-xl font-bold">
+        학교 관리자 권한 이양
+      </h2>
+      <p className="mt-1 text-sm text-ink-muted">
+        전보·업무 변경 등으로 관리자를 바꿀 때 씁니다. 같은 학교의 승인된 교직원 1명에게 넘기며, 이양 후 나는 관리자 기능(교직원 승인·발령·성명 정정 등)을 쓸 수 없습니다.
+        교장·교감·안전업무 담당 같은 직책과 담당 학급은 그대로이고, 플랫폼 운영자 권한은 바뀌지 않습니다.
+      </p>
+      <label className="mt-3 block font-bold" htmlFor="admin-transfer-target">
+        새 학교 관리자
+      </label>
+      <select
+        id="admin-transfer-target"
+        value={targetId}
+        onChange={(e) => setTargetId(e.target.value)}
+        className="mt-1 block min-h-touch w-full rounded-control border-2 border-line-strong bg-card px-3 text-base"
+      >
+        <option value="">교직원을 고르세요</option>
+        {candidates.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.user.displayName} ({m.user.email}) · {ROLE_LABEL[m.role]}
+          </option>
+        ))}
+      </select>
+      {candidates.length === 0 && <p className="mt-2 text-sm text-ink-muted">이양할 수 있는 승인된 교직원이 없습니다.</p>}
+      {error && (
+        <p className="mt-3 font-semibold text-danger" role="alert">
+          {error}
+        </p>
+      )}
+      <PrimaryButton className="mt-3" variant="dangerOutline" disabled={!target || busy} onClick={() => setConfirming(true)}>
+        관리자 권한 이양
+      </PrimaryButton>
+
+      <ConfirmDialog
+        open={confirming && !needReauth && target !== null}
+        title="학교 관리자 권한을 이양할까요?"
+        confirmLabel="이양"
+        confirmPhrase="이양"
+        loading={busy}
+        onConfirm={() => void run()}
+        onCancel={() => setConfirming(false)}
+      >
+        {target && (
+          <ul className="space-y-1">
+            <li>
+              현재 관리자(나): <strong>{me?.user.displayName ?? "나"}</strong> → <strong>{me ? ROLE_AFTER_LABEL(me) : "교직원"}</strong>
+            </li>
+            <li>
+              새 관리자: <strong>{target.user.displayName}</strong> ({target.user.email}) · {ROLE_LABEL[target.role]} → <strong>학교 관리자</strong>
+            </li>
+            <li className="text-sm">담당 학급·직책·대리 보고 지정은 두 사람 모두 그대로입니다. 되돌리려면 새 관리자가 다시 이양해야 합니다.</li>
+          </ul>
+        )}
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={needReauth}
+        title="비밀번호를 다시 확인합니다"
+        confirmLabel="확인 후 계속"
+        tone="primary"
+        loading={busy}
+        onConfirm={() => void reauthThenRun()}
+        onCancel={() => {
+          setNeedReauth(false);
+          setConfirming(false);
+        }}
+      >
+        <label className="mt-3 block font-bold" htmlFor="transfer-reauth-pw">
+          비밀번호
+        </label>
+        <input id="transfer-reauth-pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="mt-1 block min-h-touch w-full rounded-control border-2 border-line-strong px-3 text-lg" />
+        {error && <p className="mt-2 font-semibold text-danger">{error}</p>}
+      </ConfirmDialog>
+    </section>
   );
 }

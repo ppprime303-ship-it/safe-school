@@ -240,3 +240,9 @@ export const drillLogUpdateSchema = z.object({
   expectedVersion: z.number().int().min(1),
   refreshAuto: z.boolean().optional(), // 원본 기록이 바뀐 경우 자동 항목 다시 불러오기(교직원 확인 후)
 });
+
+// Beta PILOT 2 Phase 1-6: 학교 관리자 권한 이양(대상 1명, 명시적 확인 필수)
+export const adminTransferSchema = z.object({
+  targetMembershipId: z.string().uuid("이양할 교직원을 고르세요."),
+  confirm: z.literal(true, { errorMap: () => ({ message: "이양 내용을 확인하세요." }) }),
+});

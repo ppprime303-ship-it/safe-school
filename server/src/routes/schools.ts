@@ -17,6 +17,7 @@ import {
   resolveSchoolAccess,
   renameMember,
   revokeMembership,
+  transferAdmin,
   setAssignments,
 } from "../services/membership.js";
 import {
@@ -26,6 +27,7 @@ import {
   refreshGradeClassData,
 } from "../services/publicData.js";
 import {
+  adminTransferSchema,
   applyStructureSchema,
   assignmentsSchema,
   confirmEnrollmentSchema,
@@ -174,6 +176,14 @@ schoolsRouter.put("/schools/:schoolId/members/:membershipId/display-name", requi
   await resolveAccess(prisma, { userId: req.auth!.userId, schoolId, need: "members.rename" });
   const input = parse(renameMemberSchema, req.body);
   res.json(await renameMember(prisma, { schoolId, actorUserId: req.auth!.userId, membershipId: param(req.params.membershipId), ...input, ip: req.ip }));
+});
+
+// Beta PILOT 2 Phase 1-6: 학교 관리자 권한 이양(현재 학교 관리자만 admin.transfer + 비밀번호 재확인)
+schoolsRouter.post("/schools/:schoolId/admin-transfer", requireVerified, requireRecentReauth, async (req, res) => {
+  const schoolId = param(req.params.schoolId);
+  await resolveAccess(prisma, { userId: req.auth!.userId, schoolId, need: "admin.transfer" });
+  const input = parse(adminTransferSchema, req.body);
+  res.json(await transferAdmin(prisma, { schoolId, actorUserId: req.auth!.userId, targetMembershipId: input.targetMembershipId, ip: req.ip }));
 });
 
 // ───────────── 학급(승인된 교직원 조회, 관리자 수정) ─────────────
