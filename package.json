@@ -34,7 +34,8 @@
     "e2e:step3d": "tsx scripts/e2e-step3d.ts",
     "e2e:step3e": "tsx scripts/e2e-step3e.ts",
     "alerts": "tsx scripts/alerts.ts",
-    "judge:setup": "tsx scripts/judge-demo-setup.ts"
+    "judge:setup": "tsx scripts/judge-demo-setup.ts",
+    "preview:setup": "tsx scripts/preview-local.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.10.0",
