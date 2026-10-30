@@ -299,6 +299,91 @@ describe("Beta PILOT 2 — 상황판 열람과 보고 권한 분리", () => {
   });
 });
 
+// Phase 1-2: 직책·업무가 전혀 없는 일반 교직원·담임(테스트 전용 가상 계정, B 학교)
+describe("Beta PILOT 2 — 업무 없는 일반 교직원·담임의 상황판·보고", () => {
+  beforeAll(async () => {
+    const now = new Date();
+    const { passwordHash } = await prisma.user.findFirstOrThrow({ where: { email: plan.accounts[0]!.email } });
+    const make = async (key: string, role: "staff" | "homeroom", ip: string, homeroomOf?: string) => {
+      const user = await prisma.user.create({ data: { email: `${key}@judge.safeschool.invalid`, displayName: `가상 ${key}`, passwordHash, emailVerifiedAt: now } });
+      const m = await prisma.schoolMembership.create({ data: { schoolId: school.b, userId: user.id, role, status: "approved", approvalMethod: "roster", approvedAt: now } });
+      if (homeroomOf) await prisma.classAssignment.create({ data: { membershipId: m.id, classId: classOf[homeroomOf]!, duty: "homeroom" } });
+      ipOf[key] = ip;
+      const res = await fetch(`${base}/api/auth/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": ip },
+        body: JSON.stringify({ email: user.email, password: PASSWORD, deviceKind: "personal" }),
+      });
+      expect(res.status).toBe(200);
+      cookieOf[key] = res.headers.get("set-cookie")!.split(";")[0]!;
+    };
+    await make("plainStaff", "staff", "203.0.113.210");
+    await make("plainTeacher", "homeroom", "203.0.113.211", "b:1-3");
+  });
+
+  const board = async (who: string, eventId: string, schoolKey: K = "b") => {
+    const res = await fetch(`${base}/api${S(schoolKey)}/events/${eventId}/board`, { headers: { cookie: cookieOf[who]!, "x-forwarded-for": ipOf[who]! } });
+    return { status: res.status, body: (await res.json()) as { scope?: string; classes?: { report: Record<string, unknown> | null }[]; summary?: Record<string, unknown> } };
+  };
+  const body = (enrolled: number) => ({ evacuated: enrolled, absentKnown: 0, injured: 0, enrolledCount: enrolled, enrolledChangeReason: null, note: null, expectedVersion: null });
+  const enrolledOf = async (classKey: string) => (await prisma.schoolClass.findUniqueOrThrow({ where: { id: classOf[classKey]! } })).enrolledCount!;
+
+  it("권한 계산: 업무 없는 교직원·담임은 board.view 만(상세·발령 없음)", () => {
+    expect(capabilitiesFor("staff", [])).toEqual(["board.view"]);
+    expect(capabilitiesFor("homeroom", [])).toEqual(["board.view"]);
+  });
+
+  it("일반 교직원·담임: 자기 학교 진행 중 상황판 200 요약, 메모·보고자·부상 없음", async () => {
+    for (const who of ["plainStaff", "plainTeacher"]) {
+      const { status, body: b } = await board(who, activeEvent.b);
+      expect(status).toBe(200);
+      expect(b.scope).toBe("summary");
+      expect(JSON.stringify(b)).not.toContain("학생 이름이 적힌 메모");
+      expect(JSON.stringify(b)).not.toContain("delegat");
+      for (const c of b.classes!) if (c.report) expect(c.report).toMatchObject({ injured: null, note: null, reporterName: null });
+      expect(b.summary).not.toHaveProperty("injured");
+    }
+  });
+
+  it("종료된 상황의 상황판도 요약(상세 항목 없음)", async () => {
+    const closed = await prisma.drillLog.findUniqueOrThrow({ where: { id: drillLog.b } });
+    const { status, body: b } = await board("plainStaff", closed.eventId);
+    expect(status).toBe(200);
+    expect(b.scope).toBe("summary");
+  });
+
+  it("다른 학교 상황판 404", async () => {
+    expect((await board("plainStaff", activeEvent.a, "a")).status).toBe(404);
+  });
+
+  it("담임은 자기 학급 보고 200, 다른 학급 403 / 일반 교직원은 어느 학급도 403", async () => {
+    const own = await req("plainTeacher", "PUT", `${S("b")}/events/${activeEvent.b}/reports/${classOf["b:1-3"]}`, body(await enrolledOf("b:1-3")), { "idempotency-key": randomUUID() });
+    expect(own).toBe(200);
+    const otherClass = await req("plainTeacher", "PUT", `${S("b")}/events/${activeEvent.b}/reports/${classOf["b:1-4"]}`, body(await enrolledOf("b:1-4")), { "idempotency-key": randomUUID() });
+    expect(otherClass).toBe(403);
+    for (const k of ["b:1-3", "b:1-4"]) {
+      const s = await req("plainStaff", "PUT", `${S("b")}/events/${activeEvent.b}/reports/${classOf[k]}`, body(await enrolledOf(k)), { "idempotency-key": randomUUID() });
+      expect(s).toBe(403);
+    }
+    expect(await prisma.evacuationReport.count({ where: { eventId: activeEvent.b, classId: classOf["b:1-4"]! } })).toBe(0);
+  });
+
+  it("일반 교직원은 발령·종료·대리 지정 403", async () => {
+    expect(await req("plainStaff", "POST", `${S("b")}/events`, { primaryType: "fire", mode: "drill" })).toBe(403);
+    expect(await req("plainStaff", "POST", `${S("b")}/events/${activeEvent.b}/close`, {})).toBe(403);
+    expect(await req("plainStaff", "GET", `${S("b")}/events/${activeEvent.b}/classes/${classOf["b:1-4"]}/delegation-suggestions`)).toBe(403);
+  });
+
+  it("발령 정보 수정에 주민등록번호 형태 → 400, 사건 정보 그대로", async () => {
+    const before = await prisma.disasterEvent.findUniqueOrThrow({ where: { id: activeEvent.b } });
+    expect(await req("b2", "PATCH", `${S("b")}/events/${activeEvent.b}`, { message: "김OO 010101-3123456 확인" })).toBe(400);
+    expect(await req("b2", "POST", `${S("b")}/events`, { primaryType: "fire", mode: "drill", evacPlace: "990101-1234567" })).toBe(400);
+    const after = await prisma.disasterEvent.findUniqueOrThrow({ where: { id: activeEvent.b } });
+    expect(after.message).toBe(before.message);
+    expect(await prisma.disasterEvent.count({ where: { schoolId: school.b, status: "active" } })).toBe(1);
+  });
+});
+
 describe("소속 상태", () => {
   it("승인 대기 소속 → 403, 소속 없음 → 404", async () => {
     const now = new Date();

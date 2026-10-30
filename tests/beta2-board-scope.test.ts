@@ -5,6 +5,8 @@
 import { describe, expect, it } from "vitest";
 import { capabilitiesFor, type MemberRole, type StaffDuty } from "../shared/permissions";
 import { restrictBoard, summarize } from "../server/src/services/events";
+import { findPersonalInfo } from "../shared/personalInfo";
+import { addEventTypeSchema, issueEventSchema, updateEventSchema } from "../shared/schemas";
 
 const ROLES: MemberRole[] = ["admin", "homeroom", "staff"];
 const DUTIES: StaffDuty[] = ["principal", "vice_principal", "safety_officer", "app_operator"];
@@ -86,5 +88,39 @@ describe("restrictBoard: 요약 응답에서 민감 항목 제거", () => {
   it("원본 상황판 객체는 바꾸지 않음(상세 응답과 섞이지 않음)", () => {
     expect(board.classes[0]!.report!.note).toBe("홍길동 조퇴, 김OO 화장실");
     expect(board.classes[0]!.delegation).not.toBeNull();
+  });
+
+  it("발령 정보는 정해진 항목만(사건 정보에 새 항목이 생겨도 요약에 섞이지 않음)", () => {
+    const extended = { ...board, event: { ...board.event, createdByName: "발령자 이름", auditNote: "운영 메모" } };
+    const out = JSON.stringify(restrictBoard(extended).event);
+    expect(out).not.toContain("발령자 이름");
+    expect(out).not.toContain("운영 메모");
+    expect(Object.keys(restrictBoard(extended).event).sort()).toEqual(["closedAt", "evacPlace", "id", "location", "message", "mode", "startedAt", "status", "types"]);
+  });
+});
+
+// Phase 1-2: 모든 교직원에게 보이는 발령 자유 입력의 개인정보 입력 방지
+describe("발령 자유 입력: 주민등록번호 형태 거부, 휴대전화번호는 경고", () => {
+  it("findPersonalInfo 판별", () => {
+    expect(findPersonalInfo("010101-3123456 학생 확인")).toEqual(["rrn"]);
+    expect(findPersonalInfo("0101013123456")).toEqual(["rrn"]);
+    expect(findPersonalInfo("행정실 010-1234-5678")).toEqual(["mobile"]);
+    expect(findPersonalInfo("01012345678")).toEqual(["mobile"]);
+    for (const ok of ["운동장으로 대피", "본관 2층 201호", "2026-10-30 10:00 훈련", "내선 1234", "02-123-4567", null, undefined, ""]) expect(findPersonalInfo(ok)).toEqual([]);
+  });
+
+  it("발령·수정·유형 추가 요청에서 주민등록번호 형태는 400 대상(검증 실패)", () => {
+    expect(issueEventSchema.safeParse({ primaryType: "fire", message: "김OO 010101-3123456" }).success).toBe(false);
+    expect(issueEventSchema.safeParse({ primaryType: "fire", evacPlace: "990101-1234567" }).success).toBe(false);
+    expect(issueEventSchema.safeParse({ primaryType: "fire", location: "0101013123456" }).success).toBe(false);
+    expect(updateEventSchema.safeParse({ message: "010101-4123456" }).success).toBe(false);
+    expect(addEventTypeSchema.safeParse({ type: "earthquake", note: "010101-3123456" }).success).toBe(false);
+  });
+
+  it("일반 문구·휴대전화번호·빈 값은 통과(기존 발령 요청 호환)", () => {
+    expect(issueEventSchema.safeParse({ primaryType: "fire", mode: "drill", evacPlace: "운동장", message: "행정실 010-1234-5678로 연락" }).success).toBe(true);
+    expect(issueEventSchema.safeParse({ primaryType: "fire" }).success).toBe(true);
+    expect(issueEventSchema.safeParse({ primaryType: "fire", location: null, evacPlace: null, message: null }).success).toBe(true);
+    expect(updateEventSchema.safeParse({ evacPlace: "강당" }).success).toBe(true);
   });
 });

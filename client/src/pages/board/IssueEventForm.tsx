@@ -3,6 +3,7 @@
 // - 공식 경보를 받았다고 자동 발령하지 않습니다. 발령은 학교장(관리자)의 판단입니다.
 import { useState } from "react";
 import { DISASTER_TYPES, type DisasterTypeKey } from "@shared/constants";
+import { FREE_TEXT_PRIVACY_HINT, MOBILE_WARNING, RRN_REJECT_MESSAGE, findPersonalInfo } from "@shared/personalInfo";
 import { api, ApiError } from "../../lib/api";
 import type { ActiveEvent, EventMode } from "../../lib/disaster";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -11,11 +12,20 @@ import { PrimaryButton } from "../../components/ui/PrimaryButton";
 
 const TYPE_KEYS = Object.keys(DISASTER_TYPES) as DisasterTypeKey[];
 
+/** 주민등록번호 형태는 입력 오류(서버도 거부), 휴대전화번호는 경고만 */
+function privacyIssue(text: string): string | null {
+  const found = findPersonalInfo(text);
+  if (found.includes("rrn")) return RRN_REJECT_MESSAGE;
+  if (found.includes("mobile")) return MOBILE_WARNING;
+  return null;
+}
+
 export function IssueEventForm({ schoolId, onIssued }: { schoolId: string; onIssued: () => void }) {
   const [type, setType] = useState<DisasterTypeKey | null>(null);
   const [mode, setMode] = useState<EventMode>("drill");
   const [evacPlace, setEvacPlace] = useState("");
   const [message, setMessage] = useState("");
+  const hasRrn = [evacPlace, message].some((t) => findPersonalInfo(t).includes("rrn"));
   const [confirming, setConfirming] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,8 +100,26 @@ export function IssueEventForm({ schoolId, onIssued }: { schoolId: string; onIss
         </div>
       </fieldset>
 
-      <FormField className="mt-4" label="대피 장소" hint="예: 운동장, 강당(선택)" maxLength={100} value={evacPlace} onChange={(e) => setEvacPlace(e.target.value)} />
-      <FormField className="mt-3" label="교직원 안내" hint="짧게 적으세요(선택). 학생 이름은 적지 마세요." maxLength={500} value={message} onChange={(e) => setMessage(e.target.value)} />
+      {/* Beta PILOT 2: 발령 정보는 모든 교직원 상황판에 보임 — 개인정보 입력 방지 안내(주민등록번호 형태는 서버도 거부) */}
+      <p className="mt-4 text-sm font-semibold text-ink-muted">{FREE_TEXT_PRIVACY_HINT}</p>
+      <FormField
+        className="mt-2"
+        label="대피 장소"
+        hint="예: 운동장, 강당(선택)"
+        maxLength={100}
+        value={evacPlace}
+        error={privacyIssue(evacPlace)}
+        onChange={(e) => setEvacPlace(e.target.value)}
+      />
+      <FormField
+        className="mt-3"
+        label="교직원 안내"
+        hint="짧게 적으세요(선택). 학생 이름은 적지 마세요."
+        maxLength={500}
+        value={message}
+        error={privacyIssue(message)}
+        onChange={(e) => setMessage(e.target.value)}
+      />
 
       {error && !confirming && <p className="mt-3 font-semibold text-danger" role="alert">{error}</p>}
       <PrimaryButton
@@ -99,7 +127,7 @@ export function IssueEventForm({ schoolId, onIssued }: { schoolId: string; onIss
         size="xl"
         fullWidth
         variant={mode === "real" ? "danger" : "primary"}
-        disabled={!type}
+        disabled={!type || hasRrn}
         onClick={() => setConfirming(true)}
       >
         {mode === "real" ? "실제 상황 발령" : "훈련 발령"}

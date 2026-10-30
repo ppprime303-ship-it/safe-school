@@ -419,9 +419,11 @@ export async function getBoard(prisma: PrismaClient, params: { schoolId: string;
 export function restrictBoard(board: Awaited<ReturnType<typeof getBoard>>) {
   const full = summarize(board.classes);
   const { injured: _injured, ...summary } = full;
+  const e = board.event;
   return {
     scope: "summary" as const,
-    event: board.event,
+    // 발령 정보도 항목을 하나씩 골라 보냄(나중에 사건 정보에 항목이 늘어도 요약에 저절로 섞이지 않게)
+    event: { id: e.id, mode: e.mode, status: e.status, types: e.types, location: e.location, evacPlace: e.evacPlace, message: e.message, startedAt: e.startedAt, closedAt: e.closedAt },
     serverTime: board.serverTime,
     classes: board.classes.map((c) => ({
       classId: c.classId,

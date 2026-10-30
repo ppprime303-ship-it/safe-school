@@ -1,6 +1,7 @@
 // 화면·서버 공통 입력 검증 규칙(zod)
 import { z } from "zod";
 import { POSITIONS, REQUESTED_DUTIES, type RequestedDuty, type RequestedPosition } from "./joinRequest.js";
+import { findPersonalInfo, RRN_REJECT_MESSAGE } from "./personalInfo.js";
 
 export const emailSchema = z
   .string()
@@ -94,20 +95,22 @@ export const confirmEnrollmentSchema = z.object({
 // ───────────── STEP 3-A 재난 발령·보고 ─────────────
 const disasterTypeEnum = z.enum(["fire", "earthquake", "storm_flood", "heatwave", "fine_dust", "gas_leak", "intruder", "other"]);
 const optionalText = (max: number) => z.string().trim().max(max).nullable().optional();
+// Beta PILOT 2: 발령 정보는 모든 교직원 상황판에 보이므로 주민등록번호 형태는 거부(shared/personalInfo.ts)
+const eventText = (max: number) => optionalText(max).refine((v) => !findPersonalInfo(v).includes("rrn"), RRN_REJECT_MESSAGE);
 
 export const issueEventSchema = z.object({
   primaryType: disasterTypeEnum,
   mode: z.enum(["real", "drill"]).default("drill"),
-  location: optionalText(100),
-  evacPlace: optionalText(100),
-  message: optionalText(500),
+  location: eventText(100),
+  evacPlace: eventText(100),
+  message: eventText(500),
   confirmReal: z.boolean().optional(),
 });
 
-export const addEventTypeSchema = z.object({ type: disasterTypeEnum, note: optionalText(200) });
+export const addEventTypeSchema = z.object({ type: disasterTypeEnum, note: eventText(200) });
 
 export const updateEventSchema = z
-  .object({ location: optionalText(100), evacPlace: optionalText(100), message: optionalText(500) })
+  .object({ location: eventText(100), evacPlace: eventText(100), message: eventText(500) })
   .refine((v) => v.location !== undefined || v.evacPlace !== undefined || v.message !== undefined, "바꿀 항목이 없습니다.");
 
 const headcount = z.number().int().min(0).max(60); // DB 제약(학급 재적 60명 이하)과 같음
