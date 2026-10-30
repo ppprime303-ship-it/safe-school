@@ -307,7 +307,8 @@ describe("Beta PILOT 2 — 업무 없는 일반 교직원·담임의 상황판·
     const now = new Date();
     const { passwordHash } = await prisma.user.findFirstOrThrow({ where: { email: plan.accounts[0]!.email } });
     const make = async (key: string, role: "staff" | "homeroom", ip: string, homeroomOf?: string) => {
-      const user = await prisma.user.create({ data: { email: `${key}@judge.safeschool.invalid`, displayName: `가상 ${key}`, passwordHash, emailVerifiedAt: now } });
+      // 이메일은 소문자만 저장(DB CHECK users_email_lowercase) — 계정 키(plainStaff 등)를 소문자로 바꿔 씀
+      const user = await prisma.user.create({ data: { email: `${key.toLowerCase()}@judge.safeschool.invalid`, displayName: `가상 ${key}`, passwordHash, emailVerifiedAt: now } });
       const m = await prisma.schoolMembership.create({ data: { schoolId: school.b, userId: user.id, role, status: "approved", approvalMethod: "roster", approvedAt: now } });
       if (homeroomOf) await prisma.classAssignment.create({ data: { membershipId: m.id, classId: classOf[homeroomOf]!, duty: "homeroom" } });
       ipOf[key] = ip;
