@@ -12,6 +12,7 @@ import {
   DRILL_FORM_KEY,
   REAL_FORM_KEY,
   formKeyFor,
+  markDraft,
   maskPersonal,
   scanDocPrivacy,
   type DrillIncidentSnap,
@@ -326,12 +327,6 @@ export async function getDrillLog(db: Db, params: { schoolId: string; logId: str
 async function privacyIssuesOf(db: Db, schoolId: string, snap: DrillSnapshot, manual: DrillManual, mode: "drill" | "real") {
   const names = (await db.schoolMembership.findMany({ where: { schoolId }, select: { user: { select: { displayName: true } } } })).map((m) => m.user.displayName);
   return scanDocPrivacy(buildDrillDoc(snap, manual), names, { checkNames: mode === "real" });
-}
-
-/** 작성 중 초안 표시(최종본이 아닌 출력) — 본문 부제에 덧붙임 */
-export function markDraft<T extends { pages: { subtitle: string }[] }>(doc: T): T {
-  const [first, ...rest] = doc.pages;
-  return first ? ({ ...doc, pages: [{ ...first, subtitle: `${first.subtitle} · 작성 중 초안(최종본 아님)` }, ...rest] } as T) : doc;
 }
 
 export async function updateDrillLog(
