@@ -146,6 +146,10 @@ function guardError(error: unknown): never {
   if (text.includes("판 번호")) throw conflict("version_conflict", "다른 담당자가 먼저 저장했습니다. 최신 내용을 확인하세요.");
   if (text.includes("실제 재난")) throw conflict("not_drill", "실제 재난 대응 기록에는 훈련일지를 만들 수 없습니다.");
   if (text.includes("종료된 훈련")) throw conflict("event_not_closed", "종료된 훈련에만 훈련일지를 만들 수 있습니다.");
+  // Phase 4 마이그레이션 20261101000000_disaster_reports 의 DB 검사
+  if (text.includes("서식이 사건 구분")) throw conflict("form_mismatch", "보고서 서식이 사건 구분(모의훈련·실제 재난)과 맞지 않습니다.");
+  if (text.includes("사건이 종료된 뒤에")) throw conflict("event_not_closed", "사건이 종료된 뒤에 보고서를 완료할 수 있습니다.");
+  if (text.includes("종료 뒤에 자동 기록")) throw conflict("refresh_required", "종료 뒤에 자동 기록을 다시 불러온 다음 완료하세요.");
   throw error;
 }
 

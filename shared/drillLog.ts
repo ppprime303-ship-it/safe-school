@@ -11,6 +11,36 @@
 
 export const DRILL_FORM_KEY = "evacuation_drill";
 export const DRILL_FORM_VERSION = 1;
+/** Beta PILOT 2 Phase 4: 실제 재난 '재난대피 상황보고서'(같은 배치, 사건 mode 로 서식 결정) */
+export const REAL_FORM_KEY = "disaster_real";
+export const formKeyFor = (mode: "drill" | "real") => (mode === "real" ? REAL_FORM_KEY : DRILL_FORM_KEY);
+
+/** Phase 4: 현장 제보·조치(제보자 이름 없음, 자유 기재는 개인정보를 가린 요약) */
+export interface DrillIncidentSnap {
+  no: number;
+  typeLabel: string;
+  placeLabel: string;
+  createdAt: string;
+  statusLabel: string;
+  updateCount: number;
+  actionCount: number;
+  summary: string; // 가린 설명(최대 60자)
+  lastAction: string | null; // 가린 최근 조치 기록(최대 40자)
+}
+
+/** Phase 4: 실제 재난 교직원 소재 익명 집계(Phase 2 summarizePresence 형식 — 이름·위치·명단 없음) */
+export interface DrillPresenceSnap {
+  targetCount: number;
+  respondedCount: number;
+  notRespondedCount: number;
+  onCampus: number;
+  offCampus: number;
+  available: number;
+  unavailable: number;
+  unsure: number;
+  alertsRead: number;
+  latestRespondedAt: string | null;
+}
 
 export interface DrillClassSnap {
   classId: string;
@@ -48,6 +78,12 @@ export interface DrillSnapshot {
     closedByName: string | null;
   };
   classes: DrillClassSnap[];
+  /** Phase 4(새 스냅숏만): 현장 제보·조치. 없으면 이전 서식 그대로(붙임 1개) */
+  incidents?: DrillIncidentSnap[];
+  /** Phase 4: 실제 재난만 — 교직원 소재 익명 집계. 모의훈련은 항상 없음 */
+  presence?: DrillPresenceSnap | null;
+  /** Phase 4: 자유 기재에서 가린 개인정보 건수(전화번호·주민등록번호 형태, 교직원 이름) */
+  maskedCount?: number;
 }
 
 export type OX = "" | "O" | "X";
@@ -182,7 +218,47 @@ export function autoEvacSentence(ev: DrillSnapshot["event"]): string {
 
 export function docTitle(s: DrillSnapshot): string {
   const types = [s.event.typeLabel, ...s.event.extraTypeLabels].join("·");
-  return `비상대피훈련일지(${types})`;
+  // Phase 4: 실제 재난은 같은 배치의 '재난대피 상황보고서'. 모의훈련은 승인 서식 제목 그대로
+  return s.event.mode === "real" ? `재난대피 상황보고서(${types})` : `비상대피훈련일지(${types})`;
+}
+
+// ───────────── Phase 4 개인정보 가림·검사 ─────────────
+const RRN_RE = /(?<!\d)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\s?-?\s?[1-8]\d{6}(?!\d)/g;
+const MOBILE_RE = /(?<!\d)01[016789][\s.-]?\d{3,4}[\s.-]?\d{4}(?!\d)/g;
+const PHONE_RE = /(?<!\d)0\d{1,2}[\s.-]\d{3,4}[\s.-]\d{4}(?!\d)/g;
+export const MASK = "○○○";
+
+/** 자유 기재 가리기: 주민등록번호·전화번호 형태와 학교 교직원 이름(2자 이상). 가린 개수도 돌려줌 */
+export function maskPersonal(text: string, staffNames: readonly string[]): { text: string; masked: number } {
+  let masked = 0;
+  let out = text;
+  for (const re of [RRN_RE, MOBILE_RE, PHONE_RE]) out = out.replace(re, () => (masked++, MASK));
+  const names = [...new Set(staffNames.map((n) => n.trim()).filter((n) => n.length >= 2))].sort((a, b) => b.length - a.length);
+  for (const n of names) {
+    const parts = out.split(n);
+    if (parts.length > 1) {
+      masked += parts.length - 1;
+      out = parts.join(MASK);
+    }
+  }
+  return { text: out, masked };
+}
+
+/**
+ * 출력 문서 개인정보 검사(완료·내려받기 전 서버, 화면 미리보기 공통): 문서 모든 칸·제목·주석에서
+ * - 주민등록번호·전화번호 형태(모든 서식)
+ * - 교직원 이름: 실제 재난 상황보고서만(checkNames). 모의훈련 일지는 승인 서식상 '역할담당 담당자'에 이름을 적으므로 검사하지 않음
+ */
+export function scanDocPrivacy(doc: DrillDoc, staffNames: readonly string[], opts: { checkNames: boolean }): string[] {
+  const issues: string[] = [];
+  const names = staffNames.map((n) => n.trim()).filter((n) => n.length >= 2);
+  const texts = doc.pages.flatMap((p, pi) => [p.title, p.subtitle, p.footnote ?? "", ...p.table.cells.map((c) => c.text)].map((t) => ({ pi, t })));
+  for (const { pi, t } of texts) {
+    if (new RegExp(RRN_RE.source).test(t)) issues.push(`쪽 ${pi + 1}: 주민등록번호 형태`);
+    if (new RegExp(MOBILE_RE.source).test(t) || new RegExp(PHONE_RE.source).test(t)) issues.push(`쪽 ${pi + 1}: 전화번호 형태`);
+    if (opts.checkNames) for (const n of names) if (t.includes(n)) issues.push(`쪽 ${pi + 1}: 교직원 이름`);
+  }
+  return [...new Set(issues)];
 }
 
 // ───────────── 배치(레이아웃) ─────────────
@@ -253,6 +329,12 @@ const clean = (t: string, max = 2000) =>
 export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDoc {
   const ev = snap.event;
   const mode = ev.mode === "drill" ? "모의훈련" : "실제 상황";
+  // Phase 4: 실제 재난은 같은 칸·같은 순서에 표제어만 바꿈. 새 스냅숏(v2)만 붙임 2·3과 집계 기준 주석이 붙음(이전 저장본은 그대로)
+  const real = ev.mode === "real";
+  const v2 = snap.incidents !== undefined;
+  const W = real
+    ? { people: "인원현황", student: "학생 재실", total: "총 인원", band: "대    응    내    용", overview: "상황 개요", evals: "대응 평가", improve: "문제점 및\n향후 조치 사항" }
+    : { people: "참가인원", student: "학생 참가", total: "총 참가", band: "훈    련    내    용", overview: "훈련 개요", evals: "평    가", improve: "추후 대피훈련 시\n반영사항" };
   const sum = summarizeClasses(snap.classes);
   const t = new TB();
   const LBL = { kind: "label" as const, bold: true };
@@ -266,11 +348,11 @@ export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDo
   const BLANK = "(        )명";
   const HEAD = { kind: "head" as const, bold: true };
   r = t.row(ROW_H);
-  t.put(r, 0, "참가인원", { ...LBL, rs: 2 });
+  t.put(r, 0, W.people, { ...LBL, rs: 2 });
   t.put(r, 1, "교직원", HEAD);
-  t.put(r, 2, "학생 참가", { ...HEAD, cs: 2 });
+  t.put(r, 2, W.student, { ...HEAD, cs: 2 });
   t.put(r, 4, "학생 대피 확인", { ...HEAD, cs: 2 });
-  t.put(r, 6, "총 참가", HEAD);
+  t.put(r, 6, W.total, HEAD);
   r = t.row(ROW_H);
   const evacMark = pc.unreported.length > 0 || pc.unconfirmed > 0 ? " ※" : "";
   t.put(r, 1, pc.staff !== null ? `${pc.staff}명` : BLANK);
@@ -290,10 +372,10 @@ export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDo
   }
 
   r = t.row(7.0);
-  t.put(r, 0, "훈    련    내    용", { cs: 7, kind: "band", bold: true });
+  t.put(r, 0, W.band, { cs: 7, kind: "band", bold: true });
 
   r = t.row(12.0);
-  t.put(r, 0, "훈련 개요", LBL);
+  t.put(r, 0, W.overview, LBL);
   t.put(r, 1, clean(manual.trainingNote, 300), { cs: 6, align: "L" });
 
   r = t.row(11.0);
@@ -306,7 +388,7 @@ export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDo
 
   const evals = manual.evals.length ? manual.evals : DEFAULT_EVALS.map((item) => ({ item, result: "" as OX, note: "" }));
   r = t.row(10.0);
-  t.put(r, 0, "평    가", { ...LBL, rs: evals.length + 1 });
+  t.put(r, 0, W.evals, { ...LBL, rs: evals.length + 1 });
   t.put(r, 1, "평가내용", { cs: 3, kind: "head", bold: true });
   t.put(r, 4, "평가결과\n(O, X)", { kind: "head", bold: true });
   t.put(r, 5, "비    고", { cs: 2, kind: "head", bold: true });
@@ -318,7 +400,7 @@ export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDo
   }
 
   const improveRow = t.row(30.0);
-  t.put(improveRow, 0, "추후 대피훈련 시\n반영사항", LBL);
+  t.put(improveRow, 0, W.improve, LBL);
   t.put(improveRow, 1, clean(manual.improvements, 1000), { cs: 6, align: "L", valign: "T" });
 
   const photoRow = t.row(40.0);
@@ -335,10 +417,14 @@ export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDo
     if (pc.unconfirmed) parts.push(`소재 미확인 ${pc.unconfirmed}명 별도`);
     notes.push(`※ 학생 대피 확인: ${parts.join(", ")}.`);
   }
-  if (pc.totalSource === "none") notes.push(`※ 총 참가: ${pc.missing.join("·")} 인원 확인 후 기입(미확인 값을 0으로 채우지 않음).`);
-  else if (pc.totalSource === "auto") notes.push("※ 총 참가 = 교직원 + 학생 참가(담당자 확인 값의 합).");
+  if (pc.totalSource === "none") notes.push(`※ ${W.total}: ${pc.missing.join("·")} 인원 확인 후 기입(미확인 값을 0으로 채우지 않음).`);
+  else if (pc.totalSource === "auto") notes.push(`※ ${W.total} = 교직원 + ${W.student}(담당자 확인 값의 합).`);
   if (ev.closedAt) notes.push(`※ ${TIME_BASIS_SHORT}`);
-  notes.push("붙임  학급별 대피 현황 1부.");
+  if (v2) {
+    if (!ev.closedAt) notes.push("※ 진행 중 기록(최종본 아님) — 종료 후 '다시 불러오기'로 확정하세요.");
+    notes.push(`※ 집계 기준 시각 ${kstStamp(snap.takenAt)}${ev.closedAt ? ` (사건 종료 ${kstStamp(ev.closedAt)})` : ""}.`);
+    notes.push(real ? "붙임  1. 학급별 대피 현황  2. 현장 제보·조치 현황  3. 교직원 소재 응답 통계(익명) 각 1부." : "붙임  1. 학급별 대피 현황  2. 현장 제보·조치 현황 각 1부.");
+  } else notes.push("붙임  학급별 대피 현황 1부.");
   const footnote = notes.join("\n");
 
   // 쪽 높이를 넘으면 사진 칸(30mm까지) → 반영사항 칸(22mm까지) → 사진 칸(24mm까지) 순서로 줄임(그래도 넘으면 한글에서 다음 쪽으로 이어짐)
@@ -389,7 +475,7 @@ export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDo
     const pageNo = chunks.length > 1 ? ` (${pi + 1}/${chunks.length})` : "";
     const last = pi === chunks.length - 1;
     pages.push({
-      title: `붙임. 학급별 대피 현황${pageNo}`,
+      title: `${v2 ? "붙임 1." : "붙임."} 학급별 대피 현황${pageNo}`,
       titleKind: "appendix",
       // 부제는 한 줄로(학교명 · 훈련일 · 구분 · 기록 시점) — 줄바꿈으로 제목과 표 사이가 벌어지지 않게
       subtitle: `${snap.schoolName} · ${dateText(ev.startedAt)} ${mode} · 시스템 대피 보고 기준(기록 시점 ${kstStamp(snap.takenAt)})`,
@@ -399,7 +485,79 @@ export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDo
         : "※ 다음 쪽에 이어집니다.",
     });
   });
+  if (v2) pages.push(...incidentPages(snap, mode));
+  if (v2 && real) pages.push(presencePage(snap, mode)); // 모의훈련에는 소재 붙임을 절대 만들지 않음
   return { pages };
+}
+
+/** 붙임 2. 현장 제보·조치 현황(제보자 이름 없음, 자유 기재는 가린 요약). 쪽마다 머리글 반복 */
+export const INCIDENT_COLS = [6.0, 11.0, 17.0, 10.0, 11.0, 9.0, 36.0];
+export const INCIDENT_ROWS_PER_PAGE = 16;
+const INCIDENT_ROW_H = 12.0;
+function incidentPages(snap: DrillSnapshot, mode: string): LPage[] {
+  const list = snap.incidents ?? [];
+  const chunks: DrillIncidentSnap[][] = [];
+  for (let i = 0; i < Math.max(list.length, 1); i += INCIDENT_ROWS_PER_PAGE) chunks.push(list.slice(i, i + INCIDENT_ROWS_PER_PAGE));
+  return chunks.map((chunk, pi) => {
+    const a = new TB();
+    const hr = a.row(ROW_H);
+    ["번호", "유형", "장소", "접수 시각", "처리 상태", "추가·조치", "제보 내용·최근 조치(요약)"].forEach((h, i) => a.put(hr, i, h, { kind: "head", bold: true }));
+    if (chunk.length === 0) {
+      const rr = a.row(ROW_H);
+      a.put(rr, 0, "현장 제보 없음", { cs: 7 });
+    }
+    for (const it of chunk) {
+      const rr = a.row(INCIDENT_ROW_H);
+      a.put(rr, 0, String(it.no));
+      a.put(rr, 1, clean(it.typeLabel, 20));
+      a.put(rr, 2, clean(it.placeLabel, 50));
+      a.put(rr, 3, hhmm(kst(it.createdAt)));
+      a.put(rr, 4, clean(it.statusLabel, 20), { bold: it.statusLabel !== "조치 완료" });
+      a.put(rr, 5, `${it.updateCount}건 / ${it.actionCount}건`);
+      a.put(rr, 6, clean(it.lastAction ? `${it.summary}\n└ 조치: ${it.lastAction}` : it.summary, 120), { align: "L" });
+    }
+    const pageNo = chunks.length > 1 ? ` (${pi + 1}/${chunks.length})` : "";
+    const last = pi === chunks.length - 1;
+    return {
+      title: `붙임 2. 현장 제보·조치 현황${pageNo}`,
+      titleKind: "appendix" as const,
+      subtitle: `${snap.schoolName} · ${dateText(snap.event.startedAt)} ${mode} · 제보 ${list.length}건(기록 시점 ${kstStamp(snap.takenAt)})`,
+      table: { colPct: INCIDENT_COLS, rowsMm: a.rowsMm, cells: a.cells, headerRows: 1 },
+      footnote: last
+        ? "※ 제보자 이름은 싣지 않습니다. 자유 기재 내용은 전화번호·주민등록번호 형태와 교직원 이름을 '○○○'으로 가렸습니다(학생 이름 등은 자동으로 모두 가릴 수 없으니 출력 전 확인).\n※ 추가·조치 = 추가 정보 건수 / 그중 조치 기록 건수. 처리 상태는 기록 시점 기준입니다."
+        : "※ 다음 쪽에 이어집니다.",
+    };
+  });
+}
+
+/** 붙임 3. 교직원 소재 응답 통계(실제 재난만, 익명 집계 — 이름·위치·명단 없음) */
+export const PRESENCE_COLS = [25.0, 25.0, 25.0, 25.0];
+function presencePage(snap: DrillSnapshot, mode: string): LPage {
+  const p = snap.presence ?? null;
+  const a = new TB();
+  const n = (v: number | undefined) => (p ? `${v ?? 0}명` : "—");
+  const rows: [string, string, string, string][] = [
+    ["집계 대상 교직원", n(p?.targetCount), "응답", n(p?.respondedCount)],
+    ["미응답(추정 안 함)", n(p?.notRespondedCount), "앱 알림 확인", n(p?.alertsRead)],
+    ["교내", n(p?.onCampus), "교외", n(p?.offCampus)],
+    ["대피 지원 가능", n(p?.available), "지원 불가", n(p?.unavailable)],
+    ["확인 필요", n(p?.unsure), "최근 응답 시각", p?.latestRespondedAt ? kstStamp(p.latestRespondedAt) : "응답 없음"],
+  ];
+  for (const [l1, v1, l2, vv] of rows) {
+    const r = a.row(ROW_H + 1);
+    a.put(r, 0, l1, { kind: "label", bold: true });
+    a.put(r, 1, v1, { bold: true });
+    a.put(r, 2, l2, { kind: "label", bold: true });
+    a.put(r, 3, vv, { bold: true });
+  }
+  return {
+    title: "붙임 3. 교직원 소재 응답 통계(익명 집계)",
+    titleKind: "appendix",
+    subtitle: `${snap.schoolName} · ${dateText(snap.event.startedAt)} ${mode} · 기록 시점 ${kstStamp(snap.takenAt)}`,
+    table: { colPct: PRESENCE_COLS, rowsMm: a.rowsMm, cells: a.cells },
+    footnote:
+      "※ 개인별 이름·소재·교내 위치·변경 이력·미응답자 명단은 싣지 않습니다(숫자 집계만).\n※ 미응답 = 집계 대상 − 응답이며 교외·안전으로 추정하지 않습니다. 교내+교외 = 응답, 지원 가능+불가+확인 필요 = 응답.\n※ 집계 대상: 사건 알림을 받은 교직원 중 기록 시점에 승인·활성인 교직원. 알림 확인은 안전 확인이 아닙니다.",
+  };
 }
 
 function kstStamp(iso: string) {
