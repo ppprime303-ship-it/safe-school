@@ -603,5 +603,12 @@ export function diffSnapshots(saved: DrillSnapshot, current: DrillSnapshot): str
   for (const o of saved.classes) if (!current.classes.some((c) => c.classId === o.classId)) out.push(`${o.label}: 지금은 목록에 없음`);
   if (saved.event.evacPlace !== current.event.evacPlace) out.push(`대피 장소 기록 변경: ${saved.event.evacPlace ?? "없음"} → ${current.event.evacPlace ?? "없음"}`);
   if (saved.schoolName !== current.schoolName) out.push(`학교명 변경: ${saved.schoolName} → ${current.schoolName}`);
+  // Phase 4(새 스냅숏만): 현장 제보·조치, 실제 재난 소재 익명 집계가 바뀌었는지
+  if (saved.incidents !== undefined) {
+    if (stableKey(saved.incidents) !== stableKey(current.incidents ?? [])) out.push(`현장 제보·조치 기록이 바뀜(제보 ${saved.incidents.length}건 → ${(current.incidents ?? []).length}건)`);
+    if (saved.event.mode === "real" && stableKey(saved.presence ?? null) !== stableKey(current.presence ?? null)) out.push("교직원 소재 응답 집계가 바뀜");
+  }
   return out;
 }
+
+const stableKey = (v: unknown): string => JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x));

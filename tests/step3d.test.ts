@@ -263,22 +263,28 @@ const save = (logId: string, expectedVersion: number, manual: DrillManual, by = 
   updateDrillLog(prisma, { schoolId: A, logId, actorUserId: U[by]!, manual, status, expectedVersion, refreshAuto });
 
 describe("훈련일지 만들기", () => {
-  it("종료된 모의훈련만, 진행 중·실제 상황은 409, 이벤트당 1건(다시 요청·동시 요청은 같은 일지)", async () => {
+  // Beta PILOT 2 Phase 4: 진행 중에도 '작성 중'으로 만들 수 있고(완료는 종료 후), 실제 재난은 같은 표에 '재난대피 상황보고서' 서식으로 만들어짐
+  it("진행 중 사건은 작성 중으로 생성(완료 409), 실제 재난은 상황보고서 서식, 이벤트당 1건(다시 요청·동시 요청은 같은 보고서)", async () => {
     await editor();
-    const active = await issueEvent(prisma, { schoolId: A, actorUserId: U.admin!, primaryType: "fire", mode: "drill" });
-    await expect(createDrillLog(prisma, { schoolId: A, eventId: active.id, actorUserId: U.safety1! })).rejects.toMatchObject({ status: 409, code: "event_not_closed" });
-    await closeEvent(prisma, { schoolId: A, eventId: active.id, actorUserId: U.admin! });
-    const real = await issueEvent(prisma, { schoolId: A, actorUserId: U.admin!, primaryType: "fire", mode: "real", confirmReal: true });
-    await closeEvent(prisma, { schoolId: A, eventId: real.id, actorUserId: U.admin!, confirmClose: true });
-    await expect(createDrillLog(prisma, { schoolId: A, eventId: real.id, actorUserId: U.safety1! })).rejects.toMatchObject({ status: 409, code: "not_drill" });
+    const drill = await issueEvent(prisma, { schoolId: A, actorUserId: U.admin!, primaryType: "fire", mode: "drill" });
     const [a, b] = await Promise.all([
-      createDrillLog(prisma, { schoolId: A, eventId: active.id, actorUserId: U.safety1! }),
-      createDrillLog(prisma, { schoolId: A, eventId: active.id, actorUserId: U.safety2! }),
+      createDrillLog(prisma, { schoolId: A, eventId: drill.id, actorUserId: U.safety1! }),
+      createDrillLog(prisma, { schoolId: A, eventId: drill.id, actorUserId: U.safety2! }),
     ]);
     expect(a.id).toBe(b.id);
     expect([a.created, b.created].sort()).toEqual([false, true]);
     expect(await prisma.drillLog.count()).toBe(1);
-    await expect(createDrillLog(prisma, { schoolId: B, eventId: active.id, actorUserId: U.adminB! })).rejects.toMatchObject({ status: 404 });
+    expect((await prisma.drillLog.findUniqueOrThrow({ where: { id: a.id } })).formKey).toBe("evacuation_drill");
+    await expect(save(a.id, 1, defaultManual(), "safety1", "completed")).rejects.toMatchObject({ status: 409, code: "event_not_closed" });
+    await closeEvent(prisma, { schoolId: A, eventId: drill.id, actorUserId: U.admin! });
+    await expect(save(a.id, 1, defaultManual(), "safety1", "completed")).rejects.toMatchObject({ status: 409, code: "refresh_required" });
+    expect(await save(a.id, 1, defaultManual(), "safety1", "completed", true)).toMatchObject({ version: 2, changed: true });
+
+    const real = await issueEvent(prisma, { schoolId: A, actorUserId: U.admin!, primaryType: "fire", mode: "real", confirmReal: true });
+    await closeEvent(prisma, { schoolId: A, eventId: real.id, actorUserId: U.admin!, confirmClose: true });
+    const r = await createDrillLog(prisma, { schoolId: A, eventId: real.id, actorUserId: U.safety1! });
+    expect((await prisma.drillLog.findUniqueOrThrow({ where: { id: r.id } })).formKey).toBe("disaster_real");
+    await expect(createDrillLog(prisma, { schoolId: B, eventId: drill.id, actorUserId: U.adminB! })).rejects.toMatchObject({ status: 404 });
   });
 
   it("자동작성: 학급별 최신 보고 1건만 집계, 미보고 학급은 보고 없음, 재적과 대피 확인 분리, 담당자 입력은 빈칸", async () => {
@@ -352,12 +358,18 @@ describe("HWPX 내려받기", () => {
     const r = await exportDrillLogHwpx(prisma, { schoolId: A, logId: id, actorUserId: U.safety1! });
     expect(r.buffer.subarray(0, 2).toString("latin1")).toBe("PK");
     expect(r.buffer.subarray(30, 38).toString("latin1")).toBe("mimetype");
-    expect(r.filename).toMatch(/^비상대피훈련일지\(지진\)_\d{8}\.hwpx$/);
+    // Beta PILOT 2 Phase 4: 작성 중(최종본 아님)은 파일 이름·본문 부제에 '작성 중 초안' 표시, 완료(최종본)는 기존 이름 그대로
+    expect(r.filename).toMatch(/^비상대피훈련일지\(지진\)_작성중초안_\d{8}\.hwpx$/);
     const sec = unzip(r.buffer).get("Contents/section0.xml")!.toString("utf8");
     expect(sec).toContain("방송 &lt;소리&gt; &amp; \"사이렌\" 점검");
     expect(sec).not.toContain("<소리>");
     expect(sec).toContain("가상&lt;초&gt;&amp;학교"); // 학교명 특수문자
+    expect(sec).toContain("작성 중 초안(최종본 아님)");
     expect(await prisma.auditLog.count({ where: { targetId: id, action: "drilllog.exported" } })).toBe(1);
+    await save(id, 2, { ...defaultManual(), improvements: '방송 <소리> & "사이렌" 점검', staffCount: "14" }, "safety1", "completed");
+    const final = await exportDrillLogHwpx(prisma, { schoolId: A, logId: id, actorUserId: U.safety1! });
+    expect(final.filename).toMatch(/^비상대피훈련일지\(지진\)_\d{8}\.hwpx$/);
+    expect(unzip(final.buffer).get("Contents/section0.xml")!.toString("utf8")).not.toContain("작성 중 초안");
     await expect(exportDrillLogHwpx(prisma, { schoolId: B, logId: id, actorUserId: U.adminB! })).rejects.toMatchObject({ status: 404 });
   });
 

@@ -10,6 +10,11 @@ import { DISASTER_TYPES, MEMBER_ROLES } from "../../../shared/constants.js";
 import { DUTY_LABEL, type StaffDuty } from "../../../shared/permissions.js";
 import {
   DRILL_FORM_KEY,
+  REAL_FORM_KEY,
+  formKeyFor,
+  maskPersonal,
+  scanDocPrivacy,
+  type DrillIncidentSnap,
   DRILL_FORM_VERSION,
   buildDrillDoc,
   checkDoc,
@@ -21,6 +26,8 @@ import {
   type DrillSnapshot,
 } from "../../../shared/drillLog.js";
 import { buildDrillLogHwpx } from "../drilllog/hwpx.js";
+import { anonymousPresenceSummary } from "./presence.js";
+import { INCIDENT_STATUS_LABEL, INCIDENT_TYPE_LABEL, incidentPlaceLabel } from "../../../shared/incident.js";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 const label = (t: string) => (DISASTER_TYPES as Record<string, string>)[t] ?? "기타";
@@ -48,6 +55,38 @@ export async function buildSnapshot(db: Db, schoolId: string, eventId: string): 
     orderBy: [{ grade: "asc" }, { classNo: "asc" }],
   });
   const byClass = new Map(reports.map((r: any) => [r.classId, r]));
+  const real = ev.mode === "real";
+
+  // Phase 4: 현장 제보·조치(두 서식). 제보자·작성자 이름은 고르지 않고, 자유 기재는 개인정보를 가린 요약만
+  const staffNames = (await db.schoolMembership.findMany({ where: { schoolId }, select: { user: { select: { displayName: true } } } })).map((m) => m.user.displayName);
+  const incRows = await db.incidentReport.findMany({
+    where: { schoolId, eventId },
+    orderBy: { createdAt: "asc" },
+    select: { type: true, placeCategory: true, placeDetail: true, description: true, status: true, createdAt: true, updates: { orderBy: { createdAt: "desc" }, select: { kind: true, note: true } } },
+  });
+  let maskedCount = 0;
+  const cut = (s: string, n: number) => ([...s].length > n ? `${[...s].slice(0, n - 1).join("")}…` : s);
+  const incidents: DrillIncidentSnap[] = incRows.map((r, i) => {
+    const d = maskPersonal(r.description, staffNames);
+    const place = maskPersonal(incidentPlaceLabel(r.placeCategory, r.placeDetail), staffNames);
+    const action = r.updates.find((u) => u.kind === "action");
+    const a = action ? maskPersonal(action.note, staffNames) : null;
+    maskedCount += d.masked + place.masked + (a?.masked ?? 0);
+    return {
+      no: i + 1,
+      typeLabel: INCIDENT_TYPE_LABEL[r.type],
+      placeLabel: place.text,
+      createdAt: r.createdAt.toISOString(),
+      statusLabel: INCIDENT_STATUS_LABEL[r.status],
+      updateCount: r.updates.length,
+      actionCount: r.updates.filter((u) => u.kind === "action").length,
+      summary: cut(d.text, 60),
+      lastAction: a ? cut(a.text, 40) : null,
+    };
+  });
+  // Phase 4: 교직원 소재는 실제 재난에서만 익명 집계로(모의훈련은 조회하지 않음)
+  const presence = real ? await anonymousPresenceSummary(db, { schoolId, eventId }) : undefined;
+
   return {
     takenAt: new Date().toISOString(),
     schoolName: ev.school.name,
@@ -61,8 +100,9 @@ export async function buildSnapshot(db: Db, schoolId: string, eventId: string): 
       closedAt: ev.closedAt?.toISOString() ?? null,
       evacPlace: ev.evacPlace?.trim() || null,
       location: ev.location?.trim() || null,
-      issuedByName: ev.createdBy?.displayName ?? null,
-      closedByName: ev.closedBy?.displayName ?? null,
+      // 실제 재난 상황보고서에는 교직원 이름을 담지 않음(발령·종료자 포함)
+      issuedByName: real ? null : (ev.createdBy?.displayName ?? null),
+      closedByName: real ? null : (ev.closedBy?.displayName ?? null),
     },
     classes: classes.map((c: any) => {
       const r: any = byClass.get(c.id);
@@ -87,13 +127,19 @@ export async function buildSnapshot(db: Db, schoolId: string, eventId: string): 
           : null,
       };
     }),
+    incidents,
+    ...(real ? { presence } : {}),
+    maskedCount,
   };
 }
 
-/** 훈련일지 대상(종료된 모의훈련)과 작성 상태 */
+/**
+ * 보고서 대상과 작성 상태: 모의훈련(비상대피훈련일지)·실제 재난(재난대피 상황보고서) 모두, 진행 중 사건도 포함(작성 중만 가능 — 완료는 종료 후).
+ * 서식은 사건의 서버 측 mode 로만 정함
+ */
 export async function listDrillTargets(db: Db, schoolId: string) {
   const events = await db.disasterEvent.findMany({
-    where: { schoolId, mode: "drill", status: "closed" },
+    where: { schoolId },
     orderBy: { startedAt: "desc" },
     take: 50,
     include: { drillLog: { select: { id: true, status: true, version: true, updatedAt: true, updatedBy: { select: { displayName: true } } } } },
@@ -101,6 +147,9 @@ export async function listDrillTargets(db: Db, schoolId: string) {
   return {
     events: events.map((e: any) => ({
       eventId: e.id,
+      mode: e.mode as "drill" | "real",
+      status: e.status as "active" | "closed",
+      formKey: formKeyFor(e.mode),
       type: e.primaryType,
       typeLabel: label(e.primaryType),
       startedAt: e.startedAt.toISOString(),
@@ -153,13 +202,29 @@ function guardError(error: unknown): never {
   throw error;
 }
 
+/** 사건의 서버 측 mode(보고서 서식·권한 결정용). 다른 학교 사건은 404 */
+export async function eventModeOf(db: Db, schoolId: string, eventId: string) {
+  const ev = await db.disasterEvent.findFirst({ where: { id: eventId, schoolId }, select: { mode: true, status: true } });
+  if (!ev) throw notFound("재난 대응 기록을 찾을 수 없습니다.");
+  return ev as { mode: "drill" | "real"; status: "active" | "closed" };
+}
+
+/** 보고서의 서식(권한 결정용). 다른 학교 보고서는 404 */
+export async function reportFormOf(db: Db, schoolId: string, logId: string) {
+  const log = await db.drillLog.findFirst({ where: { id: logId, schoolId }, select: { formKey: true } });
+  if (!log) throw notFound("보고서를 찾을 수 없습니다.");
+  return { formKey: log.formKey, mode: (log.formKey === REAL_FORM_KEY ? "real" : "drill") as "drill" | "real" };
+}
+
+/**
+ * 보고서 만들기(Phase 4): 서식은 사건의 서버 측 mode 로 결정(모의훈련 → 비상대피훈련일지, 실제 재난 → 재난대피 상황보고서).
+ * 진행 중 사건에도 '작성 중'으로 만들 수 있음(최종 완료는 종료 후). 이벤트당 1건(다시 요청·동시 요청은 같은 보고서). 권한은 라우터가 서식별로 검사
+ */
 export async function createDrillLog(prisma: PrismaClient, params: { schoolId: string; eventId: string; actorUserId: string; ip?: string | null }) {
   const run = () =>
     prisma.$transaction(async (tx) => {
       const ev = await tx.disasterEvent.findFirst({ where: { id: params.eventId, schoolId: params.schoolId }, select: { id: true, mode: true, status: true } });
       if (!ev) throw notFound("재난 대응 기록을 찾을 수 없습니다.");
-      if (ev.mode !== "drill") throw conflict("not_drill", "실제 재난 대응 기록에는 훈련일지를 만들 수 없습니다.");
-      if (ev.status !== "closed") throw conflict("event_not_closed", "훈련을 종료한 뒤에 훈련일지를 만들 수 있습니다.");
       const existing = await tx.drillLog.findUnique({ where: { eventId: ev.id }, select: { id: true } });
       if (existing) return { id: existing.id, created: false };
       const snapshot = await buildSnapshot(tx, params.schoolId, ev.id);
@@ -169,7 +234,7 @@ export async function createDrillLog(prisma: PrismaClient, params: { schoolId: s
           data: {
             schoolId: params.schoolId,
             eventId: ev.id,
-            formKey: DRILL_FORM_KEY,
+            formKey: formKeyFor(ev.mode),
             formVersion: DRILL_FORM_VERSION,
             autoSnapshot: snapshot as unknown as Prisma.InputJsonValue,
             manual: defaultManual() as unknown as Prisma.InputJsonValue,
@@ -189,7 +254,7 @@ export async function createDrillLog(prisma: PrismaClient, params: { schoolId: s
         action: "drilllog.created",
         targetType: "drill_log",
         targetId: created.id,
-        after: { eventId: ev.id, classes: s.total, reported: s.reportedCount, unreported: s.unreported.length },
+        after: { eventId: ev.id, formKey: formKeyFor(ev.mode), eventStatus: ev.status, classes: s.total, reported: s.reportedCount, unreported: s.unreported.length },
         ip: params.ip,
       });
       return { id: created.id, created: true };
@@ -226,6 +291,11 @@ export async function getDrillLog(db: Db, params: { schoolId: string; logId: str
   if (!log) throw notFound("훈련일지를 찾을 수 없습니다.");
   const saved = log.autoSnapshot as unknown as DrillSnapshot;
   const current = await buildSnapshot(db, params.schoolId, log.eventId);
+  const manual = { ...defaultManual(), ...(log.manual as object) } as DrillManual;
+  const ev = await eventModeOf(db, params.schoolId, log.eventId);
+  const closedAt = (await db.disasterEvent.findUniqueOrThrow({ where: { id: log.eventId }, select: { closedAt: true } })).closedAt;
+  // 최종본: 완료 + 사건 종료 + 종료 뒤 불러온 자동 기록. 그 밖은 '작성 중 초안'
+  const takenAfterClose = !!closedAt && log.autoTakenAt >= closedAt;
   return {
     log: {
       id: log.id,
@@ -233,6 +303,11 @@ export async function getDrillLog(db: Db, params: { schoolId: string; logId: str
       status: log.status,
       version: log.version,
       formKey: log.formKey,
+      mode: ev.mode,
+      eventStatus: ev.status,
+      final: log.status === "completed" && ev.status === "closed" && takenAfterClose,
+      refreshNeeded: ev.status === "closed" && !takenAfterClose,
+      privacyIssues: await privacyIssuesOf(db, params.schoolId, saved, manual, ev.mode),
       autoTakenAt: log.autoTakenAt.toISOString(),
       createdByName: log.createdBy?.displayName ?? null,
       updatedByName: log.updatedBy?.displayName ?? null,
@@ -240,11 +315,23 @@ export async function getDrillLog(db: Db, params: { schoolId: string; logId: str
       updatedAt: log.updatedAt.toISOString(),
     },
     snapshot: saved,
-    manual: { ...defaultManual(), ...(log.manual as object) } as DrillManual,
+    manual,
     sourceChanges: diffSnapshots(saved, current),
     canEdit: params.canEdit,
     revisions: log.revisions.map((r: any) => ({ version: r.version, status: r.status, changedAt: r.changedAt.toISOString(), changedByName: r.changedBy?.displayName ?? null })),
   };
+}
+
+/** 출력 문서 개인정보 검사(전화번호·주민등록번호 형태, 실제 재난은 교직원 이름까지) */
+async function privacyIssuesOf(db: Db, schoolId: string, snap: DrillSnapshot, manual: DrillManual, mode: "drill" | "real") {
+  const names = (await db.schoolMembership.findMany({ where: { schoolId }, select: { user: { select: { displayName: true } } } })).map((m) => m.user.displayName);
+  return scanDocPrivacy(buildDrillDoc(snap, manual), names, { checkNames: mode === "real" });
+}
+
+/** 작성 중 초안 표시(최종본이 아닌 출력) — 본문 부제에 덧붙임 */
+export function markDraft<T extends { pages: { subtitle: string }[] }>(doc: T): T {
+  const [first, ...rest] = doc.pages;
+  return first ? ({ ...doc, pages: [{ ...first, subtitle: `${first.subtitle} · 작성 중 초안(최종본 아님)` }, ...rest] } as T) : doc;
 }
 
 export async function updateDrillLog(
@@ -259,6 +346,14 @@ export async function updateDrillLog(
     }
     const snapshot = params.refreshAuto ? await buildSnapshot(tx, params.schoolId, log.eventId) : (log.autoSnapshot as unknown as DrillSnapshot);
     const changes = params.refreshAuto ? diffSnapshots(log.autoSnapshot as unknown as DrillSnapshot, snapshot) : [];
+    // Phase 4: 완료(최종본)는 사건 종료 후 + 종료 뒤 불러온 자동 기록 + 개인정보 검사 통과(DB 트리거도 앞의 둘을 검사)
+    if (params.status === "completed" && (log.status !== "completed" || params.refreshAuto)) {
+      const ev = await tx.disasterEvent.findUniqueOrThrow({ where: { id: log.eventId }, select: { status: true, closedAt: true, mode: true } });
+      if (ev.status !== "closed") throw conflict("event_not_closed", "사건이 종료된 뒤에 보고서를 완료할 수 있습니다. 지금은 작성 중으로 저장하세요.");
+      if (!params.refreshAuto && log.autoTakenAt < ev.closedAt!) throw conflict("refresh_required", "진행 중에 불러온 기록입니다. 종료 뒤 자동 기록을 다시 불러온 다음 완료하세요.");
+      const issues = await privacyIssuesOf(tx, params.schoolId, snapshot, params.manual, ev.mode);
+      if (issues.length) throw new AppError(422, "privacy_check_failed", "출력 문서에 개인정보로 보이는 내용이 있어 완료할 수 없습니다. 해당 칸을 고친 뒤 다시 완료하세요.", { issues });
+    }
     // jsonb는 객체 키 순서를 바꿔 저장하므로 키를 정렬해 비교(같은 내용이면 판 번호를 올리지 않음)
     const sameManual = stableJson(params.manual) === stableJson({ ...defaultManual(), ...(log.manual as object) });
     if (sameManual && log.status === params.status && (!params.refreshAuto || changes.length === 0)) {
@@ -300,9 +395,15 @@ export async function exportDrillLogHwpx(prisma: PrismaClient, params: { schoolI
   if (!log) throw notFound("훈련일지를 찾을 수 없습니다.");
   const snap = log.autoSnapshot as unknown as DrillSnapshot;
   const manual = { ...defaultManual(), ...(log.manual as object) } as DrillManual;
+  // Phase 4: 개인정보 검사에 걸리면 내려받지 않음. 최종본이 아니면 '작성 중 초안' 표시를 넣어 내려받음
+  const ev = await prisma.disasterEvent.findUniqueOrThrow({ where: { id: log.eventId }, select: { status: true, closedAt: true, mode: true } });
+  const issues = await privacyIssuesOf(prisma, params.schoolId, snap, manual, ev.mode);
+  if (issues.length) throw new AppError(422, "privacy_check_failed", "출력 문서에 개인정보로 보이는 내용이 있어 내려받을 수 없습니다. 해당 칸을 고친 뒤 다시 시도하세요.", { issues });
+  const final = log.status === "completed" && ev.status === "closed" && !!ev.closedAt && log.autoTakenAt >= ev.closedAt;
   let buf: Buffer;
   try {
-    const doc = buildDrillDoc(snap, manual);
+    const built = buildDrillDoc(snap, manual);
+    const doc = final ? built : markDraft(built);
     // 칸 구조 오류만 막습니다. 높이 초과(역할·평가를 최대로 늘린 경우)는 한글에서 다음 쪽으로 이어지므로 내려받기를 막지 않음
     const errs = checkDoc(doc, { height: false });
     if (errs.length) throw new Error(errs.join("; "));
@@ -316,5 +417,5 @@ export async function exportDrillLogHwpx(prisma: PrismaClient, params: { schoolI
   await writeAudit(prisma, { schoolId: params.schoolId, actorUserId: params.actorUserId, action: "drilllog.exported", targetType: "drill_log", targetId: log.id, after: { version: log.version, format: "hwpx", bytes: buf.length }, ip: params.ip });
   const d = new Date(new Date(snap.event.startedAt).getTime() + 9 * 3600 * 1000);
   const ymd = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
-  return { buffer: buf, filename: `${docTitle(snap)}_${ymd}.hwpx`.replace(/[\\/:*?"<>|]/g, "_") };
+  return { buffer: buf, filename: `${docTitle(snap)}${final ? "" : "_작성중초안"}_${ymd}.hwpx`.replace(/[\\/:*?"<>|]/g, "_") };
 }

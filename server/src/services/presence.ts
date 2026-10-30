@@ -220,6 +220,17 @@ export function summarizePresence(targets: { readAt: Date | null }[], responses:
   };
 }
 
+/**
+ * Phase 4 보고서용 익명 집계(실제 재난만 호출): 같은 대상 규칙·같은 summarizePresence. 읽기만(알림 보충 없음),
+ * 이름·위치·소속 id 를 조회 단계부터 고르지 않음(select 에 없음)
+ */
+export async function anonymousPresenceSummary(db: Db, params: { schoolId: string; eventId: string }) {
+  const targets = await db.staffAlert.findMany({ where: { eventId: params.eventId, schoolId: params.schoolId, membership: activeMemberWhere(params.schoolId) }, select: { membershipId: true, readAt: true } });
+  const ids = new Set(targets.map((t) => t.membershipId));
+  const all = await db.staffPresence.findMany({ where: { eventId: params.eventId, schoolId: params.schoolId }, select: { membershipId: true, location: true, availability: true, respondedAt: true } });
+  return summarizePresence(targets, all.filter((p) => ids.has(p.membershipId)));
+}
+
 export async function presenceSummary(prisma: PrismaClient, params: { schoolId: string; eventId: string }) {
   const { event, targets, responses } = await collect(prisma, params.schoolId, params.eventId);
   return { eventId: event.id, eventStatus: event.status, scope: "summary" as const, summary: summarizePresence(targets, responses) };
