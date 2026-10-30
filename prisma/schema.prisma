@@ -133,6 +133,7 @@ model School {
   reportDelegations EventReportDelegation[]
   staffAlerts       StaffAlert[]
   staffPresences    StaffPresence[]
+  incidentReports   IncidentReport[]
   evacuationReports EvacuationReport[]
   auditLogs         AuditLog[]
   activeSessions    Session[]
@@ -402,6 +403,11 @@ model SchoolMembership {
   delegationsAsOriginal EventReportDelegation[] @relation("DelegationOriginal")
   staffAlerts           StaffAlert[]
   staffPresences        StaffPresence[]
+  incidentReports       IncidentReport[]              @relation("IncidentReporter")
+  incidentUpdates       IncidentUpdate[]              @relation("IncidentUpdateAuthor")
+  incidentStatusChanges IncidentStatusHistory[]       @relation("IncidentStatusChanger")
+  incidentUploads       IncidentAttachment[]          @relation("IncidentAttachmentUploader")
+  incidentDeletions     IncidentAttachment[]          @relation("IncidentAttachmentDeleter")
 
   @@unique([schoolId, userId], map: "school_memberships_school_user_key")
   @@index([schoolId, status], map: "school_memberships_school_status_idx")
@@ -512,6 +518,7 @@ model DisasterEvent {
   reportDelegations EventReportDelegation[]
   staffAlerts       StaffAlert[]
   staffPresences    StaffPresence[]
+  incidentReports   IncidentReport[]
 
   // 부분 UNIQUE 인덱스 disaster_events_one_active_per_school 은 migration.sql 에 있습니다.
   @@index([schoolId, startedAt(sort: Desc)], map: "disaster_events_school_started_idx")
@@ -1023,4 +1030,110 @@ model StaffPresenceHistory {
 
   @@unique([presenceId, version], map: "staff_presence_history_presence_version_key")
   @@map("staff_presence_history")
+}
+
+// ───────────── Beta PILOT 2 Phase 3 현장 상황 공유 ─────────────
+// 마이그레이션 20261031000000_incident_reports 에 CHECK(길이·위치)와 트리거(진행 중·같은 학교만, 제보 본문 덮어쓰기 금지,
+// 후속·상태 이력 수정·삭제 금지)가 있습니다. 감사 기록에는 설명·사진을 넣지 않습니다.
+
+enum IncidentType {
+  hazard
+  facility_damage
+  blocked_route
+  help_needed
+  other
+}
+
+enum IncidentStatus {
+  received
+  checking
+  in_progress
+  resolved
+}
+
+enum IncidentUpdateKind {
+  info
+  change
+  action
+}
+
+/// 현장 제보(실제 재난·모의훈련 모두, 사건별). 본문(유형·장소·설명·작성자)은 만든 뒤 바꾸지 않음 — 추가 정보는 IncidentUpdate
+model IncidentReport {
+  id                  String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId            String         @map("school_id") @db.Uuid
+  eventId             String         @map("event_id") @db.Uuid
+  reporterMembershipId String        @map("reporter_membership_id") @db.Uuid
+  type                IncidentType
+  placeCategory       PresencePlace  @map("place_category")
+  placeDetail         String?        @map("place_detail")
+  description         String
+  status              IncidentStatus @default(received)
+  idempotencyKey      String         @unique(map: "incident_reports_idempotency_key") @map("idempotency_key")
+  createdAt           DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastActivityAt      DateTime       @default(now()) @map("last_activity_at") @db.Timestamptz(6)
+
+  school        School                  @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  event         DisasterEvent           @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  reporter      SchoolMembership        @relation("IncidentReporter", fields: [reporterMembershipId], references: [id], onDelete: Restrict)
+  updates       IncidentUpdate[]
+  statusHistory IncidentStatusHistory[]
+  attachments   IncidentAttachment[]
+
+  @@index([schoolId, eventId, lastActivityAt(sort: Desc)], map: "incident_reports_school_event_idx")
+  @@map("incident_reports")
+}
+
+/// 후속 정보(추가 확인·상황 변화·조치). 추가만 가능
+model IncidentUpdate {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  incidentId         String             @map("incident_id") @db.Uuid
+  authorMembershipId String             @map("author_membership_id") @db.Uuid
+  kind               IncidentUpdateKind
+  note               String
+  idempotencyKey     String             @unique(map: "incident_updates_idempotency_key") @map("idempotency_key")
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  incident IncidentReport   @relation(fields: [incidentId], references: [id], onDelete: Restrict)
+  author   SchoolMembership @relation("IncidentUpdateAuthor", fields: [authorMembershipId], references: [id], onDelete: Restrict)
+
+  @@index([incidentId, createdAt], map: "incident_updates_incident_idx")
+  @@map("incident_updates")
+}
+
+/// 처리 상태 변경 이력(대응 담당자). 추가만 가능
+model IncidentStatusHistory {
+  id                    String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  incidentId            String         @map("incident_id") @db.Uuid
+  fromStatus            IncidentStatus @map("from_status")
+  toStatus              IncidentStatus @map("to_status")
+  changedByMembershipId String         @map("changed_by_membership_id") @db.Uuid
+  createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  incident  IncidentReport   @relation(fields: [incidentId], references: [id], onDelete: Restrict)
+  changedBy SchoolMembership @relation("IncidentStatusChanger", fields: [changedByMembershipId], references: [id], onDelete: Restrict)
+
+  @@index([incidentId, createdAt], map: "incident_status_history_incident_idx")
+  @@map("incident_status_history")
+}
+
+/// 현장 사진(비공개 저장, 인증·권한 확인 후 서버가 직접 전달). 파일 이름은 임의 키 — 원래 파일명은 저장하지 않음
+model IncidentAttachment {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  incidentId            String    @map("incident_id") @db.Uuid
+  schoolId              String    @map("school_id") @db.Uuid
+  uploaderMembershipId  String    @map("uploader_membership_id") @db.Uuid
+  storageKey            String    @unique(map: "incident_attachments_storage_key") @map("storage_key")
+  mimeType              String    @map("mime_type")
+  sizeBytes             Int       @map("size_bytes")
+  sha256                String
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt             DateTime? @map("deleted_at") @db.Timestamptz(6)
+  deletedByMembershipId String?   @map("deleted_by_membership_id") @db.Uuid
+
+  incident  IncidentReport    @relation(fields: [incidentId], references: [id], onDelete: Restrict)
+  uploader  SchoolMembership  @relation("IncidentAttachmentUploader", fields: [uploaderMembershipId], references: [id], onDelete: Restrict)
+  deletedBy SchoolMembership? @relation("IncidentAttachmentDeleter", fields: [deletedByMembershipId], references: [id], onDelete: SetNull)
+
+  @@index([incidentId], map: "incident_attachments_incident_idx")
+  @@map("incident_attachments")
 }
