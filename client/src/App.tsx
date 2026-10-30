@@ -1,4 +1,5 @@
 // 화면 연결: 로그인 → (소속이 하나면 자동 선택) → 관리자는 상황판, 교직원은 학급 보고
+import { PresencePage } from "./pages/presence/PresencePage";
 import { useEffect, type ReactElement } from "react";
 import { matchPath, navigate, usePath } from "./lib/router";
 import { SessionProvider, useSession } from "./lib/session";
@@ -99,6 +100,8 @@ function Routes() {
     if (school.screen === "education") return <EducationResourcesPage schoolId={school.schoolId!} />;
     // STEP 5 시설 안전점검 법령·지침·매뉴얼 안내: 승인된 소속 교직원 모두 동일
     if (school.screen === "facility-resources") return <FacilityResourcesPage schoolId={school.schoolId!} />;
+    // Beta PILOT 2 Phase 2: 재난 알림·내 소재(승인 교직원 누구나 — 소재 입력은 실제 재난만, 서버도 검사)
+    if (school.screen === "presence") return <PresencePage schoolId={school.schoolId!} />;
     // 권한이 필요한 화면: 화면에서도 막고, 서버 API에서도 다시 검사합니다(STEP 3-D: 역할 대신 합산 권한).
     const guarded: Record<string, { cap: Parameters<typeof can>[1]; page: (id: string) => ReactElement }> = {
       board: { cap: "board.view", page: (id) => <BoardPage schoolId={id} /> },

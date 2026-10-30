@@ -8,6 +8,7 @@ import { capsOf } from "../../lib/permissions";
 import { EmergencyBanner } from "../ui/EmergencyBanner";
 import { Icon, type IconName } from "../ui/Icon";
 import { PrototypeNotice } from "../ui/PrototypeNotice";
+import { StaffAlertBar } from "./StaffAlertBar";
 
 export interface NavItem {
   href: string;
@@ -185,6 +186,8 @@ export function AppShell({
       <Sidebar items={items} schoolName={membership?.school.name} />
       <div className="flex min-w-0 flex-1 flex-col">
         {event && <EmergencyBanner event={event} />}
+        {/* Beta PILOT 2 Phase 2: 교직원 앱 내 알림(실제 재난 소재 보고 / 모의훈련 안내 확인) */}
+        {membership && <StaffAlertBar schoolId={membership.school.id} />}
         <PrototypeNotice compact />
         <AppHeader title={title} schoolName={membership?.school.name} links={items.filter((i) => i.mobile === "header")} />
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-28 lg:pb-10">{children}</main>
