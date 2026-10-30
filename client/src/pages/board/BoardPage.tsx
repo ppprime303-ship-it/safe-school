@@ -10,6 +10,7 @@ import { IssueEventForm } from "./IssueEventForm";
 import { DelegationPanel } from "./DelegationPanel";
 import { useSession } from "../../lib/session";
 import { can } from "../../lib/permissions";
+import { Link } from "../../lib/router";
 
 const POLL_MS = 5000;
 
@@ -94,6 +95,16 @@ export function BoardPage({ schoolId }: { schoolId: string }) {
       )}
       {load.kind === "error" && <ErrorState message={load.message} onRetry={() => void poll()} />}
       {load.kind === "ready" && <BoardView data={load.data} connection={connection} onCloseEvent={can(membership, "event.close") ? () => setConfirmClose(true) : undefined} />}
+      {/* Beta PILOT 2 Phase 2-C: 교직원 소재는 실제 재난에서만, 학생 대피 현황과 별도 화면 */}
+      {load.kind === "ready" && load.data.event.mode === "real" && (
+        <Link
+          href={`/s/${schoolId}/staff-presence?event=${load.data.event.id}`}
+          className="mt-5 flex min-h-touch items-center justify-between rounded-card border-2 border-danger bg-card p-4 text-lg font-bold shadow-card"
+        >
+          <span>교직원 소재 현황 보기(학생 대피 현황과 별개)</span>
+          <span aria-hidden>›</span>
+        </Link>
+      )}
       {load.kind === "ready" && can(membership, "event.issue") && (
         <div className="mt-5">
           <DelegationPanel schoolId={schoolId} eventId={load.data.event.id} classes={load.data.classes} onChanged={() => void poll()} />

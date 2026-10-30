@@ -6,6 +6,8 @@ import { StaffAlertBanner } from "../client/src/components/layout/StaffAlertBar"
 import { pickBannerAlert, type StaffAlertItem } from "../client/src/lib/presence";
 import { presenceSentence } from "../client/src/pages/presence/PresencePage";
 import { navItemsFor } from "../client/src/components/layout/AppShell";
+import { StaffPresenceView } from "../client/src/pages/presence/StaffPresencePage";
+import type { PresenceDetailResponse, PresenceSummaryResponse } from "../client/src/lib/presence";
 
 const alert = (over: Partial<StaffAlertItem> & { mode?: "real" | "drill"; status?: "active" | "closed" } = {}): StaffAlertItem => ({
   id: over.id ?? "a1",
@@ -64,5 +66,41 @@ describe("메뉴는 그대로(소재 화면은 알림 배너·상황판에서 �
   it("모바일 하단 메뉴 항목 변화 없음", () => {
     const bottom = (caps: string[]) => navItemsFor("s1", caps).filter((i) => i.mobile === undefined).map((i) => i.label);
     expect(bottom(["board.view"])).toEqual(["상황판", "학급 보고", "경보", "학교 선택"]);
+  });
+});
+
+
+const summary = { targetCount: 5, respondedCount: 3, notRespondedCount: 2, onCampus: 2, offCampus: 1, available: 2, unavailable: 0, unsure: 1, alertsRead: 4, latestRespondedAt: "2026-10-30T01:10:00.000Z" };
+const presenceOf = (location: "on_campus" | "off_campus", placeLabel: string | null) => ({
+  id: "p", location, placeCategory: location === "on_campus" ? ("playground" as const) : null, placeDetail: null, placeLabel, availability: "available" as const, version: 1, firstRespondedAt: "2026-10-30T01:05:00.000Z", respondedAt: "2026-10-30T01:05:00.000Z",
+});
+
+describe("교직원 소재 현황 화면", () => {
+  it("요약 응답: 숫자만(응답·미응답·교내/교외·지원 가능), 성명·위치·명단 없음, 학생 대피 보고와 별개 안내", () => {
+    const data: PresenceSummaryResponse = { eventId: "e1", eventStatus: "active", scope: "summary", summary };
+    const html = renderToStaticMarkup(createElement(StaffPresenceView, { data }));
+    expect(html).toContain("학생 대피 보고와 별개");
+    expect(html).toContain("미응답");
+    expect(html).toContain("추정하지 않");
+    expect(html).not.toMatch(/개인별 소재|미응답 2명|장소별|운동장/);
+  });
+
+  it("상세 응답: 미응답자 명단·장소별·개인별 소재, 종료 상황 표시", () => {
+    const data: PresenceDetailResponse = {
+      eventId: "e1",
+      eventStatus: "closed",
+      scope: "detail",
+      summary,
+      byPlace: [{ placeCategory: "playground", count: 2 }],
+      notResponded: [{ membershipId: "m4", name: "가상 미응답", alertReadAt: null }],
+      people: [
+        { membershipId: "m1", name: "가상 교사", role: "homeroom", alertReadAt: "2026-10-30T01:01:00.000Z", presence: presenceOf("on_campus", "운동장") },
+        { membershipId: "m2", name: "가상 교직원", role: "staff", alertReadAt: null, presence: presenceOf("off_campus", null) },
+        { membershipId: "m4", name: "가상 미응답", role: "staff", alertReadAt: null, presence: null },
+      ],
+      excludedResponses: 1,
+    };
+    const html = renderToStaticMarkup(createElement(StaffPresenceView, { data }));
+    for (const t of ["미응답 1명", "가상 미응답", "교내 장소별", "운동장 2명", "개인별 소재", "교내 · 운동장", "교외", "종료된 상황", "집계에서 뺀 응답 1건"]) expect(html).toContain(t);
   });
 });

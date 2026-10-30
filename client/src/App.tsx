@@ -1,5 +1,6 @@
 // 화면 연결: 로그인 → (소속이 하나면 자동 선택) → 관리자는 상황판, 교직원은 학급 보고
 import { PresencePage } from "./pages/presence/PresencePage";
+import { StaffPresencePage } from "./pages/presence/StaffPresencePage";
 import { useEffect, type ReactElement } from "react";
 import { matchPath, navigate, usePath } from "./lib/router";
 import { SessionProvider, useSession } from "./lib/session";
@@ -105,6 +106,8 @@ function Routes() {
     // 권한이 필요한 화면: 화면에서도 막고, 서버 API에서도 다시 검사합니다(STEP 3-D: 역할 대신 합산 권한).
     const guarded: Record<string, { cap: Parameters<typeof can>[1]; page: (id: string) => ReactElement }> = {
       board: { cap: "board.view", page: (id) => <BoardPage schoolId={id} /> },
+      // Beta PILOT 2 Phase 2-C: 교직원 소재 현황(요약은 누구나, 개인별은 서버가 presence.detail 에게만)
+      "staff-presence": { cap: "board.view", page: (id) => <StaffPresencePage schoolId={id} /> },
       members: { cap: "members.manage", page: (id) => <MembersPage schoolId={id} /> },
       classes: { cap: "classes.manage", page: (id) => <ClassesPage schoolId={id} /> },
       "drill-logs": { cap: "drilllog.view", page: (id) => <DrillLogsPage schoolId={id} /> },
