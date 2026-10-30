@@ -131,6 +131,8 @@ model School {
   invitations       StaffInvitation[]
   events            DisasterEvent[]
   reportDelegations EventReportDelegation[]
+  staffAlerts       StaffAlert[]
+  staffPresences    StaffPresence[]
   evacuationReports EvacuationReport[]
   auditLogs         AuditLog[]
   activeSessions    Session[]
@@ -398,6 +400,8 @@ model SchoolMembership {
   duties      MemberDuty[]
   delegationsAsDelegate EventReportDelegation[] @relation("DelegationDelegate")
   delegationsAsOriginal EventReportDelegation[] @relation("DelegationOriginal")
+  staffAlerts           StaffAlert[]
+  staffPresences        StaffPresence[]
 
   @@unique([schoolId, userId], map: "school_memberships_school_user_key")
   @@index([schoolId, status], map: "school_memberships_school_status_idx")
@@ -506,6 +510,8 @@ model DisasterEvent {
   reports   EvacuationReport[]
   drillLog  DrillLog?
   reportDelegations EventReportDelegation[]
+  staffAlerts       StaffAlert[]
+  staffPresences    StaffPresence[]
 
   // 부분 UNIQUE 인덱스 disaster_events_one_active_per_school 은 migration.sql 에 있습니다.
   @@index([schoolId, startedAt(sort: Desc)], map: "disaster_events_school_started_idx")
@@ -927,4 +933,94 @@ model DrillLogRevision {
 
   @@unique([drillLogId, version], map: "drill_log_revisions_log_version_key")
   @@map("drill_log_revisions")
+}
+
+// ───────────── Beta PILOT 2 Phase 2 교직원 앱 내 알림·소재 보고 ─────────────
+// 마이그레이션 20261030000000_staff_presence 에 CHECK 제약(교내 위치 규칙·길이)과 이력 수정 금지 트리거가 있습니다.
+// 개인 위치정보: 교외는 위치를 저장하지 않고, 감사 기록에도 위치 내용을 넣지 않습니다(보관 기간 미확정 — 사건 단위 삭제 가능 구조).
+
+enum PresenceLocation {
+  on_campus
+  off_campus
+}
+
+/// 대피 지원 가능 여부. unsure = 본인이 '확인 필요'로 응답(미응답과 다름)
+enum PresenceAvailability {
+  available
+  unavailable
+  unsure
+}
+
+/// 교내 장소 분류(화면 선택 목록). other 는 상세 위치 필수
+enum PresencePlace {
+  classroom
+  staff_room
+  nurse_room
+  cafeteria
+  gym
+  playground
+  hallway
+  stairs
+  special_room
+  other
+}
+
+/// 사건별·교직원별 앱 내 알림. created_at(생성) ≠ 전달, read_at = 본인이 앱에서 확인한 시각
+model StaffAlert {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId     String    @map("school_id") @db.Uuid
+  eventId      String    @map("event_id") @db.Uuid
+  membershipId String    @map("membership_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  readAt       DateTime? @map("read_at") @db.Timestamptz(6)
+
+  school     School           @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  event      DisasterEvent    @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  membership SchoolMembership @relation(fields: [membershipId], references: [id], onDelete: Restrict)
+
+  @@unique([eventId, membershipId], map: "staff_alerts_event_member_key")
+  @@index([membershipId, readAt], map: "staff_alerts_member_read_idx")
+  @@map("staff_alerts")
+}
+
+/// 사건별·교직원별 현재 소재(본인만 작성). 교내면 장소 분류 필수, 교외면 장소 저장 안 함
+model StaffPresence {
+  id               String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId         String               @map("school_id") @db.Uuid
+  eventId          String               @map("event_id") @db.Uuid
+  membershipId     String               @map("membership_id") @db.Uuid
+  location         PresenceLocation
+  placeCategory    PresencePlace?       @map("place_category")
+  placeDetail      String?              @map("place_detail")
+  availability     PresenceAvailability
+  version          Int                  @default(1)
+  firstRespondedAt DateTime             @default(now()) @map("first_responded_at") @db.Timestamptz(6)
+  respondedAt      DateTime             @default(now()) @map("responded_at") @db.Timestamptz(6)
+
+  school     School                 @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  event      DisasterEvent          @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  membership SchoolMembership       @relation(fields: [membershipId], references: [id], onDelete: Restrict)
+  history    StaffPresenceHistory[]
+
+  @@unique([eventId, membershipId], map: "staff_presences_event_member_key")
+  @@index([schoolId, eventId], map: "staff_presences_school_event_idx")
+  @@map("staff_presences")
+}
+
+/// 소재 응답 이력(판마다 1행, 본인 변경만). 수정은 트리거가 거부, 삭제는 보관 정책 확정 후 승인된 절차로만
+model StaffPresenceHistory {
+  id             String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  presenceId     String               @map("presence_id") @db.Uuid
+  version        Int
+  location       PresenceLocation
+  placeCategory  PresencePlace?       @map("place_category")
+  placeDetail    String?              @map("place_detail")
+  availability   PresenceAvailability
+  idempotencyKey String               @unique(map: "staff_presence_history_idempotency_key") @map("idempotency_key")
+  changedAt      DateTime             @default(now()) @map("changed_at") @db.Timestamptz(6)
+
+  presence StaffPresence @relation(fields: [presenceId], references: [id], onDelete: Restrict)
+
+  @@unique([presenceId, version], map: "staff_presence_history_presence_version_key")
+  @@map("staff_presence_history")
 }

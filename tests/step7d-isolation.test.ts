@@ -136,6 +136,7 @@ const READS: RouteCase[] = [
   { name: "경보함", method: "GET", path: (k) => `${S(k)}/alerts`, cap: null },
   { name: "안내문 목록", method: "GET", path: (k) => `${S(k)}/notices`, cap: null },
   { name: "안내문 예시", method: "GET", path: (k) => `${S(k)}/notice-examples`, cap: null },
+  { name: "내 알림(Phase 2)", method: "GET", path: (k) => `${S(k)}/staff-alerts`, cap: null },
   { name: "상황판", method: "GET", path: (k) => `${S(k)}/events/${activeEvent[k]}/board`, cap: "board.view" },
   { name: "교직원 목록", method: "GET", path: (k) => `${S(k)}/members`, cap: "members.manage" },
   { name: "학교 소재지", method: "GET", path: (k) => `${S(k)}/region`, cap: "region.manage" },
@@ -159,6 +160,8 @@ const WRITES: RouteCase[] = [
   { name: "성명 정정", method: "PUT", path: (k) => `${S(k)}/members/${membershipOf[`${k}1`]}/display-name`, cap: "members.rename" },
   // Beta PILOT 2 Phase 1-6: 관리자 권한 이양(학교 관리자만 — 시연 계정 8개에는 없음)
   { name: "관리자 이양", method: "POST", path: (k) => `${S(k)}/admin-transfer`, cap: "admin.transfer" },
+  // Phase 2: 본인 소재 보고(승인 교직원 누구나 — 시연 사건은 훈련이라 내용은 다른 테스트에서), 다른 학교 경로 404 확인용
+  { name: "내 소재 보고(Phase 2)", method: "PUT", path: (k) => `${S(k)}/events/${activeEvent[k]}/presence/me`, cap: null },
   { name: "훈련일지 만들기", method: "POST", path: (k) => `${S(k)}/events/${activeEvent[k]}/drill-log`, cap: "drilllog.edit" },
   { name: "훈련일지 수정", method: "PATCH", path: (k) => `${S(k)}/drill-logs/${drillLog[k]}`, cap: "drilllog.edit" },
 ];

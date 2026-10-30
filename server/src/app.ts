@@ -16,6 +16,7 @@ import { noticesRouter } from "./routes/notices.js";
 import { dutiesRouter } from "./routes/duties.js";
 import { drillLogsRouter } from "./routes/drillLogs.js";
 import { platformRouter } from "./routes/platform.js";
+import { presenceRouter } from "./routes/presence.js";
 
 export { AppError } from "./errors.js";
 
@@ -32,6 +33,7 @@ export function createApiRouter() {
   api.use(dutiesRouter); // STEP 3-D 업무 담당자 지정
   api.use(drillLogsRouter); // STEP 3-D 비상대피훈련일지
   api.use(platformRouter); // STEP D 플랫폼 운영관리자(신규 학교 등록 승인)
+  api.use(presenceRouter); // Beta PILOT 2 Phase 2 교직원 알림·소재 보고
   api.use((_req, _res, next) => next(new AppError(404, "not_found", "요청한 API가 없습니다.")));
   return api;
 }

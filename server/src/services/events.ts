@@ -6,6 +6,7 @@ import type { DisasterEvent, DisasterType, EnrolledChangeReason, EventMode, Pris
 import { AppError, conflict, isUniqueViolation, notFound } from "../errors.js";
 import { writeAudit } from "./audit.js";
 import { activeDelegations, delegatedClassIds, endDelegationsForEvent, hasActiveDelegation } from "./delegations.js";
+import { createAlertsForEvent } from "./presence.js";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -63,6 +64,8 @@ async function toEventView(db: Db, event: DisasterEvent): Promise<ActiveEventVie
   };
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 async function loadEvent(db: Db, schoolId: string, eventId: string) {
   const event = await db.disasterEvent.findFirst({ where: { id: eventId, schoolId } });
   if (!event) throw notFound("재난 상황을 찾을 수 없습니다.");
@@ -106,13 +109,15 @@ export async function issueEvent(
         },
       });
       await tx.disasterEventType.create({ data: { eventId: event.id, type: params.primaryType, addedById: params.actorUserId } });
+      // Beta PILOT 2 Phase 2: 승인 교직원 전원 앱 내 알림(실제 재난·모의훈련 모두, 발령과 같은 트랜잭션 — 발령이 취소되면 알림도 없음)
+      const alertsCreated = await createAlertsForEvent(tx, { schoolId: params.schoolId, eventId: event.id });
       await writeAudit(tx, {
         schoolId: params.schoolId,
         actorUserId: params.actorUserId,
         action: params.mode === "real" ? "event.issued_real" : "event.issued_drill",
         targetType: "disaster_event",
         targetId: event.id,
-        after: { primaryType: params.primaryType, mode: params.mode, evacPlace: event.evacPlace },
+        after: { primaryType: params.primaryType, mode: params.mode, evacPlace: event.evacPlace, alertsCreated },
         ip: params.ip,
       });
       return toEventView(tx, event);
@@ -478,6 +483,10 @@ export async function closeEvent(
   params: { schoolId: string; eventId: string; actorUserId: string; confirmClose?: boolean; ip?: string | null },
 ) {
   return prisma.$transaction(async (tx) => {
+    // Beta PILOT 2 Phase 2: 사건 행을 먼저 잠근 뒤 종료 시각을 정함 — 소재 보고(FOR SHARE)와 순서가 정해져
+    // 종료 시각 이후에 저장된 소재가 생기지 않고, 종료 뒤 들어온 보고는 거부됨
+    if (!UUID_RE.test(params.eventId) || !UUID_RE.test(params.schoolId)) throw notFound("재난 상황을 찾을 수 없습니다.");
+    await tx.$queryRaw`SELECT 1 AS locked FROM "disaster_events" WHERE "id" = ${params.eventId}::uuid AND "school_id" = ${params.schoolId}::uuid FOR UPDATE`;
     const event = await loadEvent(tx, params.schoolId, params.eventId);
     if (event.status !== "active") throw conflict("event_closed", "이미 종료된 상황입니다.");
     if (event.mode === "real" && params.confirmClose !== true) {
