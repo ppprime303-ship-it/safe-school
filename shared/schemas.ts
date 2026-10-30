@@ -13,10 +13,30 @@ export const emailSchema = z
 export const passwordSchema = z.string().min(10, "비밀번호는 10자 이상이어야 합니다.").max(200);
 export const deviceKindSchema = z.enum(["personal", "shared"]).default("personal");
 
+// Beta PILOT 2: 교직원 성명(본인이 적은 실제 성명 — 신원 확인을 뜻하지 않으며 고유 식별자로 쓰지 않음)
+// 앞뒤·연속 공백 정리, 글자·공백·가운뎃점·하이픈·아포스트로피·마침표만, 2~30자. 기존 계정의 이름은 다시 검사하지 않음
+export const personNameSchema = z
+  .string({ required_error: "성명을 입력하세요.", invalid_type_error: "성명을 입력하세요." })
+  .transform((s) => s.normalize("NFC").trim().replace(/\s+/g, " "))
+  .pipe(
+    z
+      .string()
+      .min(2, "성명은 2자 이상 입력하세요.")
+      .max(30, "성명은 30자 이내로 입력하세요.")
+      .regex(/^[\p{L}\p{M}][\p{L}\p{M} .·'-]*$/u, "성명에는 글자만 입력하세요(숫자·기호 제외)."),
+  );
+
 export const signupSchema = z.object({
   email: emailSchema,
-  displayName: z.string().trim().min(1, "이름을 입력하세요.").max(50),
+  displayName: personNameSchema,
   password: passwordSchema,
+});
+
+// Beta PILOT 2: 학교 관리자의 교직원 표시 성명 정정(현재 이름 확인 + 사유 필수, 감사 기록)
+export const renameMemberSchema = z.object({
+  displayName: personNameSchema,
+  expectedCurrentName: z.string().max(100),
+  reason: z.string().trim().min(2, "정정 사유를 적으세요.").max(200, "정정 사유는 200자 이내로 적으세요."),
 });
 
 // STEP 7-D: 비밀번호·이름은 인증코드를 확인할 때 확정합니다(가입 요청만으로는 로그인 자격이 생기지 않음).
@@ -24,7 +44,7 @@ export const verifyEmailSchema = z.object({
   email: emailSchema,
   code: z.string().trim().regex(/^\d{6}$/, "6자리 숫자를 입력하세요."),
   password: passwordSchema,
-  displayName: z.string().trim().min(1, "이름을 입력하세요.").max(50).optional(),
+  displayName: personNameSchema.optional(),
   deviceKind: deviceKindSchema,
 });
 

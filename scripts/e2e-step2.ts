@@ -50,7 +50,7 @@ async function signupAndVerify(agent: Agent, email: string, name: string) {
   const s = await agent.call("POST", "/auth/signup", { email, displayName: name, password: "test-password-1234" });
   check(`${name} 가입 요청(모의 발송, 코드는 테스트에서만 반환)`, s.status === 201 && s.body.delivery === "test_console" && /^\d{6}$/.test(s.body.devCode), s.body);
   const takeover = await agent.call("POST", "/auth/signup", {
-    email, displayName: "제3자 변경 시도", password: "attacker-password-5678",
+    email, displayName: "제삼자 변경 시도", password: "attacker-password-5678",
   });
   // STEP 7-D: 인증 전 재가입은 코드만 다시 보냄(1분 안이면 429) — 비밀번호는 어느 쪽도 저장되지 않음
   check(`${name} 미인증 계정 재가입으로 비밀번호 설정 불가`,

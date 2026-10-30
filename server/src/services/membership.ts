@@ -210,3 +210,46 @@ export async function revokeMembership(
     return { sessionsInvalidated: count };
   });
 }
+
+// ───────────── Beta PILOT 2 관리자: 교직원 표시 성명 정정 ─────────────
+// - 바꾸는 것은 users.display_name 하나뿐입니다(이메일·비밀번호·계정 ID·인증 상태·역할·학급 배정·직책·대리 지정은 건드리지 않음).
+// - 성명은 계정 전체에 하나이므로, 다른 학교에도 소속(상태 무관)된 계정은 학교 관리자가 바꾸지 않습니다
+//   (한 학교의 결정이 다른 학교 화면·기록 표시를 바꾸지 않게). 그런 계정은 플랫폼 운영자에게 요청합니다.
+// - 과거 보고·이력은 사람을 계정 ID로 기록하므로 성명을 바꿔도 '누가 했는지'는 그대로이고,
+//   바뀌기 전 성명·바꾼 사람·사유·시각은 감사 기록(추가 전용)에 남아 잘못 바꾼 성명도 되돌릴 수 있습니다.
+export async function renameMember(
+  prisma: PrismaClient,
+  params: { schoolId: string; actorUserId: string; membershipId: string; displayName: string; expectedCurrentName: string; reason: string; ip?: string | null },
+) {
+  return prisma.$transaction(async (tx) => {
+    const membership = await tx.schoolMembership.findFirst({
+      where: { id: params.membershipId, schoolId: params.schoolId },
+      select: { id: true, status: true, userId: true, user: { select: { displayName: true } } },
+    });
+    if (!membership) throw notFound("교직원을 찾을 수 없습니다.");
+    if (membership.status !== "approved") throw conflict("member_not_approved", "승인된 교직원의 성명만 정정할 수 있습니다.");
+    const elsewhere = await tx.schoolMembership.count({ where: { userId: membership.userId, schoolId: { not: params.schoolId } } });
+    if (elsewhere > 0) {
+      throw conflict("multi_school_member", "다른 학교에도 소속된 계정이라 학교에서 성명을 바꿀 수 없습니다. 플랫폼 운영자에게 정정을 요청하세요.");
+    }
+    const before = membership.user.displayName;
+    if (before !== params.expectedCurrentName) {
+      throw conflict("name_changed", "그사이 성명이 바뀌었습니다. 화면을 새로 고친 뒤 다시 확인하세요.");
+    }
+    if (before === params.displayName) throw badRequest("지금 성명과 같습니다.");
+    // 확인한 성명 그대로일 때만 바꿈(동시 정정 방지)
+    const updated = await tx.user.updateMany({ where: { id: membership.userId, displayName: before }, data: { displayName: params.displayName } });
+    if (updated.count !== 1) throw conflict("name_changed", "그사이 성명이 바뀌었습니다. 화면을 새로 고친 뒤 다시 확인하세요.");
+    await writeAudit(tx, {
+      schoolId: params.schoolId,
+      actorUserId: params.actorUserId,
+      action: "membership.display_name_corrected",
+      targetType: "membership",
+      targetId: membership.id,
+      before: { displayName: before },
+      after: { displayName: params.displayName, userId: membership.userId, reason: params.reason },
+      ip: params.ip,
+    });
+    return { membershipId: membership.id, displayName: params.displayName };
+  });
+}

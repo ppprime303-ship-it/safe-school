@@ -1,7 +1,10 @@
 // 관리자: 교직원 가입 승인·거절(일괄)과 역할·담당 학급 배정
 // 업무경감: 여러 명을 체크해 한 번에 승인. 승인은 확인 창 없이 바로(되돌리려면 권한 회수), 거절만 확인 창.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, describeError } from "../../lib/api";
+import { api, ApiError, describeError } from "../../lib/api";
+import { can } from "../../lib/permissions";
+import { useSession } from "../../lib/session";
+import { FormField } from "../../components/ui/FormField";
 import { formatDateTime } from "../../lib/format";
 import { AppShell } from "../../components/layout/AppShell";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -42,6 +45,9 @@ export function MembersPage({ schoolId }: { schoolId: string }) {
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
   const [confirmReject, setConfirmReject] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const { usableMemberships } = useSession();
+  const canRename = can(usableMemberships.find((x) => x.school.id === schoolId) ?? null, "members.rename"); // 서버도 매번 검사
 
   const load = useCallback(async () => {
     try {
@@ -168,7 +174,18 @@ export function MembersPage({ schoolId }: { schoolId: string }) {
             <div className="mt-3 space-y-3">
               {approved.length === 0 && <EmptyState icon="users" title="승인된 교직원이 없습니다" />}
               {approved.map((m) =>
-                editing === m.id ? (
+                renaming === m.id ? (
+                  <NameEditor
+                    key={m.id}
+                    schoolId={schoolId}
+                    member={m}
+                    onDone={async (message) => {
+                      setRenaming(null);
+                      if (message) setSaveState({ kind: "saved", at: message });
+                      await load();
+                    }}
+                  />
+                ) : editing === m.id ? (
                   <AssignmentEditor
                     key={m.id}
                     schoolId={schoolId}
@@ -192,8 +209,13 @@ export function MembersPage({ schoolId }: { schoolId: string }) {
                         {m.assignments.length > 0 ? m.assignments.map((a) => `${a.class.label}${a.duty === "assist" ? "(보조)" : ""}`).join(", ") : "담당 학급 없음"}
                       </p>
                     </div>
+                    {canRename && (
+                      <PrimaryButton variant="ghost" onClick={() => { setEditing(null); setRenaming(m.id); }}>
+                        성명 정정
+                      </PrimaryButton>
+                    )}
                     {m.role !== "admin" && (
-                      <PrimaryButton variant="secondary" onClick={() => setEditing(m.id)} disabled={classes.length === 0}>
+                      <PrimaryButton variant="secondary" onClick={() => { setRenaming(null); setEditing(m.id); }} disabled={classes.length === 0}>
                         담당 배정
                       </PrimaryButton>
                     )}
@@ -321,6 +343,98 @@ function AssignmentEditor({
           <SaveStatus state={state} />
         </div>
       )}
+    </article>
+  );
+}
+
+/** Beta PILOT 2: 표시 성명 정정(학교 관리자). 현재 성명 확인 → 새 성명·사유 → 확인(필요하면 비밀번호 재확인). 성명 외에는 바뀌지 않음 */
+function NameEditor({ schoolId, member, onDone }: { schoolId: string; member: Member; onDone: (message: string | null) => void | Promise<void> }) {
+  const [name, setName] = useState(member.user.displayName);
+  const [reason, setReason] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [needReauth, setNeedReauth] = useState(false);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const next = name.normalize("NFC").trim().replace(/\s+/g, " ");
+  const ready = next.length >= 2 && next !== member.user.displayName && reason.trim().length >= 2;
+
+  const run = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api("PUT", `/schools/${schoolId}/members/${member.id}/display-name`, { displayName: next, expectedCurrentName: member.user.displayName, reason: reason.trim() });
+      setConfirming(false);
+      await onDone(`성명 정정: ${member.user.displayName} → ${next}`);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "reauth_required") setNeedReauth(true);
+      else {
+        setConfirming(false);
+        setError(describeError(e).message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reauthThenRun = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api("POST", "/auth/reauth", { password });
+      setPassword("");
+      setNeedReauth(false);
+      await run();
+    } catch (e) {
+      setError(describeError(e).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <article className="rounded-card border-2 border-brand bg-card p-4 shadow-card">
+      <p className="text-lg font-bold">성명 정정</p>
+      <p className="mt-1 text-base">
+        현재 등록 성명: <strong>{member.user.displayName}</strong> <span className="text-ink-muted">({member.user.email})</span>
+      </p>
+      <p className="mt-1 text-sm text-ink-muted">성명만 바뀝니다. 이메일·비밀번호·역할·담당 학급·대리 보고 지정은 그대로이고, 과거 보고 기록은 계정 기준으로 유지됩니다. 바꾸기 전 성명과 사유는 기록에 남아 잘못 바꿔도 다시 정정할 수 있습니다.</p>
+      <FormField className="mt-3" label="새 성명" autoComplete="off" maxLength={30} value={name} onChange={(e) => setName(e.target.value)} />
+      <FormField className="mt-3" label="정정 사유" hint="예: 가입 시 별명 입력, 오타" maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} />
+      {error && <p className="mt-3 font-semibold text-danger" role="alert">{error}</p>}
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        <PrimaryButton disabled={!ready} onClick={() => setConfirming(true)}>
+          정정하기
+        </PrimaryButton>
+        <PrimaryButton variant="ghost" onClick={() => void onDone(null)} disabled={busy}>
+          취소
+        </PrimaryButton>
+      </div>
+
+      <ConfirmDialog open={confirming && !needReauth} title="성명을 정정할까요?" confirmLabel="정정" tone="primary" loading={busy} onConfirm={() => void run()} onCancel={() => setConfirming(false)}>
+        <p>
+          <strong>{member.user.displayName}</strong> → <strong>{next}</strong>
+        </p>
+        <p className="mt-1 text-sm">사유: {reason.trim()}</p>
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={needReauth}
+        title="비밀번호를 다시 확인합니다"
+        confirmLabel="확인 후 계속"
+        tone="primary"
+        loading={busy}
+        onConfirm={() => void reauthThenRun()}
+        onCancel={() => {
+          setNeedReauth(false);
+          setConfirming(false);
+        }}
+      >
+        <label className="mt-3 block font-bold" htmlFor="rename-reauth-pw">
+          비밀번호
+        </label>
+        <input id="rename-reauth-pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="mt-1 block min-h-touch w-full rounded-control border-2 border-line-strong px-3 text-lg" />
+        {error && <p className="mt-2 font-semibold text-danger">{error}</p>}
+      </ConfirmDialog>
     </article>
   );
 }

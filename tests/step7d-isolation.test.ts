@@ -155,6 +155,8 @@ const WRITES: RouteCase[] = [
   { name: "학급 구조 적용", method: "POST", path: (k) => `${S(k)}/classes/apply-structure`, cap: "classes.manage" },
   { name: "학교 소재지 수정", method: "PUT", path: (k) => `${S(k)}/region`, cap: "region.manage" },
   { name: "업무 지정", method: "POST", path: (k) => `${S(k)}/duties`, cap: "duties.manage" },
+  // Beta PILOT 2: 성명 정정(학교 관리자만 — 시연 계정 8개에는 없음)
+  { name: "성명 정정", method: "PUT", path: (k) => `${S(k)}/members/${membershipOf[`${k}1`]}/display-name`, cap: "members.rename" },
   { name: "훈련일지 만들기", method: "POST", path: (k) => `${S(k)}/events/${activeEvent[k]}/drill-log`, cap: "drilllog.edit" },
   { name: "훈련일지 수정", method: "PATCH", path: (k) => `${S(k)}/drill-logs/${drillLog[k]}`, cap: "drilllog.edit" },
 ];

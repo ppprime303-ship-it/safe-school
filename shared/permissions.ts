@@ -25,6 +25,7 @@ export type Capability =
   | "drilllog.view" // 훈련일지 열람·다운로드
   | "drilllog.edit" // 훈련일지 만들기·수정
   | "members.manage" // 교직원 가입 승인·거절·회수, 학급 배정
+  | "members.rename" // Beta PILOT 2: 교직원 표시 성명 정정(학교 관리자만. 역할·배정·대리 지정과 무관)
   | "classes.manage" // 학급 구성·재적 확인
   | "region.manage" // 학교 소재지(경보 수신 지역) 확인
   | "duties.manage"; // 안전업무 담당·앱 운영담당 지정·해제(교장·교감 직책은 제외)
@@ -37,6 +38,7 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
   "drilllog.view": "훈련일지 열람·다운로드",
   "drilllog.edit": "훈련일지 작성·수정",
   "members.manage": "교직원 승인·배정",
+  "members.rename": "교직원 성명 정정",
   "classes.manage": "학급 관리",
   "region.manage": "학교 소재지 확인",
   "duties.manage": "업무 담당자 지정",
@@ -46,7 +48,8 @@ const BY_ROLE: Record<MemberRole, Capability[]> = {
   // 기존 학교 관리자: STEP 2~3-C에서 쓰던 기능 그대로 + 훈련일지 열람(상황판 열람과 같은 수준)
   // + 업무 담당자 지정(기존에도 교직원 승인·역할 변경을 하던 운영 권한의 연장, 교장·교감 지정은 불가)
   // Beta PILOT 2: 상황판 요약(board.view)은 승인된 교직원 누구나. 열람 권한은 학급 보고 권한을 만들지 않습니다(보고는 담임·지정 대리 담당만)
-  admin: ["event.issue", "event.close", "board.view", "board.detail", "members.manage", "classes.manage", "region.manage", "duties.manage", "drilllog.view"],
+  // Beta PILOT 2: 성명 정정(members.rename)은 학교 관리자만 — 앱 운영담당은 승인·배정은 하지만 성명은 바꾸지 않음
+  admin: ["event.issue", "event.close", "board.view", "board.detail", "members.manage", "members.rename", "classes.manage", "region.manage", "duties.manage", "drilllog.view"],
   homeroom: ["board.view"],
   staff: ["board.view"],
 };

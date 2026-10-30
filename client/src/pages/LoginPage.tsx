@@ -160,13 +160,11 @@ export function LoginPage() {
             />
             {mode === "signup" && (
               <FormField
-                label={
-                  <>
-                    이름 <strong className="font-extrabold text-brand">(개인정보 보호를 위해 현재는 닉네임을 입력해 주세요)</strong>
-                  </>
-                }
-                autoComplete="nickname"
-                placeholder="예: 이수, 보건쌤, 교사01"
+                label="성명"
+                hint="학교 재난 대응 시 교직원 확인에 사용되는 실제 성명을 입력해 주세요."
+                autoComplete="name"
+                placeholder="예: 홍길동"
+                maxLength={30}
                 required
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
@@ -177,7 +175,7 @@ export function LoginPage() {
               <div className="rounded-control border border-line bg-page p-3 text-sm text-ink-muted">
                 <p className="font-bold text-ink">개인정보 수집 안내(Prototype v0.1)</p>
                 <p className="mt-1 font-semibold text-ink">
-                  입력한 닉네임, 이메일, 소속 학교 및 담당 업무 정보는 Prototype v0.1 사용성 평가 목적으로 이용하며, 2026년 11월 10일 삭제 예정입니다. 실제 학생 개인정보는 입력하지 마세요.
+                  입력한 성명, 이메일, 소속 학교 및 담당 업무 정보는 Prototype v0.1 사용성 평가 목적으로 이용하며, 2026년 11월 10일 삭제 예정입니다. 실제 학생 개인정보는 입력하지 마세요.
                 </p>
                 <p className="mt-1">삭제 요청 등 문의는 평가 운영자에게 해 주세요(처리 방법은 평가 안내문 참고).</p>
               </div>

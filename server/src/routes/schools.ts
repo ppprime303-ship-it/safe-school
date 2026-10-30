@@ -15,6 +15,7 @@ import {
   decideMemberships,
   requestToJoinSchool,
   resolveSchoolAccess,
+  renameMember,
   revokeMembership,
   setAssignments,
 } from "../services/membership.js";
@@ -32,6 +33,7 @@ import {
   joinRequestSchema,
   membershipDecisionSchema,
   registrationApplySchema,
+  renameMemberSchema,
 } from "../../../shared/schemas.js";
 
 export const schoolsRouter = Router();
@@ -164,6 +166,14 @@ schoolsRouter.post("/schools/:schoolId/members/:membershipId/revoke", requireVer
   const schoolId = param(req.params.schoolId);
   const a = await resolveAccess(prisma, { userId: req.auth!.userId, schoolId, need: "members.manage" });
   res.json(await revokeMembership(prisma, { schoolId, actorUserId: req.auth!.userId, membershipId: param(req.params.membershipId), actorRole: a.membership.role, ip: req.ip }));
+});
+
+// Beta PILOT 2: 교직원 표시 성명 정정(학교 관리자 members.rename + 비밀번호 재확인). 성명 외에는 바꾸지 않음
+schoolsRouter.put("/schools/:schoolId/members/:membershipId/display-name", requireVerified, requireRecentReauth, async (req, res) => {
+  const schoolId = param(req.params.schoolId);
+  await resolveAccess(prisma, { userId: req.auth!.userId, schoolId, need: "members.rename" });
+  const input = parse(renameMemberSchema, req.body);
+  res.json(await renameMember(prisma, { schoolId, actorUserId: req.auth!.userId, membershipId: param(req.params.membershipId), ...input, ip: req.ip }));
 });
 
 // ───────────── 학급(승인된 교직원 조회, 관리자 수정) ─────────────
