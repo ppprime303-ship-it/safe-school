@@ -95,6 +95,16 @@ export function BoardPage({ schoolId }: { schoolId: string }) {
       )}
       {load.kind === "error" && <ErrorState message={load.message} onRetry={() => void poll()} />}
       {load.kind === "ready" && <BoardView data={load.data} connection={connection} onCloseEvent={can(membership, "event.close") ? () => setConfirmClose(true) : undefined} />}
+      {/* Beta PILOT 2 Phase 3: 현장 상황 공유(실제 재난·모의훈련 모두, 학생 대피·교직원 소재와 별개) */}
+      {load.kind === "ready" && (
+        <Link
+          href={`/s/${schoolId}/incidents?event=${load.data.event.id}`}
+          className="mt-5 flex min-h-touch items-center justify-between rounded-card border-2 border-warning bg-card p-4 text-lg font-bold shadow-card"
+        >
+          <span>현장 상황 공유(제보 보기·새 제보)</span>
+          <span aria-hidden>›</span>
+        </Link>
+      )}
       {/* Beta PILOT 2 Phase 2-C: 교직원 소재는 실제 재난에서만, 학생 대피 현황과 별도 화면 */}
       {load.kind === "ready" && load.data.event.mode === "real" && (
         <Link

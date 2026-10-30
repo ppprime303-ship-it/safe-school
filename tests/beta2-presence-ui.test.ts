@@ -62,10 +62,10 @@ describe("소재 보고 확인 문구", () => {
   });
 });
 
-describe("메뉴는 그대로(소재 화면은 알림 배너·상황판에서 연결)", () => {
-  it("모바일 하단 메뉴 항목 변화 없음", () => {
+describe("메뉴(소재 화면은 알림 배너·상황판에서 연결, Phase 3에서 '현장 제보' 추가)", () => {
+  it("모바일 하단 메뉴: 소재 메뉴는 없고 현장 제보만 추가", () => {
     const bottom = (caps: string[]) => navItemsFor("s1", caps).filter((i) => i.mobile === undefined).map((i) => i.label);
-    expect(bottom(["board.view"])).toEqual(["상황판", "학급 보고", "경보", "학교 선택"]);
+    expect(bottom(["board.view"])).toEqual(["상황판", "학급 보고", "현장 제보", "경보", "학교 선택"]);
   });
 });
 

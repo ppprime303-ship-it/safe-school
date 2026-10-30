@@ -1,6 +1,8 @@
 // 화면 연결: 로그인 → (소속이 하나면 자동 선택) → 관리자는 상황판, 교직원은 학급 보고
 import { PresencePage } from "./pages/presence/PresencePage";
 import { StaffPresencePage } from "./pages/presence/StaffPresencePage";
+import { IncidentsPage } from "./pages/incidents/IncidentsPage";
+import { IncidentDetailPage } from "./pages/incidents/IncidentDetailPage";
 import { useEffect, type ReactElement } from "react";
 import { matchPath, navigate, usePath } from "./lib/router";
 import { SessionProvider, useSession } from "./lib/session";
@@ -84,6 +86,13 @@ function Routes() {
     return <FacilityResourceDetailPage key={facRoute.resourceId} schoolId={facRoute.schoolId!} resourceId={facRoute.resourceId!} />;
   }
 
+  // Beta PILOT 2 Phase 3: 현장 제보 상세(승인 교직원 누구나 — 처리·사진 권한은 서버가 검사)
+  const incidentRoute = matchPath("/s/:schoolId/incidents/:incidentId", path);
+  if (incidentRoute) {
+    if (!usableMemberships.some((m) => m.school.id === incidentRoute.schoolId)) return <Redirect to="/schools" />;
+    return <IncidentDetailPage key={incidentRoute.incidentId} schoolId={incidentRoute.schoolId!} incidentId={incidentRoute.incidentId!} />;
+  }
+
   const noticeRoute = matchPath("/s/:schoolId/notices/:noticeId", path);
   if (noticeRoute) {
     if (!usableMemberships.some((m) => m.school.id === noticeRoute.schoolId)) return <Redirect to="/schools" />;
@@ -108,6 +117,8 @@ function Routes() {
       board: { cap: "board.view", page: (id) => <BoardPage schoolId={id} /> },
       // Beta PILOT 2 Phase 2-C: 교직원 소재 현황(요약은 누구나, 개인별은 서버가 presence.detail 에게만)
       "staff-presence": { cap: "board.view", page: (id) => <StaffPresencePage schoolId={id} /> },
+      // Beta PILOT 2 Phase 3: 현장 상황 공유(실제 재난·모의훈련)
+      incidents: { cap: "board.view", page: (id) => <IncidentsPage key={window.location.search} schoolId={id} /> },
       members: { cap: "members.manage", page: (id) => <MembersPage schoolId={id} /> },
       classes: { cap: "classes.manage", page: (id) => <ClassesPage schoolId={id} /> },
       "drill-logs": { cap: "drilllog.view", page: (id) => <DrillLogsPage schoolId={id} /> },

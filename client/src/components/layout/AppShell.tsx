@@ -29,6 +29,8 @@ export function navItemsFor(schoolId: string | null, caps: readonly string[] | n
   const items: NavItem[] = [];
   if (has("board.view")) items.push({ href: `/s/${schoolId}/board`, label: "상황판", icon: "dashboard" });
   items.push({ href: `/s/${schoolId}/report`, label: "학급 보고", icon: "clipboard" });
+  // Beta PILOT 2 Phase 3: 현장 상황 공유(승인 교직원 누구나 — 학급 보고·교직원 소재와 별개)
+  if (has("board.view")) items.push({ href: `/s/${schoolId}/incidents`, label: "현장 제보", icon: "alert" });
   items.push({ href: `/s/${schoolId}/alerts`, label: "경보", icon: "bell" });
   if (has("drilllog.view")) items.push({ href: `/s/${schoolId}/drill-logs`, label: "훈련일지", icon: "file" });
   if (has("members.manage")) items.push({ href: `/s/${schoolId}/members`, label: "교직원", icon: "users" });
