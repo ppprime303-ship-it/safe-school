@@ -9,3 +9,4 @@ backups/
 .DS_Store
 coverage/
 e2e-output/
+data/

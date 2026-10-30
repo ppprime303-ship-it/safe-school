@@ -10,6 +10,8 @@ import { requireVerified } from "../auth/session.js";
 import { rateLimit } from "../middleware/security.js";
 import { resolveAccess } from "../services/access.js";
 import { addIncidentUpdate, changeIncidentStatus, createIncident, getIncident, listIncidents, similarIncidents, type Viewer } from "../services/incidents.js";
+import { addIncidentPhoto, deleteIncidentPhoto, readIncidentPhoto } from "../services/incidentPhotos.js";
+import { z } from "zod";
 import { idempotencyKeySchema } from "../../../shared/schemas.js";
 import { incidentCreateSchema, incidentStatusSchema, incidentUpdateSchema, similarQuerySchema } from "../../../shared/incident.js";
 
@@ -66,4 +68,32 @@ incidentsRouter.post("/schools/:schoolId/incidents/:incidentId/status", requireV
   const viewer = await viewerOf(req, "incident.manage");
   const input = parse(incidentStatusSchema, req.body);
   res.json(await changeIncidentStatus(prisma, { schoolId: schoolOf(req), incidentId: param(req.params.incidentId), membershipId: viewer.membershipId, actorUserId: req.auth!.userId, ...input, ip: req.ip }));
+});
+
+// ───────────── Phase 3-C 현장 사진(비공개) ─────────────
+// 본문은 JSON { data: base64 }(상태 변경 API는 JSON만 받는 CSRF 방어 유지), 이 경로만 본문 한도 7MB(app.ts)
+const photoLimiter = rateLimit({ windowMs: 60 * 1000, max: 20 });
+const photoBody = (body: unknown) => parse(z.object({ data: z.string().min(1).max(7_100_000) }).strict(), body);
+
+incidentsRouter.post("/schools/:schoolId/incidents/:incidentId/photos", requireVerified, photoLimiter, async (req, res) => {
+  const viewer = await viewerOf(req);
+  const { data } = photoBody(req.body);
+  const r = await addIncidentPhoto(prisma, { schoolId: schoolOf(req), incidentId: param(req.params.incidentId), membershipId: viewer.membershipId, actorUserId: req.auth!.userId, dataBase64: data, ip: req.ip });
+  res.status(201).json(r);
+});
+
+incidentsRouter.get("/schools/:schoolId/incidents/:incidentId/photos/:photoId", requireVerified, async (req, res) => {
+  await resolveAccess(prisma, { userId: req.auth!.userId, schoolId: schoolOf(req), need: "incident.photo" });
+  const photo = await readIncidentPhoto(prisma, { schoolId: schoolOf(req), incidentId: param(req.params.incidentId), photoId: param(req.params.photoId) });
+  res.setHeader("Content-Type", photo.mimeType);
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Security-Policy", "default-src 'none'; img-src 'self'; sandbox");
+  res.setHeader("Content-Disposition", `inline; filename="incident-photo.${photo.mimeType === "image/png" ? "png" : "jpg"}"`);
+  res.end(photo.data);
+});
+
+incidentsRouter.delete("/schools/:schoolId/incidents/:incidentId/photos/:photoId", requireVerified, async (req, res) => {
+  const viewer = await viewerOf(req, "incident.manage");
+  res.json(await deleteIncidentPhoto(prisma, { schoolId: schoolOf(req), incidentId: param(req.params.incidentId), photoId: param(req.params.photoId), membershipId: viewer.membershipId, actorUserId: req.auth!.userId, ip: req.ip }));
 });

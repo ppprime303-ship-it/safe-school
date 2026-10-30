@@ -66,7 +66,11 @@ export async function createApp(options: { mode: "development" | "production" | 
   app.set("trust proxy", options.trustProxyHops ?? 1);
   // inflate: false — 압축(gzip·deflate·br) 요청 본문은 받지 않음(화면은 압축 본문을 보내지 않음).
   // body-parser 2.0~2.3 압축 본문 서비스 거부 취약점(GHSA-27r3-jxmh-p828) 경로를 버전 변경 없이 차단(STEP 8)
-  app.use(express.json({ limit: "100kb", inflate: false }));
+  // Beta PILOT 2 Phase 3-C: 현장 사진 첨부 경로만 본문 7MB(base64 JSON, 원본 5MB 이하). 나머지는 그대로 100KB
+  const smallJson = express.json({ limit: "100kb", inflate: false });
+  const photoJson = express.json({ limit: "7mb", inflate: false });
+  const PHOTO_UPLOAD_PATH = /^\/api\/schools\/[^/]+\/incidents\/[^/]+\/photos$/;
+  app.use((req, res, next) => (req.method === "POST" && PHOTO_UPLOAD_PATH.test(req.path) ? photoJson : smallJson)(req, res, next));
 
   app.use("/api", createApiRouter());
   app.use("/api", errorHandler);
