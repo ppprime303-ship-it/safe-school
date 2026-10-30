@@ -101,7 +101,6 @@ beforeAll(async () => {
     classId: classA1,
     actorUserId: U.teacherA!,
     membershipId: M.teacherA!,
-    role: "homeroom",
     idempotencyKey: randomUUID(),
     input: { evacuated: 19, absentKnown: 1, injured: 0, enrolledCount: 20, enrolledChangeReason: null, note: null, expectedVersion: null },
   });

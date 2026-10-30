@@ -73,13 +73,13 @@ eventsRouter.get("/schools/:schoolId/events/:eventId/board", requireVerified, as
   res.json({ scope: "full", ...board, summary: summarize(board.classes) });
 });
 
-// 내가 보고할 학급(관리자는 전체)
+// 내가 보고할 학급: 담임 학급 + 이 사건의 대리 담당 학급(Phase 1-3: 관리자도 같음)
 eventsRouter.get("/schools/:schoolId/events/:eventId/my-classes", requireVerified, async (req, res) => {
   const m = await member(req);
-  res.json({ classes: await myClasses(prisma, { ...ids(req), membershipId: m.id, role: m.role }) });
+  res.json({ classes: await myClasses(prisma, { ...ids(req), membershipId: m.id }) });
 });
 
-// A2 학급 보고(배정 교직원 또는 관리자 대리). Idempotency-Key 필수
+// A2 학급 보고(담임 또는 이 사건의 대리 담당만 — Phase 1-3). Idempotency-Key 필수
 eventsRouter.put("/schools/:schoolId/events/:eventId/reports/:classId", requireVerified, reportLimiter, async (req, res) => {
   const m = await member(req);
   const rawKey = req.get("Idempotency-Key");
@@ -91,7 +91,6 @@ eventsRouter.put("/schools/:schoolId/events/:eventId/reports/:classId", requireV
     classId: param(req.params.classId),
     actorUserId: req.auth!.userId,
     membershipId: m.id,
-    role: m.role,
     idempotencyKey,
     input,
     ip: req.ip,
@@ -118,7 +117,7 @@ const classIdOf = (req: Request) => parse(z.object({ classId: z.string().uuid() 
 
 eventsRouter.get("/schools/:schoolId/events/:eventId/classes/:classId/delegation-suggestions", requireVerified, async (req, res) => {
   await issuer(req);
-  res.json(await delegationSuggestions(prisma, { ...ids(req), classId: classIdOf(req) }));
+  res.json(await delegationSuggestions(prisma, { ...ids(req), classId: classIdOf(req), actorUserId: req.auth!.userId }));
 });
 
 eventsRouter.post("/schools/:schoolId/events/:eventId/classes/:classId/delegation", requireVerified, issueLimiter, async (req, res) => {

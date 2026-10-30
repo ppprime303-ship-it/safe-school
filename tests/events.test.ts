@@ -13,6 +13,7 @@ import {
   summarize,
   type ReportInput,
 } from "../server/src/services/events.js";
+import { assignDelegate } from "../server/src/services/delegations.js";
 
 const prisma = createTestClient();
 const YEAR = currentSchoolYear();
@@ -78,7 +79,6 @@ const report = (eventId: string, classId: string, key: string, over: Partial<Rep
     classId,
     actorUserId: who === "teacher" ? teacherUser : adminUser,
     membershipId: who === "teacher" ? teacherMembership : adminMembership,
-    role: who === "teacher" ? "homeroom" : "admin",
     idempotencyKey: key,
     input: input(over),
   });
@@ -123,12 +123,24 @@ describe("A1 발령", () => {
 });
 
 describe("A2 학급 보고", () => {
-  it("담임은 배정된 학급만 보고 목록에 보이고, 관리자는 올해 활성 학급 전체가 보인다", async () => {
+  it("담임은 배정된 학급만 보고 목록에 보이고, 관리자도 담임·대리 학급이 없으면 비어 있다(전체 현황은 상황판, Phase 1-3)", async () => {
     const event = await drill();
-    const mine = await myClasses(prisma, { schoolId: schoolA, eventId: event.id, membershipId: teacherMembership, role: "homeroom" });
+    const mine = await myClasses(prisma, { schoolId: schoolA, eventId: event.id, membershipId: teacherMembership });
     expect(mine.map((c) => c.classId)).toEqual([class11]);
-    const all = await myClasses(prisma, { schoolId: schoolA, eventId: event.id, membershipId: adminMembership, role: "admin" });
-    expect(all.map((c) => c.classId)).toEqual([class11, class12, class13]); // 작년 학급·다른 학교 제외
+    expect(await myClasses(prisma, { schoolId: schoolA, eventId: event.id, membershipId: adminMembership })).toEqual([]);
+    const board = await getBoard(prisma, { schoolId: schoolA, eventId: event.id });
+    expect(board.classes.map((c) => c.classId)).toEqual([class11, class12, class13]); // 작년 학급·다른 학교 제외
+  });
+
+  it("관리자라는 이유만으로는 보고 불가(생성·수정 모두 403), 관리자가 담임인 학급은 보고 가능", async () => {
+    const event = await drill();
+    await expect(report(event.id, class12, "key-adm-0001", { enrolledCount: 30 }, "admin")).rejects.toMatchObject({ status: 403, code: "class_not_assigned" });
+    await report(event.id, class11, "key-adm-0002");
+    await expect(report(event.id, class11, "key-adm-0003", { evacuated: 27, expectedVersion: 1 }, "admin")).rejects.toMatchObject({ status: 403 });
+    await prisma.classAssignment.create({ data: { membershipId: adminMembership, classId: class12, duty: "homeroom" } });
+    const { report: r } = await report(event.id, class12, "key-adm-0004", { enrolledCount: 30, evacuated: 30, absentKnown: 0 }, "admin");
+    expect(r.version).toBe(1);
+    expect(await prisma.evacuationReportRevision.count({ where: { report: { classId: class11 } } })).toBe(1);
   });
 
   it("미확인 인원은 서버가 계산하고, 보고자 이름과 버전이 돌아온다", async () => {
@@ -159,7 +171,11 @@ describe("A2 학급 보고", () => {
   it("다른 사람이 먼저 수정했으면 409 version_conflict와 최신 보고를 돌려준다", async () => {
     const event = await drill();
     await report(event.id, class11, "key-v1-0001");
-    await report(event.id, class11, "key-v2-0001", { evacuated: 27, expectedVersion: 1 }, "admin");
+    // Phase 1-3: 두 번째 보고자는 이 사건에 지정된 대리 담당(관리자 대리 보고는 없어짐)
+    const deputyUser = (await prisma.user.create({ data: { email: "deputy@a.kr", displayName: "대리교사", emailVerifiedAt: new Date() } })).id;
+    const deputyMembership = await approvedMember(schoolA, deputyUser, "staff");
+    await assignDelegate(prisma, { schoolId: schoolA, eventId: event.id, classId: class11, actorUserId: adminUser, delegateMembershipId: deputyMembership, reason: "unable" });
+    await submitReport(prisma, { schoolId: schoolA, eventId: event.id, classId: class11, actorUserId: deputyUser, membershipId: deputyMembership, idempotencyKey: "key-v2-0001", input: input({ evacuated: 27, expectedVersion: 1 }) });
     await expect(report(event.id, class11, "key-v2-0002", { evacuated: 25, expectedVersion: 1 })).rejects.toMatchObject({
       code: "version_conflict",
       details: { current: { version: 2, evacuated: 27 } },
@@ -167,7 +183,7 @@ describe("A2 학급 보고", () => {
     const revisions = await prisma.evacuationReportRevision.findMany({ orderBy: { version: "asc" } });
     expect(revisions.map((r) => [r.version, r.changeReason])).toEqual([
       [1, null],
-      [2, "관리자 대리 보고"],
+      [2, "대리 담당 보고"],
     ]);
   });
 
@@ -188,9 +204,10 @@ describe("A2 학급 보고", () => {
     expect(saved).toMatchObject({ enrolledSnapshot: 28, enrolledCount: 27, enrolledChangeReason: "transfer_out" });
   });
 
-  it("재적 미확인 학급도 관리자가 현장 인원으로 보고할 수 있다", async () => {
+  it("재적 미확인 학급도 담임이 현장 인원으로 보고할 수 있다", async () => {
     const event = await drill();
-    const { report: r } = await report(event.id, class13, "key-null-001", { enrolledCount: 22, evacuated: 22, absentKnown: 0 }, "admin");
+    await prisma.classAssignment.create({ data: { membershipId: teacherMembership, classId: class13, duty: "homeroom" } });
+    const { report: r } = await report(event.id, class13, "key-null-001", { enrolledCount: 22, evacuated: 22, absentKnown: 0 });
     expect(r.unconfirmed).toBe(0);
   });
 });

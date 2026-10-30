@@ -116,7 +116,10 @@ export function ReportPage({ schoolId }: { schoolId: string }) {
   const event = load.kind === "ready" ? load.event : null;
   const view = load.kind === "ready" ? load.classes.find((c) => c.classId === selected) ?? null : null;
 
-  const assignedClasses = current?.school.id === schoolId ? current.assignments : [];
+  // Phase 1-3: 보고 권한은 담임 배정과 이번 상황의 대리 지정뿐 — 보조(assist) 배정은 따로 표시(보고 권한 아님)
+  const myAssignments = current?.school.id === schoolId ? current.assignments : [];
+  const assignedClasses = myAssignments.filter((a) => a.duty === "homeroom");
+  const assistClasses = myAssignments.filter((a) => a.duty === "assist");
   const delegatedClasses = load.kind === "ready" ? load.classes.filter((c) => c.responsibility === "delegated") : [];
 
   return (
@@ -128,9 +131,14 @@ export function ReportPage({ schoolId }: { schoolId: string }) {
             {assignedClasses.map((a) => a.class.label).join(", ")}
           </p>
         ) : (
-          <p className="mt-2 text-base text-ink-muted">배정된 학급이 없습니다. 학교 관리자에게 담당 학급 배정을 요청하세요.</p>
+          <p className="mt-2 text-base text-ink-muted">담임 학급이 없습니다. 학교 관리자에게 담당 학급 배정을 요청하세요.</p>
         )}
-        <p className="mt-2 text-sm text-ink-muted">담당 학급은 관리자 배정 정보를 기준으로 표시합니다.</p>
+        <p className="mt-2 text-sm text-ink-muted">학급 보고는 담임 학급과, 재난 상황에서 대리 담당으로 지정된 학급만 할 수 있습니다. 학교 전체 현황은 상황판에서 확인하세요.</p>
+        {assistClasses.length > 0 && (
+          <p className="mt-1 text-sm text-ink-muted">
+            보조 배정 {assistClasses.map((a) => a.class.label).join(", ")}: 대리 담당 후보로만 쓰이며, 보고하려면 상황 중 대리 담당으로 지정되어야 합니다.
+          </p>
+        )}
         {delegatedClasses.length > 0 && (
           <div className="mt-3 rounded-control border-2 border-warning bg-warning-soft p-3">
             <h3 className="font-bold text-warning-strong">대리 담당 학급(이번 상황 동안만)</h3>
@@ -149,11 +157,15 @@ export function ReportPage({ schoolId }: { schoolId: string }) {
         <EmptyState
           icon="check-circle"
           title="진행 중인 재난 상황이 없습니다"
-          message={`재난이 발령되면 ${current?.assignments.map((a) => a.class.label).join(", ") || "담당 학급"} 보고 화면이 이곳에 바로 열립니다.`}
+          message={`재난이 발령되면 ${assignedClasses.map((a) => a.class.label).join(", ") || "담당 학급"} 보고 화면이 이곳에 바로 열립니다.`}
         />
       )}
       {load.kind === "ready" && load.classes.length === 0 && (
-        <EmptyState icon="users" title="배정된 학급이 없습니다" message="학교 관리자에게 담당 학급 배정을 요청하세요." />
+        <EmptyState
+          icon="users"
+          title="보고할 학급이 없습니다"
+          message="담임 학급이 없고 이번 상황의 대리 담당으로도 지정되지 않았습니다. 학교 전체 현황은 상황판에서 확인하세요. 담임이 보고할 수 없는 학급은 발령 권한자가 대리 담당을 지정합니다."
+        />
       )}
       {load.kind === "ready" && !view && load.classes.length > 1 && (
         <div className="mx-auto max-w-xl">

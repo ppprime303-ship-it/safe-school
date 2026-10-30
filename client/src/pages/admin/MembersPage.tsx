@@ -269,7 +269,7 @@ function AssignmentEditor({
 
   const save = async () => {
     setState({ kind: "saving" });
-    // 담임은 '담임' 업무, 교직원은 '보조(대리 보고)' 업무로 배정(입력 단계를 줄이기 위해 역할로 결정)
+    // 담임은 '담임' 업무, 교직원은 '보조' 업무로 배정(입력 단계를 줄이기 위해 역할로 결정). Phase 1-3: 보조는 대리 담당 후보 표시일 뿐 보고 권한이 아님
     const duty: Duty = role === "homeroom" ? "homeroom" : "assist";
     try {
       await api("PUT", `/schools/${schoolId}/members/${member.id}/assignments`, {
@@ -298,7 +298,7 @@ function AssignmentEditor({
           </button>
         ))}
       </div>
-      <p className="mt-3 text-base font-bold">{role === "homeroom" ? "담임 학급" : "대리 보고할 학급(보조)"}</p>
+      <p className="mt-3 text-base font-bold">{role === "homeroom" ? "담임 학급" : "보조 학급(대리 담당 후보 — 보고하려면 상황 중 대리 지정 필요)"}</p>
       {grades.map((g) => (
         <div key={g} className="mt-2">
           <p className="text-sm font-semibold text-ink-muted">{g}학년</p>

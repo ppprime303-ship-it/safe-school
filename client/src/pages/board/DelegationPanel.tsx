@@ -86,6 +86,10 @@ export function DelegationPanel({ schoolId, eventId, classes, onChanged }: { sch
       <p className="mt-1 text-sm text-ink-muted">
         담당 교사와 연락이 되지 않거나 보고할 수 없을 때, <strong>이번 상황 동안만</strong> 같은 학교 교직원에게 그 학급 보고를 맡깁니다. 보고가 늦다는 것만으로 교사의 상태를 판단하지 마세요. 상황을 종료하면 자동으로 해제됩니다.
       </p>
+      {/* Beta PILOT 2 Phase 1-3 */}
+      <p className="mt-1 text-sm font-semibold">
+        학급 보고는 담임과 여기서 지정한 대리 담당만 할 수 있습니다(관리자도 같음). 자기 자신은 지정할 수 없으니, 직접 맡아야 하면 다른 발령 권한자가 지정해 주세요.
+      </p>
       <p className="mt-2 rounded-control bg-page p-3 text-sm">{SPECIAL_CLASS_NOTICE}</p>
       {message && !target && <p role="alert" className="mt-2 font-semibold text-danger">{message}</p>}
       <ul className="mt-3 divide-y divide-line">

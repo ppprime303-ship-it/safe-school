@@ -44,8 +44,11 @@ async function loadActiveEvent(db: Db, schoolId: string, eventId: string) {
 
 const memberLabel = { id: true, role: true, user: { select: { displayName: true } } } satisfies Prisma.SchoolMembershipSelect;
 
-/** 학급 대리 후보: 학교급별 기본 순서 + 같은 학교 승인 교직원 전체(관리자가 직접 고를 수 있게) */
-export async function delegationSuggestions(prisma: PrismaClient, params: { schoolId: string; eventId: string; classId: string }) {
+/**
+ * 학급 대리 후보: 학교급별 기본 순서 + 같은 학교 승인 교직원 전체(관리자가 직접 고를 수 있게)
+ * Phase 1-3: 보조(assist) 배정은 보고 권한이 아니라 '부담임 후보' 표시에만 씀. 지정하는 사람 자신은 후보에서 뺌(자기 지정 불가)
+ */
+export async function delegationSuggestions(prisma: PrismaClient, params: { schoolId: string; eventId: string; classId: string; actorUserId: string }) {
   await loadActiveEvent(prisma, params.schoolId, params.eventId);
   const [school, cls] = await Promise.all([
     prisma.school.findUniqueOrThrow({ where: { id: params.schoolId }, select: { schoolKindCode: true } }),
@@ -56,6 +59,7 @@ export async function delegationSuggestions(prisma: PrismaClient, params: { scho
     where: { schoolId: params.schoolId, status: "approved", user: { status: "active" } },
     select: {
       ...memberLabel,
+      userId: true,
       requestedDuties: true,
       requestedClass: true,
       assignments: { select: { classId: true, duty: true } },
@@ -76,14 +80,15 @@ export async function delegationSuggestions(prisma: PrismaClient, params: { scho
         { step: "부담임", members: assist },
         { step: "학년부장(신청 정보 기준, 미확정)", members: gradeHead },
       ];
-  const originalIds = new Set(original.map((m) => m.id));
+  // 원 담당(담임)과 지정하는 사람 자신은 후보에서 뺌(자기 지정은 서버도 거부)
+  const excludedIds = new Set([...original.map((m) => m.id), ...approved.filter((m) => m.userId === params.actorUserId).map((m) => m.id)]);
   const toView = (m: (typeof approved)[number]) => ({ membershipId: m.id, name: m.user.displayName, role: m.role });
   return {
     schoolLevel: elementary ? "elementary" : "secondary",
     original: original.map(toView),
-    suggestions: steps.map((s) => ({ step: s.step, members: s.members.filter((m) => !originalIds.has(m.id)).map(toView) })),
+    suggestions: steps.map((s) => ({ step: s.step, members: s.members.filter((m) => !excludedIds.has(m.id)).map(toView) })),
     // 후보가 없을 때를 위한 예외: 같은 학교 승인 교직원 중에서 관리자가 직접 지정
-    candidates: approved.filter((m) => !originalIds.has(m.id)).map(toView),
+    candidates: approved.filter((m) => !excludedIds.has(m.id)).map(toView),
   };
 }
 
@@ -115,6 +120,10 @@ export async function assignDelegate(
         select: { id: true, userId: true, assignments: { where: { classId: cls.id, duty: "homeroom" }, select: { id: true } } },
       });
       if (!delegate) throw notFound("이 학교의 승인된 교직원이 아닙니다.");
+      // Phase 1-3: 지정하는 사람이 자기 자신을 대리 담당으로 지정할 수 없음(권한 상승 방지 — 필요하면 다른 발령 권한자가 지정)
+      if (delegate.userId === params.actorUserId) {
+        throw new AppError(403, "self_delegation", "자기 자신을 대리 담당으로 지정할 수 없습니다. 직접 보고해야 한다면 다른 발령 권한자(교장·교감·안전업무 담당 등)가 지정해야 합니다.");
+      }
       if (delegate.assignments.length > 0) throw conflict("already_responsible", "이미 이 학급의 담임입니다. 대리 지정이 필요하지 않습니다.");
       const original = await tx.classAssignment.findFirst({ where: { classId: cls.id, duty: "homeroom" }, select: { membershipId: true } });
 

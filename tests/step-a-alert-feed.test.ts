@@ -140,9 +140,11 @@ describe("외부 API 장애 중 학교 재난 대응 유지", () => {
     const m = await prisma.schoolMembership.create({ data: { schoolId: school.id, userId: user.id, role: "admin", status: "approved", approvalMethod: "roster", approvedAt: now } });
     const cls = await prisma.schoolClass.create({ data: { schoolId: school.id, schoolYear: now.getFullYear(), grade: 1, classNo: 1, label: "1학년 1반", enrolledCount: 20 } });
 
+    // Phase 1-3: 학급 보고는 담임만 — 이 가상 관리자를 1학년 1반 담임으로도 배정(관리자·담임 겸임)
+    await prisma.classAssignment.create({ data: { membershipId: m.id, classId: cls.id, duty: "homeroom" } });
     const ev = await issueEvent(prisma, { schoolId: school.id, actorUserId: user.id, primaryType: "fire", mode: "drill" });
     await submitReport(prisma, {
-      schoolId: school.id, eventId: ev.id, classId: cls.id, actorUserId: user.id, membershipId: m.id, role: "admin", idempotencyKey: "outage-test-1",
+      schoolId: school.id, eventId: ev.id, classId: cls.id, actorUserId: user.id, membershipId: m.id, idempotencyKey: "outage-test-1",
       input: { evacuated: 19, absentKnown: 1, injured: 0, enrolledCount: 20, enrolledChangeReason: null, note: null, expectedVersion: null },
     });
     const board = await getBoard(prisma, { schoolId: school.id, eventId: ev.id });

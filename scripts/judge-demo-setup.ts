@@ -219,7 +219,6 @@ async function main() {
             classId: classId.get(`${s.key}:${c.grade}-${c.classNo}`)!,
             actorUserId: rm.userId,
             membershipId: rm.membershipId,
-            role: rm.role,
             idempotencyKey: `judge-sample-${s.key}-${c.grade}-${c.classNo}`,
             input: { evacuated: c.enrolled - absent, absentKnown: absent, injured: s.drill.injured(c.grade, c.classNo), enrolledCount: c.enrolled, enrolledChangeReason: null, note: null, expectedVersion: null },
           });

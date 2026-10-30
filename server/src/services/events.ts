@@ -225,12 +225,22 @@ function toReportDto(r: {
   };
 }
 
-/** 내가 보고할 학급: 관리자는 전체, 그 외에는 배정(담임·보조)된 학급만 */
-export async function myClasses(prisma: PrismaClient, params: { schoolId: string; eventId: string; membershipId: string; role: string }) {
+/**
+ * Beta PILOT 2 Phase 1-3 공식 학급 보고 권한: 이 학급의 담임 배정, 또는 이 사건·이 학급의 유효한 대리 지정뿐.
+ * 역할·직책(학교 관리자·교장·교감·안전업무 담당)과 보조(assist) 배정은 보고 권한을 만들지 않습니다.
+ * 소속(membershipId)은 학교 단위이고 학급은 호출 쪽에서 같은 학교인지 확인하므로 다른 학교·다른 사건의 지정은 쓰일 수 없습니다.
+ */
+export async function reportResponsibility(db: Db, params: { eventId: string; classId: string; membershipId: string }): Promise<"own" | "delegated" | null> {
+  const homeroom = await db.classAssignment.count({ where: { membershipId: params.membershipId, classId: params.classId, duty: "homeroom" } });
+  if (homeroom > 0) return "own";
+  return (await hasActiveDelegation(db, params)) ? "delegated" : null;
+}
+
+/** 내가 보고할 학급: 담임 학급 + 이 사건에서 대리 담당으로 지정된 학급(관리자도 같음) */
+export async function myClasses(prisma: PrismaClient, params: { schoolId: string; eventId: string; membershipId: string }) {
   const event = await loadEvent(prisma, params.schoolId, params.eventId);
-  if (params.role === "admin") return classViews(prisma, params.schoolId, event.id, null);
   const assigned = await prisma.classAssignment.findMany({
-    where: { membershipId: params.membershipId, duty: { in: ["homeroom", "assist"] } },
+    where: { membershipId: params.membershipId, duty: "homeroom" },
     select: { classId: true },
   });
   // v0.1: 이 사건에서 대리 담당으로 지정된 학급도 함께(학급별 따로 보고, '대리 담당' 표시)
@@ -260,7 +270,6 @@ export async function submitReport(
     classId: string;
     actorUserId: string;
     membershipId: string;
-    role: string;
     idempotencyKey: string;
     input: ReportInput;
     ip?: string | null;
@@ -269,10 +278,13 @@ export async function submitReport(
   const { input } = params;
   const key = `${params.eventId}:${params.idempotencyKey}`; // 사건 범위로 한정
 
-  // 같은 요청의 재전송(통신 끊김 후 재시도): 이미 저장된 결과를 그대로 돌려줌
+  // 같은 요청의 재전송(통신 끊김 후 재시도): 이미 저장된 결과를 그대로 돌려줌.
+  // Phase 1-3: 처음 그 요청을 보낸 사람에게만(같은 학교·사건·학급) — 요청 번호만으로 남의 보고를 받아 볼 수 없게
   const prior = await prisma.evacuationReportRevision.findUnique({ where: { idempotencyKey: key }, include: { report: true } });
   if (prior) {
+    if (prior.report.schoolId !== params.schoolId || prior.report.eventId !== params.eventId) throw notFound("상황을 찾을 수 없습니다.");
     if (prior.report.classId !== params.classId) throw conflict("idempotency_key_reused", "같은 요청 번호가 다른 학급에 사용되었습니다.");
+    if (prior.changedById !== params.actorUserId) throw conflict("idempotency_key_reused", "이미 사용된 요청 번호입니다. 화면을 새로 고친 뒤 다시 보고하세요.");
     const current = await prisma.evacuationReport.findUniqueOrThrow({ where: { id: prior.reportId }, include: { reportedBy: { select: { displayName: true } } } });
     return { report: toReportDto(current), replayed: true };
   }
@@ -284,21 +296,13 @@ export async function submitReport(
       const cls = await tx.schoolClass.findFirst({ where: { id: params.classId, schoolId: params.schoolId, active: true } });
       if (!cls) throw notFound("학급을 찾을 수 없습니다.");
 
-      // 권한: 관리자(대리 보고), 이 학급에 배정된 교직원, 또는 이 사건에서 이 학급의 대리 담당으로 지정된 교직원(v0.1)
-      let proxy = false;
-      let delegated = false;
-      if (params.role === "admin") {
-        const own = await tx.classAssignment.count({ where: { membershipId: params.membershipId, classId: cls.id } });
-        proxy = own === 0;
-      } else {
-        const assigned = await tx.classAssignment.count({
-          where: { membershipId: params.membershipId, classId: cls.id, duty: { in: ["homeroom", "assist"] } },
-        });
-        if (assigned === 0) {
-          delegated = await hasActiveDelegation(tx, { eventId: event.id, classId: cls.id, membershipId: params.membershipId });
-          if (!delegated) throw new AppError(403, "class_not_assigned", "배정된 학급(또는 대리 담당으로 지정된 학급)만 보고할 수 있습니다.");
-        }
+      // 권한(Phase 1-3): 이 학급 담임 또는 이 사건·학급의 대리 담당만. 생성·수정 모두 같은 검사
+      // (기존 '관리자 대리 보고'와 보조(assist) 배정 보고는 없앰 — 담임이 보고할 수 없으면 발령 권한자가 대리 담당을 지정)
+      const responsibility = await reportResponsibility(tx, { eventId: event.id, classId: cls.id, membershipId: params.membershipId });
+      if (!responsibility) {
+        throw new AppError(403, "class_not_assigned", "담임 학급 또는 이 상황에서 대리 담당으로 지정된 학급만 보고할 수 있습니다. 담임이 보고할 수 없으면 발령 권한자에게 대리 담당 지정을 요청하세요.");
       }
+      const delegated = responsibility === "delegated";
 
       const existing = await tx.evacuationReport.findUnique({ where: { eventId_classId: { eventId: event.id, classId: cls.id } } });
       const snapshot = existing ? existing.enrolledSnapshot : cls.enrolledCount; // 첫 보고 시점의 학급 재적
@@ -370,7 +374,7 @@ export async function submitReport(
           unconfirmed: report.unconfirmed,
           injured: report.injured,
           note: report.note,
-          changeReason: proxy ? "관리자 대리 보고" : delegated ? "대리 담당 보고" : null,
+          changeReason: delegated ? "대리 담당 보고" : null,
           idempotencyKey: key,
           changedById: params.actorUserId,
         },
@@ -381,7 +385,7 @@ export async function submitReport(
         action: existing ? "report.updated" : "report.created",
         targetType: "evacuation_report",
         targetId: report.id,
-        after: { classId: cls.id, version: report.version, evacuated: report.evacuated, unconfirmed: report.unconfirmed, injured: report.injured, proxy, delegated },
+        after: { classId: cls.id, version: report.version, evacuated: report.evacuated, unconfirmed: report.unconfirmed, injured: report.injured, delegated },
         ip: params.ip,
       });
       return { report: toReportDto(report), replayed: false };

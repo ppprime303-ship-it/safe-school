@@ -245,8 +245,10 @@ describe("발령·종료 주체(교장·교감 1·2·안전담당)", () => {
 // ───────────────────────── 훈련일지 ─────────────────────────
 async function closedDrill(opts: { report12?: boolean } = {}) {
   const ev = await issueEvent(prisma, { schoolId: A, actorUserId: U.admin!, primaryType: "earthquake", mode: "drill", evacPlace: "운동장" });
+  // Phase 1-3: 학급 보고는 담임만(관리자 대리 보고 없음) — 가상 담임에게 1-1·1-2 배정
+  await prisma.classAssignment.createMany({ data: [c11, c12].map((classId) => ({ membershipId: M.teacher!, classId, duty: "homeroom" as const })), skipDuplicates: true });
   const rep = (classId: string, key: string, over: Partial<ReportInput>) =>
-    submitReport(prisma, { schoolId: A, eventId: ev.id, classId, actorUserId: U.admin!, membershipId: M.admin!, role: "admin", idempotencyKey: key, input: input(over) });
+    submitReport(prisma, { schoolId: A, eventId: ev.id, classId, actorUserId: U.teacher!, membershipId: M.teacher!, idempotencyKey: key, input: input(over) });
   await rep(c11, "k-11a", { evacuated: 23, absentKnown: 1, enrolledCount: 25 });
   await rep(c11, "k-11b", { evacuated: 24, absentKnown: 1, enrolledCount: 25, expectedVersion: 1 }); // 수정 보고(판 2) — 중복 집계 안 됨
   if (opts.report12 !== false) await rep(c12, "k-12", { evacuated: 27, absentKnown: 0, enrolledCount: 27, injured: 1 });

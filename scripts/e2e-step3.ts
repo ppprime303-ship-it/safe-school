@@ -151,8 +151,11 @@ async function main() {
     check("담임 보고 저장 → 미확인 1명 서버 계산, 보고자 이름", r1.status === 200 && r1.body.report?.unconfirmed === 1 && r1.body.report?.reporterName === "A담임", r1.body);
     const replay = await teacher.call("PUT", `${E}/reports/${c11.id}`, reportBody(), { "Idempotency-Key": "e2e3-first-0001" });
     check("같은 요청 재전송 → 중복 저장 없음", replay.status === 200 && replay.body.replayed === true && replay.body.report?.version === 1, replay.body);
+    // Beta PILOT 2 Phase 1-3: 관리자라는 이유만으로는 학급 보고 수정 불가(담임·지정 대리 담당만)
     const proxy = await admin.call("PUT", `${E}/reports/${c11.id}`, reportBody({ evacuated: 24, expectedVersion: 1 }), { "Idempotency-Key": "e2e3-proxy-0001" });
-    check("관리자 대리 수정 → 버전 2", proxy.status === 200 && proxy.body.report?.version === 2, proxy.body);
+    check("관리자 임의 수정 → 403 class_not_assigned", proxy.status === 403 && proxy.body.code === "class_not_assigned", proxy.body);
+    const v2 = await teacher.call("PUT", `${E}/reports/${c11.id}`, reportBody({ evacuated: 24, expectedVersion: 1 }), { "Idempotency-Key": "e2e3-v2-00001" });
+    check("담임 수정 → 버전 2", v2.status === 200 && v2.body.report?.version === 2, v2.body);
     const stale = await teacher.call("PUT", `${E}/reports/${c11.id}`, reportBody({ evacuated: 22, expectedVersion: 1 }), { "Idempotency-Key": "e2e3-stale-0001" });
     check("이전 버전 기준 수정 → 409 version_conflict(최신 보고 포함)", stale.status === 409 && stale.body.code === "version_conflict" && stale.body.details?.current?.version === 2, stale.body);
     const revisions = await prisma.evacuationReportRevision.count({ where: { report: { eventId } } });
