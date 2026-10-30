@@ -130,13 +130,17 @@ describe("직책·업무 권한(합산·겸임)", () => {
     await expect(grantDutyInApp(prisma, { schoolId: A, actorUserId: U.admin!, membershipId: M.safety1!, duty: "safety_officer" })).rejects.toMatchObject({ status: 409 });
   });
 
-  it("앱 운영담당만으로는 발령 불가, 일반 교직원·담임은 발령·상황판·훈련일지 불가", async () => {
+  it("앱 운영담당만으로는 발령 불가, 일반 교직원·담임은 발령·상황판 상세·훈련일지 불가(상황판 요약은 가능)", async () => {
     await grantDutyInApp(prisma, { schoolId: A, actorUserId: U.admin!, membershipId: M.operator!, duty: "app_operator" });
     expect(await caps("operator")).toEqual(expect.arrayContaining(["members.manage", "classes.manage"]));
     for (const k of ["operator", "staff", "teacher"]) {
       await expect(access(k, "event.issue")).rejects.toMatchObject({ status: 403 });
     }
-    await expect(access("teacher", "board.view")).rejects.toMatchObject({ status: 403 });
+    // Beta PILOT 2: 상황판 요약은 승인된 교직원 누구나, 상세는 발령·안전 담당만
+    for (const k of ["operator", "staff", "teacher"]) {
+      await expect(access(k, "board.view")).resolves.toBeTruthy();
+      await expect(access(k, "board.detail")).rejects.toMatchObject({ status: 403 });
+    }
     await expect(access("staff", "drilllog.view")).rejects.toMatchObject({ status: 403 });
   });
 

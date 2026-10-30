@@ -14,7 +14,7 @@ export function ClassStatusCard({ view, onSelect }: { view: ClassReportView; onS
         <StatusBadge status={status} size="sm" />
       </div>
       {r ? (
-        <dl className="tabular mt-2 grid grid-cols-3 gap-1 text-center">
+        <dl className={`tabular mt-2 grid ${r.injured === null ? "grid-cols-2" : "grid-cols-3"} gap-1 text-center`}>
           <div>
             <dt className="text-sm text-ink-muted">대피 확인</dt>
             <dd className="text-xl font-extrabold">
@@ -26,10 +26,13 @@ export function ClassStatusCard({ view, onSelect }: { view: ClassReportView; onS
             <dt className="text-sm text-ink-muted">미확인</dt>
             <dd className={`text-xl font-extrabold ${r.unconfirmed > 0 ? "text-danger" : ""}`}>{r.unconfirmed}</dd>
           </div>
-          <div>
-            <dt className="text-sm text-ink-muted">부상</dt>
-            <dd className={`text-xl font-extrabold ${r.injured > 0 ? "text-warning-strong" : ""}`}>{r.injured}</dd>
-          </div>
+          {/* 부상 인원은 상황판 상세 권한이 있을 때만 서버가 보냄(null = 비공개) */}
+          {r.injured !== null && (
+            <div>
+              <dt className="text-sm text-ink-muted">부상</dt>
+              <dd className={`text-xl font-extrabold ${r.injured > 0 ? "text-warning-strong" : ""}`}>{r.injured}</dd>
+            </div>
+          )}
         </dl>
       ) : (
         <p className="mt-2 text-base font-semibold text-neutral">

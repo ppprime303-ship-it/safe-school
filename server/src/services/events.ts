@@ -411,6 +411,42 @@ export async function getBoard(prisma: PrismaClient, params: { schoolId: string;
   return { event: view, serverTime: new Date().toISOString(), classes: classes.map((c) => ({ ...c, delegation: byClass.get(c.classId) ?? null })) };
 }
 
+/**
+ * Beta PILOT 2 상황판 요약(board.view만 있는 교직원용): 서버 응답에서 바로 걸러 냅니다(화면 숨김에 의존하지 않음).
+ * 공개: 발령·종료 상태, 학급별 보고 여부·재적·대피·사전 부재·미확인 인원, 보고 시각
+ * 제외: 학급 메모(학생 이름 등이 적힐 수 있음), 보고자 이름, 부상 인원(학생 건강 정보), 대리 담당 지정 정보(운영 정보)
+ */
+export function restrictBoard(board: Awaited<ReturnType<typeof getBoard>>) {
+  const full = summarize(board.classes);
+  const { injured: _injured, ...summary } = full;
+  return {
+    scope: "summary" as const,
+    event: board.event,
+    serverTime: board.serverTime,
+    classes: board.classes.map((c) => ({
+      classId: c.classId,
+      grade: c.grade,
+      classNo: c.classNo,
+      label: c.label,
+      enrolledCount: c.enrolledCount,
+      report: c.report
+        ? {
+            enrolledCount: c.report.enrolledCount,
+            absentKnown: c.report.absentKnown,
+            evacuated: c.report.evacuated,
+            unconfirmed: c.report.unconfirmed,
+            injured: null,
+            note: null,
+            version: c.report.version,
+            reportedAt: c.report.reportedAt,
+            reporterName: null,
+          }
+        : null,
+    })),
+    summary,
+  };
+}
+
 export function summarize(classes: ClassReportViewDto[]) {
   const s = { totalClasses: classes.length, reportedClasses: 0, enrolledTotal: 0, evacuated: 0, absentKnown: 0, unconfirmed: 0, injured: 0, pendingStudents: 0, unknownEnrolledClasses: 0 };
   for (const c of classes) {

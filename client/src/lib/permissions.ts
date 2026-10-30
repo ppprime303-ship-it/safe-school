@@ -10,8 +10,8 @@ export function capsOf(m: Pick<Membership, "role" | "duties" | "capabilities"> |
 
 export const can = (m: Parameters<typeof capsOf>[0], cap: Capability) => capsOf(m).includes(cap);
 
-/** 처음 열 화면: 전체 현황을 볼 수 있으면 상황판, 아니면 학급 보고 */
-export const homePath = (m: Membership) => `/s/${m.school.id}/${can(m, "board.view") ? "board" : "report"}`;
+/** 처음 열 화면: 상황판 상세 권한(발령·안전 담당)이 있으면 상황판, 아니면 학급 보고(Beta PILOT 2: 요약 상황판은 메뉴에서 누구나) */
+export const homePath = (m: Membership) => `/s/${m.school.id}/${can(m, "board.detail") ? "board" : "report"}`;
 
 /** '학교 관리자 · 안전업무 담당' 같은 표시 */
 export function roleSummary(m: Pick<Membership, "role" | "duties" | "actingDuties">): string {

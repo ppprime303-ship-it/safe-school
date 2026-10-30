@@ -5,6 +5,7 @@ on:
       - feature/school-registration-withdrawal
       - integration/registration-withdrawal
       - integration/production-preservation
+      - beta/pilot-2
   workflow_dispatch:
 
 jobs:

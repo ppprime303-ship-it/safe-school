@@ -139,7 +139,7 @@ const acc = (
   assignments: JudgeAccountPlan["assignments"] = [],
 ): JudgeAccountPlan => ({ key, schoolKey, email: `judge-${key}@${JUDGE_EMAIL_DOMAIN}`, displayName, role, duties, assignments, roleLabel, must, mustNot });
 
-const ISSUE: Capability[] = ["event.issue", "event.close", "board.view"];
+const ISSUE: Capability[] = ["event.issue", "event.close", "board.detail"];
 const OPERATE: Capability[] = ["members.manage", "classes.manage", "duties.manage"];
 
 const ACCOUNTS: JudgeAccountPlan[] = [

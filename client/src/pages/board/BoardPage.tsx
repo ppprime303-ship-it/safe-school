@@ -1,4 +1,4 @@
-// 관리자 상황판(데이터 연결): 5초마다 갱신, 실패하면 마지막 갱신 시각과 연결 상태를 표시합니다.
+// 상황판(데이터 연결 · Beta PILOT 2: 승인된 교직원 누구나 열람, 발령·종료·대리 지정은 권한자만): 5초마다 갱신, 실패하면 마지막 갱신 시각과 연결 상태를 표시합니다.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../../lib/api";
 import type { ActiveEvent, BoardData } from "../../lib/disaster";
@@ -88,12 +88,12 @@ export function BoardPage({ schoolId }: { schoolId: string }) {
         <>
           <EmptyState icon="check-circle" title="진행 중인 재난 상황이 없습니다" message="재난이 발령되면 이 화면에 학급별 보고가 실시간으로 모입니다." />
           <div className="mt-4">
-            <IssueEventForm schoolId={schoolId} onIssued={() => void poll()} />
+            {can(membership, "event.issue") && <IssueEventForm schoolId={schoolId} onIssued={() => void poll()} />}
           </div>
         </>
       )}
       {load.kind === "error" && <ErrorState message={load.message} onRetry={() => void poll()} />}
-      {load.kind === "ready" && <BoardView data={load.data} connection={connection} onCloseEvent={() => setConfirmClose(true)} />}
+      {load.kind === "ready" && <BoardView data={load.data} connection={connection} onCloseEvent={can(membership, "event.close") ? () => setConfirmClose(true) : undefined} />}
       {load.kind === "ready" && can(membership, "event.issue") && (
         <div className="mt-5">
           <DelegationPanel schoolId={schoolId} eventId={load.data.event.id} classes={load.data.classes} onChanged={() => void poll()} />

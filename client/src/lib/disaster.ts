@@ -26,7 +26,7 @@ export interface ClassReport {
   absentKnown: number;
   evacuated: number;
   unconfirmed: number;
-  injured: number;
+  injured: number | null; // null: 이 화면 권한으로는 비공개(Beta PILOT 2 상황판 요약)
   note: string | null;
   version: number;
   reportedAt: string;
@@ -47,6 +47,8 @@ export interface ClassReportView {
 }
 
 export interface BoardData {
+  /** full: 상세(메모·보고자·부상·대리 담당) / summary: 일반 교직원용 요약 — 서버가 권한별로 걸러서 보냄 */
+  scope?: "full" | "summary";
   event: ActiveEvent;
   serverTime: string;
   classes: ClassReportView[];
@@ -69,7 +71,7 @@ export type ClassStatus = "unreported" | "unconfirmed" | "injured" | "reported";
 export function deriveClassStatus(view: Pick<ClassReportView, "report">): ClassStatus {
   if (!view.report) return "unreported";
   if (view.report.unconfirmed > 0) return "unconfirmed";
-  if (view.report.injured > 0) return "injured";
+  if ((view.report.injured ?? 0) > 0) return "injured";
   return "reported";
 }
 
@@ -108,9 +110,9 @@ export function summarizeBoard(classes: ClassReportView[]): BoardSummary {
       evacuated += c.report.evacuated;
       absentKnown += c.report.absentKnown;
       unconfirmed += c.report.unconfirmed;
-      injured += c.report.injured;
+      injured += c.report.injured ?? 0;
       if (c.report.unconfirmed > 0) withUnconfirmed++;
-      if (c.report.injured > 0) withInjured++;
+      if ((c.report.injured ?? 0) > 0) withInjured++;
     } else if (c.enrolledCount !== null) {
       enrolledTotal += c.enrolledCount;
       pending += c.enrolledCount;

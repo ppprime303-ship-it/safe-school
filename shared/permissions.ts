@@ -20,7 +20,8 @@ export const DUTY_LABEL: Record<StaffDuty, string> = {
 export type Capability =
   | "event.issue" // 학교 내부 재난 대응 상황·모의훈련 발령(실제 상황은 확인 절차)
   | "event.close" // 진행 중 상황 종료
-  | "board.view" // 학교 전체 대피·대응 현황
+  | "board.view" // 학교 전체 대피 현황 요약(Beta PILOT 2: 승인된 교직원 누구나). 보고 권한과 무관
+  | "board.detail" // 상황판 상세: 학급 메모·보고자·부상 인원·대리 담당(관리자·교장·교감·안전업무 담당)
   | "drilllog.view" // 훈련일지 열람·다운로드
   | "drilllog.edit" // 훈련일지 만들기·수정
   | "members.manage" // 교직원 가입 승인·거절·회수, 학급 배정
@@ -32,6 +33,7 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
   "event.issue": "재난·훈련 발령",
   "event.close": "재난·훈련 종료",
   "board.view": "전체 대피 현황",
+  "board.detail": "상황판 상세(메모·보고자·부상·대리 담당)",
   "drilllog.view": "훈련일지 열람·다운로드",
   "drilllog.edit": "훈련일지 작성·수정",
   "members.manage": "교직원 승인·배정",
@@ -43,15 +45,16 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
 const BY_ROLE: Record<MemberRole, Capability[]> = {
   // 기존 학교 관리자: STEP 2~3-C에서 쓰던 기능 그대로 + 훈련일지 열람(상황판 열람과 같은 수준)
   // + 업무 담당자 지정(기존에도 교직원 승인·역할 변경을 하던 운영 권한의 연장, 교장·교감 지정은 불가)
-  admin: ["event.issue", "event.close", "board.view", "members.manage", "classes.manage", "region.manage", "duties.manage", "drilllog.view"],
-  homeroom: [],
-  staff: [],
+  // Beta PILOT 2: 상황판 요약(board.view)은 승인된 교직원 누구나. 열람 권한은 학급 보고 권한을 만들지 않습니다(보고는 담임·지정 대리 담당만)
+  admin: ["event.issue", "event.close", "board.view", "board.detail", "members.manage", "classes.manage", "region.manage", "duties.manage", "drilllog.view"],
+  homeroom: ["board.view"],
+  staff: ["board.view"],
 };
 
 const BY_DUTY: Record<StaffDuty, Capability[]> = {
-  principal: ["event.issue", "event.close", "board.view", "drilllog.view"],
-  vice_principal: ["event.issue", "event.close", "board.view", "drilllog.view"],
-  safety_officer: ["event.issue", "event.close", "board.view", "drilllog.view", "drilllog.edit"],
+  principal: ["event.issue", "event.close", "board.view", "board.detail", "drilllog.view"],
+  vice_principal: ["event.issue", "event.close", "board.view", "board.detail", "drilllog.view"],
+  safety_officer: ["event.issue", "event.close", "board.view", "board.detail", "drilllog.view", "drilllog.edit"],
   app_operator: ["members.manage", "classes.manage", "region.manage", "duties.manage"],
 };
 

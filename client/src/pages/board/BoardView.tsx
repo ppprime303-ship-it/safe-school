@@ -47,6 +47,8 @@ export function BoardView({
   onCloseEvent?: () => void;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
+  // Beta PILOT 2: 일반 교직원은 요약만 받음(부상·메모·보고자는 서버가 보내지 않음)
+  const summaryOnly = data.scope === "summary";
   const s = useMemo(() => summarizeBoard(data.classes), [data.classes]);
 
   const counts = useMemo(() => {
@@ -98,14 +100,25 @@ export function BoardView({
           tone={s.unreportedClasses > 0 ? "neutral" : "success"}
           sub={`보고 대기 인원 ${formatCount(s.pendingStudents)}명${s.enrolledUnknownClasses > 0 ? ` · 재적 미확인 ${s.enrolledUnknownClasses}학급` : ""}`}
         />
-        <StatCard
-          label="부상자"
-          icon="medical"
-          value={formatCount(s.injured)}
-          unit="명"
-          tone={s.injured > 0 ? "warning" : "default"}
-          sub={s.injured > 0 ? `${s.classesWithInjured}개 학급` : "보고된 학급 기준"}
-        />
+        {summaryOnly ? (
+          <StatCard
+            label="보고 완료 학급"
+            icon="check-circle"
+            value={formatCount(s.reportedClasses)}
+            unit={`/ ${s.totalClasses}`}
+            tone="default"
+            sub="부상·메모는 관리자·안전업무 담당 화면에서 확인"
+          />
+        ) : (
+          <StatCard
+            label="부상자"
+            icon="medical"
+            value={formatCount(s.injured)}
+            unit="명"
+            tone={s.injured > 0 ? "warning" : "default"}
+            sub={s.injured > 0 ? `${s.classesWithInjured}개 학급` : "보고된 학급 기준"}
+          />
+        )}
         <StatCard
           label="대피 확인"
           icon="users"
@@ -129,8 +142,8 @@ export function BoardView({
                 <span className="font-bold">{c.label}</span>
                 <span className="tabular font-semibold">
                   {c.report!.unconfirmed > 0 && <span className="text-danger">미확인 {c.report!.unconfirmed}명</span>}
-                  {c.report!.unconfirmed > 0 && c.report!.injured > 0 && " · "}
-                  {c.report!.injured > 0 && <span className="text-warning-strong">부상 {c.report!.injured}명</span>}
+                  {c.report!.unconfirmed > 0 && (c.report!.injured ?? 0) > 0 && " · "}
+                  {(c.report!.injured ?? 0) > 0 && <span className="text-warning-strong">부상 {c.report!.injured}명</span>}
                   {c.report!.note && <span className="text-ink-muted"> · {c.report!.note}</span>}
                 </span>
               </li>
@@ -146,7 +159,7 @@ export function BoardView({
             학급별 상태
           </h2>
           <div role="group" aria-label="상태로 거르기" className="flex flex-wrap gap-2">
-            {(["all", "unconfirmed", "injured", "unreported", "reported"] as Filter[]).map((f) => (
+            {((summaryOnly ? ["all", "unconfirmed", "unreported", "reported"] : ["all", "unconfirmed", "injured", "unreported", "reported"]) as Filter[]).map((f) => (
               <button
                 key={f}
                 type="button"

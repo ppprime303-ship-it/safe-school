@@ -243,6 +243,62 @@ describe("IDOR — 자기 학교 경로에 다른 학교 자원 id", () => {
   });
 });
 
+// Beta PILOT 2 Phase 1-1: 상황판 열람(board.view)과 학급 보고 권한 분리, 권한별 응답 분리(B 학교에서만 보고를 만듦 — A 학교 검사와 분리)
+// b1 = 앱 운영담당(상세 권한 없음), b2 = 안전업무 담당 + 1학년 1반 담임(상세 권한), b3 = 교장(배정 학급 없음)
+describe("Beta PILOT 2 — 상황판 열람과 보고 권한 분리", () => {
+  async function getJson(who: string, path: string) {
+    const res = await fetch(`${base}/api${path}`, { headers: { cookie: cookieOf[who]!, "x-forwarded-for": ipOf[who]! } });
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> & { scope?: string; classes: { classId: string; report: Record<string, unknown> | null; delegation?: unknown }[]; summary: Record<string, unknown> } };
+  }
+  const reportBody = async (classKey: string, note: string) => {
+    const cls = await prisma.schoolClass.findUniqueOrThrow({ where: { id: classOf[classKey]! } });
+    const enrolled = cls.enrolledCount!;
+    return { evacuated: enrolled - 2, absentKnown: 0, injured: 1, enrolledCount: enrolled, enrolledChangeReason: null, note, expectedVersion: null };
+  };
+  const MEMO = "학생 이름이 적힌 메모(테스트)";
+
+  it("담임(b2)은 자기 학급 보고 성공", async () => {
+    const status = await req("b2", "PUT", `${S("b")}/events/${activeEvent.b}/reports/${classOf["b:1-1"]}`, await reportBody("b:1-1", MEMO), { "idempotency-key": randomUUID() });
+    expect(status).toBe(200);
+  });
+
+  it("상세 권한 없는 교직원(b1)도 상황판 조회 200, 응답에 메모·보고자·부상·대리 담당 없음", async () => {
+    const { status, body } = await getJson("b1", `${S("b")}/events/${activeEvent.b}/board`);
+    expect(status).toBe(200);
+    expect(body.scope).toBe("summary");
+    const raw = JSON.stringify(body);
+    expect(raw).not.toContain(MEMO);
+    expect(raw).not.toContain("delegat");
+    const c11 = body.classes.find((c) => c.classId === classOf["b:1-1"])!;
+    expect(c11.report).toMatchObject({ injured: null, note: null, reporterName: null, unconfirmed: 2 });
+    expect(body.summary).not.toHaveProperty("injured");
+    expect(body.summary).toMatchObject({ reportedClasses: 1 });
+  });
+
+  it("상세 권한자(b2)는 같은 상황판에서 메모·부상 인원까지 받음", async () => {
+    const { status, body } = await getJson("b2", `${S("b")}/events/${activeEvent.b}/board`);
+    expect(status).toBe(200);
+    expect(body.scope).toBe("full");
+    const c11 = body.classes.find((c) => c.classId === classOf["b:1-1"])!;
+    expect(c11.report).toMatchObject({ injured: 1, note: MEMO });
+    expect(c11).toHaveProperty("delegation");
+    expect(body.summary).toMatchObject({ injured: 1 });
+  });
+
+  it("상황판을 볼 수 있어도 배정되지 않은 학급 보고는 403(b1 앱 운영담당, b3 교장), 보고 내용 그대로", async () => {
+    for (const who of ["b1", "b3"]) {
+      const status = await req(who, "PUT", `${S("b")}/events/${activeEvent.b}/reports/${classOf["b:1-2"]}`, await reportBody("b:1-2", "무단 보고"), { "idempotency-key": randomUUID() });
+      expect(status).toBe(403);
+    }
+    expect(await prisma.evacuationReport.count({ where: { eventId: activeEvent.b, classId: classOf["b:1-2"]! } })).toBe(0);
+  });
+
+  it("다른 학교 상황판은 요약도 404(a1 → B, b1 → A)", async () => {
+    expect((await getJson("a1", `${S("b")}/events/${activeEvent.b}/board`)).status).toBe(404);
+    expect((await getJson("b1", `${S("a")}/events/${activeEvent.a}/board`)).status).toBe(404);
+  });
+});
+
 describe("소속 상태", () => {
   it("승인 대기 소속 → 403, 소속 없음 → 404", async () => {
     const now = new Date();

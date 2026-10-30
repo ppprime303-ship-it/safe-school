@@ -9,7 +9,7 @@ import { rateLimit } from "../middleware/security.js";
 import { resolveSchoolAccess } from "../services/membership.js";
 import { resolveAccess } from "../services/access.js";
 import type { Capability } from "../../../shared/permissions.js";
-import { addEventType, closeEvent, getActiveEvent, getBoard, issueEvent, myClasses, submitReport, summarize, updateEvent } from "../services/events.js";
+import { addEventType, closeEvent, getActiveEvent, getBoard, issueEvent, myClasses, restrictBoard, submitReport, summarize, updateEvent } from "../services/events.js";
 import { assignDelegate, delegationSuggestions, endDelegation } from "../services/delegations.js";
 import { z } from "zod";
 import {
@@ -33,7 +33,6 @@ const can = (cap: Capability) => async (req: Request) =>
   (await resolveAccess(prisma, { userId: req.auth!.userId, schoolId: param(req.params.schoolId), need: cap })).membership;
 const issuer = can("event.issue");
 const closer = can("event.close");
-const boardViewer = can("board.view");
 const member = (req: Request) => resolveSchoolAccess(prisma, { userId: req.auth!.userId, schoolId: param(req.params.schoolId) });
 
 // 진행 중 상황(승인된 교직원 누구나)
@@ -62,11 +61,16 @@ eventsRouter.patch("/schools/:schoolId/events/:eventId", requireVerified, async 
   res.json({ event: await updateEvent(prisma, { ...ids(req), actorUserId: req.auth!.userId, ...input, ip: req.ip }) });
 });
 
-// A3 상황판(관리자)
+// A3 상황판: 승인된 교직원 누구나(board.view). 상세(메모·보고자·부상·대리 담당)는 board.detail 이 있을 때만 응답에 포함
+// 열람 권한은 보고 권한과 별개입니다(보고는 아래 reports 경로에서 학급 배정·대리 지정으로 따로 검사)
 eventsRouter.get("/schools/:schoolId/events/:eventId/board", requireVerified, async (req, res) => {
-  await boardViewer(req);
+  const access = await resolveAccess(prisma, { userId: req.auth!.userId, schoolId: param(req.params.schoolId), need: "board.view" });
   const board = await getBoard(prisma, ids(req));
-  res.json({ ...board, summary: summarize(board.classes) });
+  if (!access.can("board.detail")) {
+    res.json(restrictBoard(board));
+    return;
+  }
+  res.json({ scope: "full", ...board, summary: summarize(board.classes) });
 });
 
 // 내가 보고할 학급(관리자는 전체)
