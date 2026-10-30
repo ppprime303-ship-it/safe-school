@@ -101,7 +101,7 @@ export async function buildSnapshot(db: Db, schoolId: string, eventId: string): 
       closedAt: ev.closedAt?.toISOString() ?? null,
       evacPlace: ev.evacPlace?.trim() || null,
       location: ev.location?.trim() || null,
-      // 실제 재난 상황보고서에는 교직원 이름을 담지 않음(발령·종료자 포함)
+      // 실제 재난의 재난대피일지에는 교직원 이름을 담지 않음(발령·종료자 포함)
       issuedByName: real ? null : (ev.createdBy?.displayName ?? null),
       closedByName: real ? null : (ev.closedBy?.displayName ?? null),
     },
@@ -135,7 +135,7 @@ export async function buildSnapshot(db: Db, schoolId: string, eventId: string): 
 }
 
 /**
- * 보고서 대상과 작성 상태: 모의훈련(비상대피훈련일지)·실제 재난(재난대피 상황보고서) 모두, 진행 중 사건도 포함(작성 중만 가능 — 완료는 종료 후).
+ * 보고서 대상과 작성 상태: 모의훈련(비상대피훈련일지)·실제 재난(재난대피일지) 모두, 진행 중 사건도 포함(작성 중만 가능 — 완료는 종료 후).
  * 서식은 사건의 서버 측 mode 로만 정함
  */
 export async function listDrillTargets(db: Db, schoolId: string) {
@@ -143,7 +143,7 @@ export async function listDrillTargets(db: Db, schoolId: string) {
     where: { schoolId },
     orderBy: { startedAt: "desc" },
     take: 50,
-    include: { drillLog: { select: { id: true, status: true, version: true, updatedAt: true, updatedBy: { select: { displayName: true } } } } },
+    include: { drillLog: { select: { id: true, status: true, version: true, updatedAt: true } } }, // 작성·수정자 이름은 상세 화면(권한 확인 후)에서만
   });
   return {
     events: events.map((e: any) => ({
@@ -156,7 +156,7 @@ export async function listDrillTargets(db: Db, schoolId: string) {
       startedAt: e.startedAt.toISOString(),
       closedAt: e.closedAt?.toISOString() ?? null,
       log: e.drillLog
-        ? { id: e.drillLog.id, status: e.drillLog.status, version: e.drillLog.version, updatedAt: e.drillLog.updatedAt.toISOString(), updatedByName: e.drillLog.updatedBy?.displayName ?? null }
+        ? { id: e.drillLog.id, status: e.drillLog.status, version: e.drillLog.version, updatedAt: e.drillLog.updatedAt.toISOString() }
         : null,
     })),
   };
@@ -218,7 +218,7 @@ export async function reportFormOf(db: Db, schoolId: string, logId: string) {
 }
 
 /**
- * 보고서 만들기(Phase 4): 서식은 사건의 서버 측 mode 로 결정(모의훈련 → 비상대피훈련일지, 실제 재난 → 재난대피 상황보고서).
+ * 보고서 만들기(Phase 4): 서식은 사건의 서버 측 mode 로 결정(모의훈련 → 비상대피훈련일지, 실제 재난 → 재난대피일지).
  * 진행 중 사건에도 '작성 중'으로 만들 수 있음(최종 완료는 종료 후). 이벤트당 1건(다시 요청·동시 요청은 같은 보고서). 권한은 라우터가 서식별로 검사
  */
 export async function createDrillLog(prisma: PrismaClient, params: { schoolId: string; eventId: string; actorUserId: string; ip?: string | null }) {
@@ -342,10 +342,13 @@ export async function updateDrillLog(
     const snapshot = params.refreshAuto ? await buildSnapshot(tx, params.schoolId, log.eventId) : (log.autoSnapshot as unknown as DrillSnapshot);
     const changes = params.refreshAuto ? diffSnapshots(log.autoSnapshot as unknown as DrillSnapshot, snapshot) : [];
     // Phase 4: 완료(최종본)는 사건 종료 후 + 종료 뒤 불러온 자동 기록 + 개인정보 검사 통과(DB 트리거도 앞의 둘을 검사)
-    if (params.status === "completed" && (log.status !== "completed" || params.refreshAuto)) {
+    if (params.status === "completed") {
       const ev = await tx.disasterEvent.findUniqueOrThrow({ where: { id: log.eventId }, select: { status: true, closedAt: true, mode: true } });
-      if (ev.status !== "closed") throw conflict("event_not_closed", "사건이 종료된 뒤에 보고서를 완료할 수 있습니다. 지금은 작성 중으로 저장하세요.");
-      if (!params.refreshAuto && log.autoTakenAt < ev.closedAt!) throw conflict("refresh_required", "진행 중에 불러온 기록입니다. 종료 뒤 자동 기록을 다시 불러온 다음 완료하세요.");
+      if (log.status !== "completed" || params.refreshAuto) {
+        if (ev.status !== "closed") throw conflict("event_not_closed", "사건이 종료된 뒤에 보고서를 완료할 수 있습니다. 지금은 작성 중으로 저장하세요.");
+        if (!params.refreshAuto && log.autoTakenAt < ev.closedAt!) throw conflict("refresh_required", "진행 중에 불러온 기록입니다. 종료 뒤 자동 기록을 다시 불러온 다음 완료하세요.");
+      }
+      // 이미 완료된 일지를 고쳐 다시 완료로 저장할 때도 개인정보 검사(완료본에 전화번호 등이 끼어들지 않게)
       const issues = await privacyIssuesOf(tx, params.schoolId, snapshot, params.manual, ev.mode);
       if (issues.length) throw new AppError(422, "privacy_check_failed", "출력 문서에 개인정보로 보이는 내용이 있어 완료할 수 없습니다. 해당 칸을 고친 뒤 다시 완료하세요.", { issues });
     }

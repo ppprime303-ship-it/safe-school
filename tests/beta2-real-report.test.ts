@@ -1,4 +1,4 @@
-// Beta PILOT 2 Phase 4-B: 모의훈련 일지·실제 재난 상황보고서 API(HTTP, 테스트 스키마, 가상 학교·가상 교직원만)
+// Beta PILOT 2 Phase 4-B: 모의훈련 일지·실제 재난의 재난대피일지 API(HTTP, 테스트 스키마, 가상 학교·가상 교직원만)
 // - 서식은 사건의 서버 측 mode 로 결정, 진행 중에도 작성 중 생성(완료·최종본은 종료 후 + 종료 뒤 다시 불러오기)
 // - 모의훈련: 기존 권한(작성은 안전업무 담당만), 교직원 소재는 조회·저장·출력하지 않음
 // - 실제 재난: 작성은 학교 관리자·안전업무 담당, 교직원 소재는 익명 집계만(API 응답에 이름·위치·소속 id 없음)
@@ -157,7 +157,7 @@ describe("모의훈련 일지", () => {
   });
 });
 
-describe("실제 재난 상황보고서", () => {
+describe("실제 재난의 재난대피일지", () => {
   it("진행 중 생성: 학교 관리자 201(실제 재난 작성 권한), 교장 403(열람만), 일반 교직원 403", async () => {
     real = (await call("safetyA", "POST", A("/events"), { primaryType: "earthquake", mode: "real", confirmReal: true })).body.event.id;
     expect((await reportClass(real)).status).toBe(200);
@@ -171,12 +171,12 @@ describe("실제 재난 상황보고서", () => {
     expect((await call("adminA", "POST", A(`/events/${real}/drill-log`), {})).body).toMatchObject({ id: realLog, created: false }); // 사건당 1건
   });
 
-  it("열람: 교장 200(작성 불가 표시), 일반 교직원 403 / 서식·제목은 재난대피 상황보고서", async () => {
+  it("열람: 교장 200(작성 불가 표시), 일반 교직원 403 / 서식·제목은 재난대피일지", async () => {
     const g = await call("principalA", "GET", A(`/drill-logs/${realLog}`));
     expect(g.status).toBe(200);
     expect(g.body).toMatchObject({ canEdit: false, log: { formKey: "disaster_real", mode: "real", final: false } });
     expect((await call("staffA", "GET", A(`/drill-logs/${realLog}`))).status).toBe(403);
-    expect(buildDrillDoc(g.body.snapshot, defaultManual()).pages[0]!.title).toBe("재난대피 상황보고서(지진)");
+    expect(buildDrillDoc(g.body.snapshot, defaultManual()).pages[0]!.title).toBe("재난대피일지(지진)");
   });
 
   it("교직원 소재는 익명 집계만: 응답 전체에 교직원 이름·교내 위치·소속 id 없음, 미응답 따로", async () => {
@@ -190,7 +190,7 @@ describe("실제 재난 상황보고서", () => {
     expect(snap.event.issuedByName).toBeNull();
     expect(snap.event.closedByName).toBeNull();
     const doc = buildDrillDoc(snap, defaultManual());
-    expect(doc.pages.map((p) => p.title)).toEqual(["재난대피 상황보고서(지진)", "붙임 1. 학급별 대피 현황", "붙임 2. 현장 제보·조치 현황", "붙임 3. 교직원 소재 응답 통계(익명 집계)"]);
+    expect(doc.pages.map((p) => p.title)).toEqual(["재난대피일지(지진)", "붙임 1. 학급별 대피 현황", "붙임 2. 현장 제보·조치 현황", "붙임 3. 교직원 소재 응답 통계(익명 집계)"]);
     expect(JSON.stringify(doc)).not.toMatch(new RegExp([...allNames(), "3학년 2반"].join("|")));
   });
 

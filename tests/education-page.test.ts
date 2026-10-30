@@ -178,6 +178,6 @@ describe("메뉴 연결", () => {
     const bottom = (caps: string[]) => navItemsFor("s1", caps).filter((i) => i.mobile === undefined).map((i) => i.label);
     expect(bottom([])).toEqual(["학급 보고", "경보", "학교 선택"]);
     // Beta PILOT 2 Phase 3: 상황판 열람자(승인 교직원 전원)에게 '현장 제보' 추가
-    expect(bottom(["board.view", "drilllog.view", "members.manage", "classes.manage"])).toEqual(["상황판", "학급 보고", "현장 제보", "경보", "훈련일지", "교직원", "학급", "학교"]);
+    expect(bottom(["board.view", "drilllog.view", "members.manage", "classes.manage"])).toEqual(["상황판", "학급 보고", "현장 제보", "경보", "대피일지", "교직원", "학급", "학교"]);
   });
 });

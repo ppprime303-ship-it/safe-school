@@ -263,8 +263,8 @@ const save = (logId: string, expectedVersion: number, manual: DrillManual, by = 
   updateDrillLog(prisma, { schoolId: A, logId, actorUserId: U[by]!, manual, status, expectedVersion, refreshAuto });
 
 describe("훈련일지 만들기", () => {
-  // Beta PILOT 2 Phase 4: 진행 중에도 '작성 중'으로 만들 수 있고(완료는 종료 후), 실제 재난은 같은 표에 '재난대피 상황보고서' 서식으로 만들어짐
-  it("진행 중 사건은 작성 중으로 생성(완료 409), 실제 재난은 상황보고서 서식, 이벤트당 1건(다시 요청·동시 요청은 같은 보고서)", async () => {
+  // Beta PILOT 2 Phase 4: 진행 중에도 '작성 중'으로 만들 수 있고(완료는 종료 후), 실제 재난은 같은 표에 '재난대피일지' 서식으로 만들어짐
+  it("진행 중 사건은 작성 중으로 생성(완료 409), 실제 재난은 재난대피일지 서식, 이벤트당 1건(다시 요청·동시 요청은 같은 보고서)", async () => {
     await editor();
     const drill = await issueEvent(prisma, { schoolId: A, actorUserId: U.admin!, primaryType: "fire", mode: "drill" });
     const [a, b] = await Promise.all([

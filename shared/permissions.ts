@@ -24,7 +24,7 @@ export type Capability =
   | "board.detail" // 상황판 상세: 학급 메모·보고자·부상 인원·대리 담당(관리자·교장·교감·안전업무 담당)
   | "drilllog.view" // 훈련일지 열람·다운로드
   | "drilllog.edit" // 훈련일지 만들기·수정
-  | "realreport.edit" // Phase 4: 실제 재난 '재난대피 상황보고서' 작성·수정(학교 관리자·안전업무 담당). 열람은 drilllog.view 와 같음
+  | "realreport.edit" // Phase 4: 실제 재난 '재난대피일지' 작성·수정(학교 관리자·안전업무 담당). 열람은 drilllog.view 와 같음
   | "members.manage" // 교직원 가입 승인·거절·회수, 학급 배정
   | "members.rename" // Beta PILOT 2: 교직원 표시 성명 정정(학교 관리자만. 역할·배정·대리 지정과 무관)
   | "admin.transfer" // Beta PILOT 2: 학교 관리자 권한 이양(학교 관리자만, 비밀번호 재확인. 플랫폼 운영자 권한과 무관)
@@ -42,7 +42,7 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
   "board.detail": "상황판 상세(메모·보고자·부상·대리 담당)",
   "drilllog.view": "훈련일지 열람·다운로드",
   "drilllog.edit": "훈련일지 작성·수정",
-  "realreport.edit": "재난대피 상황보고서 작성·수정",
+  "realreport.edit": "재난대피일지 작성·수정",
   "members.manage": "교직원 승인·배정",
   "members.rename": "교직원 성명 정정",
   "admin.transfer": "학교 관리자 권한 이양",

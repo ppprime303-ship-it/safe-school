@@ -1,4 +1,4 @@
-// Beta PILOT 2 Phase 4-A: 공통 보고서 배치(모의훈련 일지 / 실제 재난 상황보고서) — DB 없이 실행
+// Beta PILOT 2 Phase 4-A: 공통 보고서 배치(모의훈련 일지 / 실제 재난의 재난대피일지) — DB 없이 실행
 // - 이전 저장본(incidents 없음)은 기존 서식 그대로(기존 drilllog-doc 테스트가 고정)
 // - 새 스냅숏: 붙임 1 학급별, 붙임 2 현장 제보·조치(두 서식), 붙임 3 교직원 소재 익명 집계(실제 재난만)
 // - 개인정보 가림·검사
@@ -60,12 +60,12 @@ describe("모의훈련 일지(새 스냅숏)", () => {
   });
 });
 
-describe("실제 재난 상황보고서", () => {
+describe("실제 재난의 재난대피일지", () => {
   const d = buildDrillDoc(snap("real"), defaultManual());
   const text = allText(d);
-  it("제목 '재난대피 상황보고서', 같은 칸·같은 순서에 표제어만 바뀜, [실제 상황] 표시", () => {
-    expect(docTitle(snap("real"))).toBe("재난대피 상황보고서(화재)");
-    expect(d.pages.map((p) => p.title)).toEqual(["재난대피 상황보고서(화재)", "붙임 1. 학급별 대피 현황", "붙임 2. 현장 제보·조치 현황", "붙임 3. 교직원 소재 응답 통계(익명 집계)"]);
+  it("제목 '재난대피일지', 같은 칸·같은 순서에 표제어만 바뀜, [실제 상황] 표시", () => {
+    expect(docTitle(snap("real"))).toBe("재난대피일지(화재)");
+    expect(d.pages.map((p) => p.title)).toEqual(["재난대피일지(화재)", "붙임 1. 학급별 대피 현황", "붙임 2. 현장 제보·조치 현황", "붙임 3. 교직원 소재 응답 통계(익명 집계)"]);
     const drill = buildDrillDoc(snap("drill"), defaultManual());
     const shape = (x: typeof d) => x.pages[0]!.table.cells.map((c) => [c.r, c.c, c.rs, c.cs]);
     expect(shape(d)).toEqual(shape(drill)); // 칸 구조 동일
@@ -139,7 +139,7 @@ describe("보고서 권한(기존 훈련일지 권한 유지)", () => {
     for (const [role, duties] of [["admin", []], ["staff", ["principal"]], ["staff", ["vice_principal"]], ["staff", ["safety_officer"]]] as const) expect(capabilitiesFor(role, [...duties])).toContain("drilllog.view");
     expect(capabilitiesFor("staff", [])).not.toContain("drilllog.view");
   });
-  it("실제 재난 상황보고서 작성(realreport.edit)은 학교 관리자·안전업무 담당만(교장·교감은 열람만 — 확인 권한은 미확정)", () => {
+  it("실제 재난의 재난대피일지 작성(realreport.edit)은 학교 관리자·안전업무 담당만(교장·교감은 열람만 — 확인 권한은 미확정)", () => {
     expect(capabilitiesFor("admin", [])).toContain("realreport.edit");
     expect(capabilitiesFor("staff", ["safety_officer"])).toContain("realreport.edit");
     for (const d of ["principal", "vice_principal", "app_operator"] as const) expect(capabilitiesFor("staff", [d])).not.toContain("realreport.edit");

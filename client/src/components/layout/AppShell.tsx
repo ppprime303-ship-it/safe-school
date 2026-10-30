@@ -32,7 +32,8 @@ export function navItemsFor(schoolId: string | null, caps: readonly string[] | n
   // Beta PILOT 2 Phase 3: 현장 상황 공유(승인 교직원 누구나 — 학급 보고·교직원 소재와 별개)
   if (has("board.view")) items.push({ href: `/s/${schoolId}/incidents`, label: "현장 제보", icon: "alert" });
   items.push({ href: `/s/${schoolId}/alerts`, label: "경보", icon: "bell" });
-  if (has("drilllog.view")) items.push({ href: `/s/${schoolId}/drill-logs`, label: "훈련일지", icon: "file" });
+  // Phase 4: 모의훈련 '비상대피훈련일지'·실제 재난 '재난대피일지'를 함께 보는 메뉴
+  if (has("drilllog.view")) items.push({ href: `/s/${schoolId}/drill-logs`, label: "대피일지", icon: "file" });
   if (has("members.manage")) items.push({ href: `/s/${schoolId}/members`, label: "교직원", icon: "users" });
   if (has("classes.manage")) items.push({ href: `/s/${schoolId}/classes`, label: "학급", icon: "school" });
   // STEP 4: 승인된 교직원 모두 같은 안전교육 자료 안내(권한 검사 없음 — 소속 승인은 App.tsx 공통 검사)

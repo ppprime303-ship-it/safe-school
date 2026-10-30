@@ -1,5 +1,5 @@
 // Beta PILOT 2 Phase 4: 보고서 A4 인쇄 품질 점검용 HTML 만들기(가상 자료만) — `npx tsx scripts/report-print-check.tsx <출력 폴더>`
-// 화면과 같은 DrillDocPreview 컴포넌트로 모의훈련 일지·실제 재난 상황보고서 HTML 을 만들고, 쪽별 HTML 도 함께 만듭니다.
+// 화면과 같은 DrillDocPreview 컴포넌트로 모의훈련 일지·실제 재난의 재난대피일지 HTML 을 만들고, 쪽별 HTML 도 함께 만듭니다.
 // 만든 HTML 은 브라우저(Edge·Chrome) 머리 없는 인쇄로 PDF·쪽 이미지로 바꿔 확인합니다(운영 자료·DB 사용 안 함).
 import fs from "node:fs";
 import path from "node:path";

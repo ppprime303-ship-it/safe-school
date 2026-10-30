@@ -11,7 +11,7 @@
 
 export const DRILL_FORM_KEY = "evacuation_drill";
 export const DRILL_FORM_VERSION = 1;
-/** Beta PILOT 2 Phase 4: 실제 재난 '재난대피 상황보고서'(같은 배치, 사건 mode 로 서식 결정) */
+/** Beta PILOT 2 Phase 4: 실제 재난 '재난대피일지'(같은 배치, 사건 mode 로 서식 결정) */
 export const REAL_FORM_KEY = "disaster_real";
 export const formKeyFor = (mode: "drill" | "real") => (mode === "real" ? REAL_FORM_KEY : DRILL_FORM_KEY);
 
@@ -218,8 +218,8 @@ export function autoEvacSentence(ev: DrillSnapshot["event"]): string {
 
 export function docTitle(s: DrillSnapshot): string {
   const types = [s.event.typeLabel, ...s.event.extraTypeLabels].join("·");
-  // Phase 4: 실제 재난은 같은 배치의 '재난대피 상황보고서'. 모의훈련은 승인 서식 제목 그대로
-  return s.event.mode === "real" ? `재난대피 상황보고서(${types})` : `비상대피훈련일지(${types})`;
+  // Phase 4: 실제 재난은 같은 배치의 '재난대피일지'. 모의훈련은 승인 서식 제목 그대로
+  return s.event.mode === "real" ? `재난대피일지(${types})` : `비상대피훈련일지(${types})`;
 }
 
 // ───────────── Phase 4 개인정보 가림·검사 ─────────────
@@ -247,7 +247,7 @@ export function maskPersonal(text: string, staffNames: readonly string[]): { tex
 /**
  * 출력 문서 개인정보 검사(완료·내려받기 전 서버, 화면 미리보기 공통): 문서 모든 칸·제목·주석에서
  * - 주민등록번호·전화번호 형태(모든 서식)
- * - 교직원 이름: 실제 재난 상황보고서만(checkNames). 모의훈련 일지는 승인 서식상 '역할담당 담당자'에 이름을 적으므로 검사하지 않음
+ * - 교직원 이름: 실제 재난의 재난대피일지만(checkNames). 모의훈련 일지는 승인 서식상 '역할담당 담당자'에 이름을 적으므로 검사하지 않음
  */
 export function scanDocPrivacy(doc: DrillDoc, staffNames: readonly string[], opts: { checkNames: boolean }): string[] {
   const issues: string[] = [];

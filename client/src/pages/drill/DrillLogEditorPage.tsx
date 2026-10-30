@@ -7,7 +7,7 @@
 // - 입력한 문장(대피 장소 등)은 자동으로 고치지 않음. 오탈자 의심만 안내
 // - PC(lg 이상)는 넓게: 참가 인원 4칸, 역할 한 줄 배치, 평가 2열. 모바일은 1열
 // - '작성 완료'는 앱 안 문서 상태일 뿐 결재·보고 완료가 아님
-// Beta PILOT 2 Phase 4: 같은 화면으로 실제 재난 '재난대피 상황보고서'도 작성(서식은 서버가 사건 mode 로 결정)
+// Beta PILOT 2 Phase 4: 같은 화면으로 실제 재난 '재난대피일지'도 작성(서식은 서버가 사건 mode 로 결정)
 // - 실제 재난: 같은 칸·순서, 표제어만 다름. 교직원 이름을 적지 않음(명단 선택 없음, 개인정보 검사), 교직원 소재는 익명 집계만 표시
 // - 진행 중 사건은 '작성 중'만, 완료(최종본)는 종료 후 종료 기록으로 다시 불러온 뒤. 최종본이 아니면 미리보기·인쇄에 '작성 중 초안' 표시
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -31,6 +31,7 @@ interface Detail {
     autoTakenAt: string;
     createdByName: string | null;
     updatedByName: string | null;
+    createdAt: string;
     updatedAt: string;
     // Phase 4
     mode?: "drill" | "real";
@@ -161,8 +162,8 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
     }
   };
 
-  if (err) return <AppShell title="훈련일지·상황보고서" schoolId={schoolId}><ErrorState title={err.title} message={err.message} onRetry={() => void load()} /></AppShell>;
-  if (!d || !manual || !doc) return <AppShell title="훈련일지·상황보고서" schoolId={schoolId}><LoadingState label="보고서를 불러오는 중…" /></AppShell>;
+  if (err) return <AppShell title="훈련일지·재난대피일지" schoolId={schoolId}><ErrorState title={err.title} message={err.message} onRetry={() => void load()} /></AppShell>;
+  if (!d || !manual || !doc) return <AppShell title="훈련일지·재난대피일지" schoolId={schoolId}><LoadingState label="보고서를 불러오는 중…" /></AppShell>;
 
   const s = d.snapshot;
   const sum = summarizeClasses(s.classes);
@@ -175,7 +176,7 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
   const real = (d.log.mode ?? s.event.mode) === "real";
   const active = d.log.eventStatus === "active";
   const L = real
-    ? { page: "재난대피 상황보고서", people: "인원 현황", student: "학생 재실(명)", studentHint: "재난 당시 학교에 있던 학생 수(담당자 확인값, 시스템 대피 확인 수와 별개).", total: "총 인원(명)", overview: "상황 개요(보충 설명)", evals: "대응 평가(O/X는 담당자 판단)", improve: "문제점 및 향후 조치 사항" }
+    ? { page: "재난대피일지", people: "인원 현황", student: "학생 재실(명)", studentHint: "재난 당시 학교에 있던 학생 수(담당자 확인값, 시스템 대피 확인 수와 별개).", total: "총 인원(명)", overview: "상황 개요(보충 설명)", evals: "대응 평가(O/X는 담당자 판단)", improve: "문제점 및 향후 조치 사항" }
     : { page: "훈련일지", people: "참가 인원", student: "학생 참가(명)", studentHint: "실제 훈련에 참가한 학생 수(시스템 대피 확인 수와 별개).", total: "총 참가(명)", overview: "훈련 개요(보충 설명)", evals: "평가(O/X는 담당자 판단)", improve: "추후 대피훈련 시 반영사항" };
   const privacy = d.log.privacyIssues ?? [];
 
@@ -183,7 +184,7 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
     <AppShell title={L.page} schoolId={schoolId}>
       <div className="mx-auto max-w-3xl space-y-4 text-base leading-relaxed lg:max-w-6xl print:max-w-none">
         <nav className="flex flex-wrap gap-3 text-base font-bold print:hidden">
-          <Link href={`/s/${schoolId}/drill-logs`} className="inline-flex min-h-touch items-center text-accent underline underline-offset-4">훈련일지·상황보고서 목록</Link>
+          <Link href={`/s/${schoolId}/drill-logs`} className="inline-flex min-h-touch items-center text-accent underline underline-offset-4">훈련일지·재난대피일지 목록</Link>
         </nav>
 
         {/* 1. 제목·상태 */}
@@ -192,7 +193,7 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
             <span className={`rounded-full border px-2.5 py-0.5 text-sm font-bold ${d.log.status === "completed" ? "border-success bg-success-soft text-success" : "border-warning bg-warning-soft text-warning-strong"}`}>
               {d.log.status === "completed" ? "작성 완료" : "작성 중"}
             </span>
-            <span className="text-sm text-ink-muted">판 {d.log.version} · 최근 저장 {formatDateTime(d.log.updatedAt)}{d.log.updatedByName ? ` (${d.log.updatedByName})` : ""}</span>
+            <span className="text-sm text-ink-muted">판 {d.log.version} · 최근 저장 {formatDateTime(d.log.updatedAt)}</span>
             {dirty && <span className="rounded-full border border-warning bg-warning-soft px-2 py-0.5 text-sm font-bold text-warning-strong">저장 안 된 변경 있음</span>}
             {real ? (
               <span className="rounded-full bg-danger px-2 py-0.5 text-sm font-bold text-white">실제 재난 기록</span>
@@ -203,7 +204,17 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
           </div>
           <h2 className="mt-2 text-xl font-extrabold">{doc.pages[0]!.title}</h2>
           <p className="text-sm text-ink-muted">{s.schoolName} · {whenText(s.event)}</p>
-          {ro && <p className="mt-2 text-sm">열람 전용입니다. {real ? "상황보고서 작성·수정은 학교 관리자·안전업무 담당이 합니다" : "훈련일지 작성·수정은 안전업무 담당이 합니다"}(미리보기·인쇄 가능).</p>}
+          {/* 확정 정책: 시스템 작성·수정자 정보는 권한 있는 사람의 이 상세 화면에서만(PDF·HWPX·인쇄본에는 싣지 않음) */}
+          <dl className="mt-2 grid gap-x-4 gap-y-0.5 text-sm sm:grid-cols-[auto_1fr]" aria-label="보고서 관리 정보(출력물에는 포함되지 않음)">
+            <dt className="font-bold">최초 작성</dt>
+            <dd>{d.log.createdByName ?? "(알 수 없음)"} · {formatDateTime(d.log.createdAt)}</dd>
+            <dt className="font-bold">최종 수정</dt>
+            <dd>{d.log.updatedByName ?? "(알 수 없음)"} · {formatDateTime(d.log.updatedAt)}</dd>
+            <dt className="font-bold">판·상태</dt>
+            <dd>판 {d.log.version} · {d.log.status === "completed" ? "작성 완료" : "작성 중"}</dd>
+          </dl>
+          <p className="text-sm text-ink-muted">작성·수정자 정보는 학교 내부 관리용이며 PDF·한글 파일·인쇄본에는 들어가지 않습니다.</p>
+          {ro &&<p className="mt-2 text-sm">열람 전용입니다. {real ? "재난대피일지 작성·수정은 학교 관리자·안전업무 담당이 합니다" : "훈련일지 작성·수정은 안전업무 담당이 합니다"}(미리보기·인쇄 가능).</p>}
         </section>
 
         {/* Phase 4: 진행 중·종료 기록 다시 불러오기·개인정보 검사 */}
@@ -223,7 +234,7 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
           <section role="alert" className="rounded-card border-2 border-danger bg-danger-soft p-4 text-danger print:hidden">
             <p className="font-bold">출력 문서에 개인정보로 보이는 내용이 있습니다(저장된 판 기준). 고치기 전에는 작성 완료·한글 내려받기를 할 수 없습니다.</p>
             <ul className="mt-1 list-disc pl-5 text-sm">{privacy.map((x) => <li key={x}>{x}</li>)}</ul>
-            {real && <p className="mt-1 text-sm">실제 재난 상황보고서에는 교직원 이름을 적지 않습니다. 직위·부서로 적어 주세요.</p>}
+            {real && <p className="mt-1 text-sm">실제 재난의 재난대피일지에는 교직원 이름을 적지 않습니다. 직위·부서로 적어 주세요.</p>}
           </section>
         )}
 
@@ -321,7 +332,7 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
               <p className="font-bold">역할 및 담당자</p>
               <p className="text-sm text-ink-muted">
                 {real
-                  ? "실제 재난 상황보고서에는 교직원 이름을 적지 않습니다. '안전업무 담당', '각 반 담임교사'처럼 직위·부서로 적으세요."
+                  ? "실제 재난의 재난대피일지에는 교직원 이름을 적지 않습니다. '안전업무 담당', '각 반 담임교사'처럼 직위·부서로 적으세요."
                   : "'명단에서 선택'으로 우리 학교 교직원을 여러 명 고를 수 있습니다. 명단에 없는 사람(외부 인력)이나 \"각 반 담임교사\" 같은 표현은 직접 입력하세요."}
               </p>
               <div className="mt-2 space-y-3 lg:space-y-2">

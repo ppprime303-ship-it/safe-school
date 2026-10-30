@@ -177,7 +177,7 @@ describe("모의훈련 → 훈련일지 최종본(출력물 검사)", () => {
   });
 });
 
-describe("실제 재난 → 재난대피 상황보고서(출력물 검사)", () => {
+describe("실제 재난 → 재난대피일지(출력물 검사)", () => {
   it("진행 중 작성 → 소재 응답 2명(교내 위치 포함·교외), 미응답 3명, 학급 1곳 미보고", async () => {
     real = (await call("safety", "POST", S("/events"), { primaryType: "earthquake", mode: "real", confirmReal: true })).body.event.id;
     expect((await reportClass(real)).status).toBe(200);
@@ -208,12 +208,12 @@ describe("실제 재난 → 재난대피 상황보고서(출력물 검사)", () 
     expect((await save("safety", realLog, 2, { manual, status: "completed", refreshAuto: true })).status).toBe(200);
     const { doc, html, body } = await printHtml("admin", realLog);
     expect(body.log).toMatchObject({ status: "completed", final: true, privacyIssues: [] });
-    expect(doc.pages.map((p) => p.title)).toEqual(["재난대피 상황보고서(지진)", "붙임 1. 학급별 대피 현황", "붙임 2. 현장 제보·조치 현황", "붙임 3. 교직원 소재 응답 통계(익명 집계)"]);
+    expect(doc.pages.map((p) => p.title)).toEqual(["재난대피일지(지진)", "붙임 1. 학급별 대피 현황", "붙임 2. 현장 제보·조치 현황", "붙임 3. 교직원 소재 응답 통계(익명 집계)"]);
     expect(checkDoc(doc, { height: true })).toEqual([]);
     expect(html.match(/<section/g)).toHaveLength(4);
     expect(html.match(/<thead/g)?.length).toBeGreaterThanOrEqual(2); // 붙임 표 머리글 반복
     for (const out of [html, (await exportHwpx("admin", realLog)).text]) {
-      expect(out).toContain("재난대피 상황보고서(지진)");
+      expect(out).toContain("재난대피일지(지진)");
       expect(out).toContain("학생 재실");
       expect(out).toContain("미응답(추정 안 함)");
       expect(out).toContain("미보고");
