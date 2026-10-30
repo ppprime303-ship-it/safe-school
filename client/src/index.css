@@ -114,4 +114,16 @@
   .drill-page:last-child {
     break-after: auto;
   }
+  /* Phase 4: 칸 배경색 유지, 머리글 행 반복, 행이 쪽 경계에서 쪼개지지 않게 */
+  .drill-print,
+  .drill-print * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .drill-table thead {
+    display: table-header-group;
+  }
+  .drill-row {
+    break-inside: avoid;
+  }
 }

@@ -109,7 +109,7 @@ describe("붙임 2 현장 제보·조치", () => {
   it("처리 상태·추가/조치 건수·최근 조치가 그대로", () => {
     const d = buildDrillDoc(snap("drill"), defaultManual());
     const row = d.pages[2]!.table.cells.filter((c) => c.r === 1).map((c) => c.text);
-    expect(row).toEqual(["1", "위험 발견", "복도 / 본관 1층", "10:05", "조치 중", "2건 / 1건", "복도에 연기\n└ 조치: 출입 통제"]);
+    expect(row).toEqual(["1", "위험 발견", "복도 / 본관 1층", "10:05", "조치 중", "2 / 1", "복도에 연기\n└ 조치: 출입 통제"]);
   });
 });
 
@@ -144,5 +144,36 @@ describe("보고서 권한(기존 훈련일지 권한 유지)", () => {
     expect(capabilitiesFor("staff", ["safety_officer"])).toContain("realreport.edit");
     for (const d of ["principal", "vice_principal", "app_operator"] as const) expect(capabilitiesFor("staff", [d])).not.toContain("realreport.edit");
     expect(capabilitiesFor("homeroom", [])).not.toContain("realreport.edit");
+  });
+});
+
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { DrillDocPreview } from "../client/src/pages/drill/DrillDocPreview";
+import { markDraft, textLines, USABLE_H } from "../shared/drillLog";
+describe("A4 인쇄 품질(Phase 4-C)", () => {
+  it("붙임 표의 머리글 행은 <thead>(쪽을 넘으면 반복), 행은 쪽 경계에서 쪼개지지 않음, 본문 표는 thead 없음", () => {
+    const html = renderToStaticMarkup(createElement(DrillDocPreview, { doc: buildDrillDoc(snap("real"), defaultManual()) }));
+    expect((html.match(/<thead/g) ?? []).length).toBe(2); // 머리글이 있는 표는 붙임 1(학급별)·붙임 2(제보) — 소재 통계 표는 머리글 없음
+    expect(html).toContain("display:table-header-group");
+    expect(html).toContain("break-inside:avoid");
+    expect((html.match(/class="drill-page/g) ?? []).length).toBe(4);
+  });
+  it("실제 재난 주석은 '학생 재실'(모의훈련 표현 없음), 초안 표시는 본문 부제에만", () => {
+    const d = buildDrillDoc(snap("real"), defaultManual());
+    expect(d.pages[0]!.footnote).toContain("※ 총 인원: 교직원·학생 재실 인원 확인 후 기입");
+    expect(d.pages[0]!.footnote).not.toContain("학생 참가");
+    const draft = markDraft(d);
+    expect(draft.pages[0]!.subtitle).toContain("작성 중 초안(최종본 아님)");
+    expect(draft.pages.slice(1).every((p, i) => p.subtitle === d.pages[i + 1]!.subtitle)).toBe(true);
+  });
+  it("긴 제보 요약은 행 높이를 늘리고 쪽을 높이 합으로 나눔(어느 쪽도 A4 높이를 넘지 않음)", () => {
+    const long = Array.from({ length: 14 }, (_, i) => incident(i + 1, { summary: "가".repeat(60), lastAction: "나".repeat(40), placeLabel: "급식실 / 본관 뒤편 출입구 옆" }));
+    const d = buildDrillDoc(snap("drill", { incidents: long }), defaultManual());
+    const p2 = d.pages.filter((p) => p.title.startsWith("붙임 2."));
+    expect(p2.length).toBeGreaterThan(1);
+    expect(checkDoc(d)).toEqual([]);
+    expect(textLines("가".repeat(60), 60)).toBeGreaterThan(1);
+    for (const p of p2) expect(p.table.rowsMm.reduce((a, b) => a + b, 0)).toBeLessThan(USABLE_H);
   });
 });

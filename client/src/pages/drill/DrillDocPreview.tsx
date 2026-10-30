@@ -30,6 +30,41 @@ const FILL = { label: "#F2F2F2", head: "#F2F2F2", band: "#E4E4E4", value: "#FFFF
 function Table({ t }: { t: LTable }) {
   const nrow = t.rowsMm.length;
   const ncol = t.colPct.length;
+  // Phase 4 인쇄 품질: 머리글 행(headerRows)은 <thead> 로 — 표가 실제 쪽을 넘어가면 브라우저가 쪽마다 반복. 행은 쪽 경계에서 쪼개지 않음
+  const head = t.headerRows ?? 0;
+  const row = (r: number) => (
+    <tr key={r} className="drill-row" style={{ height: `${t.rowsMm[r]}mm`, breakInside: "avoid" }}>
+      {cellsOf(r)}
+    </tr>
+  );
+  const cellsOf = (r: number) =>
+    t.cells
+      .filter((c) => c.r === r)
+      .sort((a, b) => a.c - b.c)
+      .map((c) => (
+        <td
+          key={c.c}
+          colSpan={c.cs}
+          rowSpan={c.rs}
+          style={{
+            background: FILL[c.kind],
+            textAlign: c.align === "L" ? "left" : c.align === "R" ? "right" : "center",
+            verticalAlign: c.valign === "T" ? "top" : "middle",
+            fontWeight: c.bold ? 700 : 400,
+            padding: "0.6mm 1.6mm",
+            whiteSpace: "pre-wrap",
+            overflow: "hidden",
+            borderLeft: `${c.c === 0 ? "0.4mm" : "0.12mm"} solid #000`,
+            borderRight: `${c.c + c.cs === ncol ? "0.4mm" : "0.12mm"} solid #000`,
+            borderTop: `${c.r === 0 ? "0.4mm" : "0.12mm"} solid #000`,
+            borderBottom: `${c.r + c.rs === nrow ? "0.4mm" : "0.12mm"} solid #000`,
+            color: "#000",
+          }}
+        >
+          {c.text}
+        </td>
+      ));
+  const rows = t.rowsMm.map((_, r) => r);
   return (
     <table className="drill-table" style={{ width: `${TABLE_W}mm`, borderCollapse: "collapse", tableLayout: "fixed", fontSize: "10pt", lineHeight: 1.3 }}>
       <colgroup>
@@ -37,38 +72,8 @@ function Table({ t }: { t: LTable }) {
           <col key={i} style={{ width: `${p}%` }} />
         ))}
       </colgroup>
-      <tbody>
-        {t.rowsMm.map((h, r) => (
-          <tr key={r} style={{ height: `${h}mm` }}>
-            {t.cells
-              .filter((c) => c.r === r)
-              .sort((a, b) => a.c - b.c)
-              .map((c) => (
-                <td
-                  key={c.c}
-                  colSpan={c.cs}
-                  rowSpan={c.rs}
-                  style={{
-                    background: FILL[c.kind],
-                    textAlign: c.align === "L" ? "left" : c.align === "R" ? "right" : "center",
-                    verticalAlign: c.valign === "T" ? "top" : "middle",
-                    fontWeight: c.bold ? 700 : 400,
-                    padding: "0.6mm 1.6mm",
-                    whiteSpace: "pre-wrap",
-                    overflow: "hidden",
-                    borderLeft: `${c.c === 0 ? "0.4mm" : "0.12mm"} solid #000`,
-                    borderRight: `${c.c + c.cs === ncol ? "0.4mm" : "0.12mm"} solid #000`,
-                    borderTop: `${c.r === 0 ? "0.4mm" : "0.12mm"} solid #000`,
-                    borderBottom: `${c.r + c.rs === nrow ? "0.4mm" : "0.12mm"} solid #000`,
-                    color: "#000",
-                  }}
-                >
-                  {c.text}
-                </td>
-              ))}
-          </tr>
-        ))}
-      </tbody>
+      {head > 0 && <thead style={{ display: "table-header-group" }}>{rows.slice(0, head).map(row)}</thead>}
+      <tbody>{rows.slice(head).map(row)}</tbody>
     </table>
   );
 }

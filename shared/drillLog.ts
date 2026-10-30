@@ -417,7 +417,7 @@ export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDo
     if (pc.unconfirmed) parts.push(`소재 미확인 ${pc.unconfirmed}명 별도`);
     notes.push(`※ 학생 대피 확인: ${parts.join(", ")}.`);
   }
-  if (pc.totalSource === "none") notes.push(`※ ${W.total}: ${pc.missing.join("·")} 인원 확인 후 기입(미확인 값을 0으로 채우지 않음).`);
+  if (pc.totalSource === "none") notes.push(`※ ${W.total}: ${pc.missing.map((m) => (m === "학생 참가" ? W.student : m)).join("·")} 인원 확인 후 기입(미확인 값을 0으로 채우지 않음).`);
   else if (pc.totalSource === "auto") notes.push(`※ ${W.total} = 교직원 + ${W.student}(담당자 확인 값의 합).`);
   if (ev.closedAt) notes.push(`※ ${TIME_BASIS_SHORT}`);
   if (v2) {
@@ -490,31 +490,62 @@ export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDo
   return { pages };
 }
 
-/** 붙임 2. 현장 제보·조치 현황(제보자 이름 없음, 자유 기재는 가린 요약). 쪽마다 머리글 반복 */
-export const INCIDENT_COLS = [6.0, 11.0, 17.0, 10.0, 11.0, 9.0, 36.0];
-export const INCIDENT_ROWS_PER_PAGE = 16;
-const INCIDENT_ROW_H = 12.0;
+/**
+ * 칸 안 글이 몇 줄로 접히는지 추정(인쇄·HWPX 공통 배치용): 한글·전각 1em, 영문·숫자·공백 약 0.55em, 줄 간격 130%.
+ * 행 높이를 고정하면 긴 제보 요약이 칸을 넘쳐 쪽이 밀리므로(Edge 인쇄 점검에서 확인) 행마다 필요한 높이를 계산
+ */
+export function textLines(text: string, widthMm: number, pt = 10): number {
+  const em = pt * 0.3528;
+  const avail = Math.max(1, widthMm - 3.2); // 칸 좌우 여백 1.6mm × 2
+  return text.split("\n").reduce((n, line) => n + Math.max(1, Math.ceil(([...line].reduce((w, ch) => w + (ch.charCodeAt(0) < 0x2000 ? 0.55 : 1), 0) * em) / avail)), 0);
+}
+const rowHeightFor = (texts: { text: string; widthMm: number }[], min: number, pt = 10) => Math.max(min, Math.ceil((Math.max(...texts.map((t) => textLines(t.text, t.widthMm, pt))) * pt * 0.3528 * 1.3 + 1.6) * 10) / 10);
+
+/** 붙임 2. 현장 제보·조치 현황(제보자 이름 없음, 자유 기재는 가린 요약). 행 높이는 글 길이에 맞추고, 쪽은 높이 합으로 나눔(쪽마다 머리글 반복) */
+export const INCIDENT_COLS = [6.0, 12.0, 18.0, 8.0, 12.0, 9.0, 35.0]; // 유형·처리 상태(최대 5자)가 한 줄에 들어가는 폭
+export const INCIDENT_ROWS_PER_PAGE = 16; // 짧은 제보 기준 최대 행 수(긴 제보가 있으면 높이 합으로 더 일찍 나눔)
+const INCIDENT_ROW_MIN = 10.0;
+const INCIDENT_FOOT_LAST = 17.5; // 마지막 쪽 주석(2줄+여백) 높이 여유
+const incidentText = (it: DrillIncidentSnap) => clean(it.lastAction ? `${it.summary}\n└ 조치: ${it.lastAction}` : it.summary, 120);
+function incidentRowHeight(it: DrillIncidentSnap): number {
+  const w = (i: number) => (TABLE_W * INCIDENT_COLS[i]!) / 100;
+  return rowHeightFor([{ text: incidentText(it), widthMm: w(6) }, { text: clean(it.placeLabel, 50), widthMm: w(2) }, { text: clean(it.typeLabel, 20), widthMm: w(1) }], INCIDENT_ROW_MIN);
+}
 function incidentPages(snap: DrillSnapshot, mode: string): LPage[] {
   const list = snap.incidents ?? [];
+  // 쪽 나누기: 제목·머리글·주석을 뺀 높이 안에 들어가는 만큼(행 수 상한도 함께)
+  const budget = USABLE_H - PAGE_HEAD_H.appendix - ROW_H - INCIDENT_FOOT_LAST - 4;
   const chunks: DrillIncidentSnap[][] = [];
-  for (let i = 0; i < Math.max(list.length, 1); i += INCIDENT_ROWS_PER_PAGE) chunks.push(list.slice(i, i + INCIDENT_ROWS_PER_PAGE));
+  let cur: DrillIncidentSnap[] = [];
+  let h = 0;
+  for (const it of list) {
+    const rh = incidentRowHeight(it);
+    if (cur.length && (h + rh > budget || cur.length >= INCIDENT_ROWS_PER_PAGE)) {
+      chunks.push(cur);
+      cur = [];
+      h = 0;
+    }
+    cur.push(it);
+    h += rh;
+  }
+  chunks.push(cur);
   return chunks.map((chunk, pi) => {
     const a = new TB();
     const hr = a.row(ROW_H);
-    ["번호", "유형", "장소", "접수 시각", "처리 상태", "추가·조치", "제보 내용·최근 조치(요약)"].forEach((h, i) => a.put(hr, i, h, { kind: "head", bold: true }));
+    ["번호", "유형", "장소", "시각", "처리 상태", "추가/조치(건)", "제보 내용·최근 조치(요약)"].forEach((h, i) => a.put(hr, i, h, { kind: "head", bold: true }));
     if (chunk.length === 0) {
       const rr = a.row(ROW_H);
       a.put(rr, 0, "현장 제보 없음", { cs: 7 });
     }
     for (const it of chunk) {
-      const rr = a.row(INCIDENT_ROW_H);
+      const rr = a.row(incidentRowHeight(it));
       a.put(rr, 0, String(it.no));
       a.put(rr, 1, clean(it.typeLabel, 20));
       a.put(rr, 2, clean(it.placeLabel, 50));
       a.put(rr, 3, hhmm(kst(it.createdAt)));
       a.put(rr, 4, clean(it.statusLabel, 20), { bold: it.statusLabel !== "조치 완료" });
-      a.put(rr, 5, `${it.updateCount}건 / ${it.actionCount}건`);
-      a.put(rr, 6, clean(it.lastAction ? `${it.summary}\n└ 조치: ${it.lastAction}` : it.summary, 120), { align: "L" });
+      a.put(rr, 5, `${it.updateCount} / ${it.actionCount}`);
+      a.put(rr, 6, incidentText(it), { align: "L" });
     }
     const pageNo = chunks.length > 1 ? ` (${pi + 1}/${chunks.length})` : "";
     const last = pi === chunks.length - 1;
@@ -524,7 +555,7 @@ function incidentPages(snap: DrillSnapshot, mode: string): LPage[] {
       subtitle: `${snap.schoolName} · ${dateText(snap.event.startedAt)} ${mode} · 제보 ${list.length}건(기록 시점 ${kstStamp(snap.takenAt)})`,
       table: { colPct: INCIDENT_COLS, rowsMm: a.rowsMm, cells: a.cells, headerRows: 1 },
       footnote: last
-        ? "※ 제보자 이름은 싣지 않습니다. 자유 기재 내용은 전화번호·주민등록번호 형태와 교직원 이름을 '○○○'으로 가렸습니다(학생 이름 등은 자동으로 모두 가릴 수 없으니 출력 전 확인).\n※ 추가·조치 = 추가 정보 건수 / 그중 조치 기록 건수. 처리 상태는 기록 시점 기준입니다."
+        ? "※ 제보자 이름은 싣지 않습니다. 자유 기재 내용은 전화번호·주민등록번호 형태와 교직원 이름을 '○○○'으로 가렸습니다(학생 이름 등은 자동으로 모두 가릴 수 없으니 출력 전 확인).\n※ 추가/조치 = 추가 정보 건수 / 그중 조치 기록 건수. 처리 상태는 기록 시점 기준입니다."
         : "※ 다음 쪽에 이어집니다.",
     };
   });
@@ -612,3 +643,9 @@ export function diffSnapshots(saved: DrillSnapshot, current: DrillSnapshot): str
 }
 
 const stableKey = (v: unknown): string => JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x));
+
+/** Phase 4: 작성 중 초안 표시(최종본이 아닌 출력 — 화면 미리보기·인쇄·HWPX 공통). 본문 부제에 덧붙임 */
+export function markDraft(doc: DrillDoc): DrillDoc {
+  const [first, ...rest] = doc.pages;
+  return first ? { ...doc, pages: [{ ...first, subtitle: `${first.subtitle} · 작성 중 초안(최종본 아님)` }, ...rest] } : doc;
+}
