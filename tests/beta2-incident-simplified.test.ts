@@ -1,7 +1,7 @@
 // 2026-11-02 사용자 검증 반영: 모의훈련 일지에 현장 제보 없음, 처리 상태 두 가지(저장값·이력은 보존), 재난대피일지에 상태 반영(HTTP, 테스트 스키마, 가상 자료만)
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { inflateRawSync } from "node:zlib";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -33,12 +33,18 @@ async function call(who: string, method: string, p: string, body?: unknown, idem
   return { status: res.status, buf, body: (res.headers.get("content-type") ?? "").includes("json") ? (JSON.parse(buf.toString("utf8")) as Record<string, any>) : {} };
 }
 const incident = async (eventId: string, description: string) => (await call("staff", "POST", `/events/${eventId}/incidents`, { type: "facility_damage", placeCategory: "hallway", placeDetail: "가상 복도", description }, true)).body.id as string;
-function hwpxText(buf: Buffer, name: string) {
-  const dir = fs.mkdtempSync(path.join(tmp, "x-"));
-  fs.writeFileSync(path.join(dir, name), buf);
-  execFileSync("tar", ["-xf", name, "-C", "."], { cwd: dir });
-  const section = fs.readFileSync(path.join(dir, "Contents", "section0.xml"), "utf8");
-  return { section, text: [...section.matchAll(/<hp:t[^>]*>([^<]*)<\/hp:t>/g)].map((m) => m[1]).join("\n") };
+/** HWPX(ZIP)의 본문 XML에서 글자만 꺼냄 */
+function hwpxText(buf: Buffer) {
+  let i = 0;
+  let xml = "";
+  while (buf.readUInt32LE(i) === 0x04034b50) {
+    const method = buf.readUInt16LE(i + 8), size = buf.readUInt32LE(i + 18), nlen = buf.readUInt16LE(i + 26), xlen = buf.readUInt16LE(i + 28);
+    const name = buf.subarray(i + 30, i + 30 + nlen).toString("utf8");
+    const body = buf.subarray(i + 30 + nlen + xlen, i + 30 + nlen + xlen + size);
+    if (/^Contents\/section\d+\.xml$/.test(name)) xml += (method === 8 ? inflateRawSync(body) : Buffer.from(body)).toString("utf8");
+    i += 30 + nlen + xlen + size;
+  }
+  return { text: [...xml.matchAll(/<hp:t[^>]*>([^<]*)<\/hp:t>/g)].map((m) => m[1]).join("\n") };
 }
 
 beforeAll(async () => {
@@ -106,7 +112,7 @@ describe("비상대피훈련일지", () => {
     expect(html).not.toMatch(/현장 제보|훈련제보고유문구|붙임 1\.|붙임 2/);
     const x = await call("safety", "GET", `/drill-logs/${log}/export.hwpx`);
     expect(x.status).toBe(200);
-    expect(hwpxText(x.buf, "d.hwpx").text).not.toMatch(/현장 제보|훈련제보고유문구|붙임 2/);
+    expect(hwpxText(x.buf).text).not.toMatch(/현장 제보|훈련제보고유문구|붙임 2/);
     const row = await prisma.incidentReport.findUniqueOrThrow({ where: { id } });
     expect(row.status).toBe("resolved");
     expect(row.description).toContain("훈련제보고유문구");
@@ -180,7 +186,7 @@ describe("재난대피일지와 처리 상태", () => {
     expect(JSON.stringify(g.snapshot.incidents)).not.toContain(names.staff); // 제보자 이름 없음
     const x = await call("admin", "GET", `/drill-logs/${log}/export.hwpx`);
     expect(x.status).toBe(200);
-    const { text } = hwpxText(x.buf, "r.hwpx");
+    const { text } = hwpxText(x.buf);
     for (const t of ["재난대피일지(화재)", "붙임 2. 현장 제보·조치 현황", "조치 대기", "조치 완료", "대기제보", "교직원 소재 응답 통계"]) expect(text).toContain(t);
     expect(text).not.toMatch(/훈련|확인 중|조치 중/);
     for (const n of Object.values(names)) expect(text).not.toContain(n);
