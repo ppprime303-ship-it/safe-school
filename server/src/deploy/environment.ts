@@ -87,7 +87,7 @@ export function pilotReadinessWarnings(role: DeploymentRole, env: Record<string,
   if (role !== "pilot") return [];
   const w: string[] = [];
   if (env.MAIL_PROVIDER === "manual") w.push("메일 수동 전달 모드 — 가입자마다 운영자가 'npm run operator -- email-code' 로 인증코드를 발급해 직접 보내야 합니다.");
-  else if (env.MAIL_PROVIDER !== "resend" || !env.MAIL_API_KEY || !env.MAIL_FROM) w.push("메일 발송 미설정 — 교직원 가입(이메일 인증)이 503으로 거부됩니다.");
+  else if (env.MAIL_PROVIDER === "gmail" ? !env.GMAIL_SMTP_USER || !env.GMAIL_SMTP_APP_PASSWORD : env.MAIL_PROVIDER !== "resend" || !env.MAIL_API_KEY || !env.MAIL_FROM) w.push("메일 발송 미설정 — 교직원 가입(이메일 인증)이 503으로 거부됩니다.");
   if (!env.SCHOOLINFO_API_KEY) w.push("학교알리미 인증키 미설정 — 저장된 학교 목록으로만 검색합니다.");
   if (!(env.ALERT_PROVIDERS ?? "").includes("mois_cbs")) w.push("공식 재난문자 수집 꺼짐(승인·응답 형식 확인 전 기본값).");
   if (!env.INCIDENT_UPLOAD_DIR) w.push("INCIDENT_UPLOAD_DIR 미설정 — 현장 사진 저장이 실패할 수 있습니다(systemd 읽기 전용 경로).");
@@ -131,7 +131,7 @@ export function betaEnvironmentErrors(role: DeploymentRole, env: Record<string, 
   errors.push(...betaUploadDirErrors(env));
   const mode = env.BETA_DATA_MODE?.trim();
   if (mode !== "virtual_test" && mode !== "school_pilot") errors.push("BETA_DATA_MODE 를 virtual_test 또는 school_pilot 으로 명시해야 합니다.");
-  if (mode === "virtual_test" && env.MAIL_PROVIDER === "resend") errors.push("가상 데이터 모드에서는 실제 메일 발송(MAIL_PROVIDER=resend)을 켤 수 없습니다.");
+  if (mode === "virtual_test" && (env.MAIL_PROVIDER === "resend" || env.MAIL_PROVIDER === "gmail")) errors.push(`가상 데이터 모드에서는 실제 메일 발송(MAIL_PROVIDER=${env.MAIL_PROVIDER})을 켤 수 없습니다.`);
   if (mode === "school_pilot" && env.BETA_SCHOOL_PILOT_APPROVED !== "true") errors.push("실제 학교 모드는 학교·개인정보 승인 후 BETA_SCHOOL_PILOT_APPROVED=true 로만 시작합니다.");
   return errors;
 }

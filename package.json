@@ -24,6 +24,7 @@
     "db:backup": "bash scripts/backup.sh",
     "postinstall": "prisma generate",
     "operator": "tsx scripts/operator.ts",
+    "mail:test": "tsx scripts/mail-test.ts",
     "directory:sync": "tsx scripts/sync-school-directory.ts",
     "schoolinfo:verify": "tsx scripts/verify-schoolinfo.ts",
     "neis:verify": "tsx scripts/verify-neis.ts",
