@@ -7,7 +7,7 @@ import { useSession } from "../lib/session";
 import { FormField } from "../components/ui/FormField";
 import { PrimaryButton } from "../components/ui/PrimaryButton";
 import { Icon } from "../components/ui/Icon";
-import { PrototypeNotice } from "../components/ui/PrototypeNotice";
+import { ReleaseNotice } from "../components/ui/ReleaseNotice";
 
 type Mode = "login" | "signup" | "verify";
 type DeviceKind = "personal" | "shared";
@@ -106,7 +106,7 @@ export function LoginPage() {
 
       <main className="mx-auto w-full max-w-md flex-1 px-4 py-6">
         <div className="mb-4">
-          <PrototypeNotice />
+          <ReleaseNotice />
         </div>
         <form onSubmit={onSubmit} className="rounded-card border border-line bg-card p-5 shadow-card" noValidate>
           <h1 className="text-2xl font-bold">{titles[mode]}</h1>
@@ -177,7 +177,7 @@ export function LoginPage() {
                 <p className="mt-1 font-semibold text-ink">
                   입력한 성명, 이메일, 소속 학교 및 담당 업무 정보와 재난 대응 기록은 SAFE SCHOOL 베타 시범운영(Beta PILOT 2) 목적으로 이용하며, 2026년 12월 31일 삭제 예정입니다. 실제 학생 개인정보는 입력하지 마세요.
                 </p>
-                <p className="mt-1">삭제 요청 등 문의는 평가 운영자에게 해 주세요(처리 방법은 평가 안내문 참고).</p>
+                <p className="mt-1">삭제 요청 등 문의는 시범운영 담당자에게 해 주세요.</p>
               </div>
             )}
             {/* STEP 7-D: 비밀번호는 인증코드와 함께 확정(가입 요청만으로는 저장하지 않음) */}
