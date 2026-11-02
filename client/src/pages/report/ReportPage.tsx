@@ -3,7 +3,7 @@
 // - 통신 장애로 저장하지 못하면 기기에 '미전송'으로 보관하고, 연결되면 같은 요청(같은 멱등키)으로 다시 보냅니다.
 //   서버 응답을 받기 전에는 절대 '저장 완료'로 표시하지 않습니다.
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, newIdempotencyKey, storage } from "../../lib/api";
+import { api, ApiError, describeError, newIdempotencyKey, storage } from "../../lib/api";
 import type { ActiveEvent, ClassReport, ClassReportView, ReportInput } from "../../lib/disaster";
 import { formatTime } from "../../lib/format";
 import { useSession } from "../../lib/session";
@@ -33,6 +33,7 @@ export function ReportPage({ schoolId }: { schoolId: string }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [selected, setSelected] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
+  const [retryTick, setRetryTick] = useState(0);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -88,6 +89,12 @@ export function ReportPage({ schoolId }: { schoolId: string }) {
         if (e instanceof ApiError && e.isNetwork) {
           storage.set(pendingKey(event.id, classId), JSON.stringify(pending));
           setSaveState({ kind: "queued", message: "통신이 연결되면 자동으로 다시 보냅니다. 급하면 구두로도 보고하세요." });
+        } else if (e instanceof ApiError && e.status === 429) {
+          // 요청 제한: 입력을 잃지 않게 보관하고, 서버가 알려 준 시간 뒤 같은 요청 번호로 다시 보냄(중복 보고 없음)
+          storage.set(pendingKey(event.id, classId), JSON.stringify(pending));
+          setSaveState({ kind: "queued", message: `${describeError(e).message} 입력한 내용은 보관했으며 자동으로 다시 보냅니다.` });
+          const waitSec = typeof e.details?.retryAfterSec === "number" ? e.details.retryAfterSec : 30;
+          window.setTimeout(() => setRetryTick((n) => n + 1), waitSec * 1000);
         } else if (e instanceof ApiError && (e.code === "version_conflict" || e.code === "event_closed")) {
           // 다른 사람이 먼저 수정했거나 상황이 종료됨: 최신 내용을 다시 불러와 보여 줌(덮어쓰지 않음)
           storage.remove(pendingKey(event.id, classId));
@@ -101,7 +108,7 @@ export function ReportPage({ schoolId }: { schoolId: string }) {
     [schoolId, fetchAll],
   );
 
-  // 연결이 돌아오면 미전송 보고를 다시 보냄
+  // 연결이 돌아오거나 요청 제한 시간이 지나면 미전송 보고를 다시 보냄
   useEffect(() => {
     if (load.kind !== "ready" || !selected) return;
     const retry = () => {
@@ -111,7 +118,7 @@ export function ReportPage({ schoolId }: { schoolId: string }) {
     retry();
     window.addEventListener("online", retry);
     return () => window.removeEventListener("online", retry);
-  }, [load, selected, send]);
+  }, [load, selected, send, retryTick]);
 
   const event = load.kind === "ready" ? load.event : null;
   const view = load.kind === "ready" ? load.classes.find((c) => c.classId === selected) ?? null : null;

@@ -8,14 +8,14 @@ import { prisma } from "../db.js";
 import { AppError } from "../errors.js";
 import { parse } from "../validate.js";
 import { requireVerified } from "../auth/session.js";
-import { rateLimit } from "../middleware/security.js";
+import { userRateLimit } from "../middleware/security.js";
 import { resolveAccess } from "../services/access.js";
 import { getMyPresence, listMyAlerts, markMyAlertRead, presenceDetail, presenceHistory, presenceSummary, submitMyPresence } from "../services/presence.js";
 import { idempotencyKeySchema } from "../../../shared/schemas.js";
 import { presenceInputSchema } from "../../../shared/presence.js";
 
 export const presenceRouter = Router();
-const reportLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
+const reportLimiter = userRateLimit({ windowMs: 60 * 1000, max: 60 });
 
 const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value) ?? "";
 const uuid = (v: string) => parse(z.object({ id: z.string().uuid() }), { id: v }).id;

@@ -6,7 +6,7 @@ import { Router, type Request } from "express";
 import { prisma } from "../db.js";
 import { parse } from "../validate.js";
 import { requireVerified } from "../auth/session.js";
-import { rateLimit } from "../middleware/security.js";
+import { userRateLimit } from "../middleware/security.js";
 import { resolveSchoolAccess } from "../services/membership.js";
 import {
   addHandlingRecord,
@@ -29,7 +29,7 @@ import {
 } from "../../../shared/schemas.js";
 
 export const noticesRouter = Router();
-const writeLimiter = rateLimit({ windowMs: 60 * 1000, max: 120 });
+const writeLimiter = userRateLimit({ windowMs: 60 * 1000, max: 120 });
 const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value) ?? "";
 const schoolOf = (req: Request) => param(req.params.schoolId);
 const member = (req: Request) => resolveSchoolAccess(prisma, { userId: req.auth!.userId, schoolId: schoolOf(req) });

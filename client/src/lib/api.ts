@@ -111,6 +111,8 @@ export function describeError(e: unknown): { title: string; message: string; ret
       return { title: "비밀번호 재확인이 필요합니다", message: e.message, retryable: false };
     case "unauthenticated":
       return { title: "로그인이 필요합니다", message: e.message, retryable: false };
+    case "too_many_requests":
+      return { title: "요청이 잠시 제한되었습니다", message: `${e.message} 급한 상황이면 구두 보고와 기존 비상연락망을 함께 사용하세요.`, retryable: true };
     default:
       return { title: e.status >= 500 ? "서버 오류" : "처리하지 못했습니다", message: e.message, retryable: e.status >= 500 };
   }

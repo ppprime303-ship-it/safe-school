@@ -8,15 +8,15 @@ import { Router, type Request } from "express";
 import { prisma } from "../db.js";
 import { parse } from "../validate.js";
 import { requireVerified } from "../auth/session.js";
-import { rateLimit } from "../middleware/security.js";
+import { userRateLimit } from "../middleware/security.js";
 import { resolveAccess } from "../services/access.js";
 import { createDrillLog, eventModeOf, exportDrillLogHwpx, getDrillLog, listDrillStaff, listDrillTargets, reportFormOf, updateDrillLog } from "../services/drillLogs.js";
 import type { Capability } from "../../../shared/permissions.js";
 import { drillLogUpdateSchema } from "../../../shared/schemas.js";
 
 export const drillLogsRouter = Router();
-const writeLimiter = rateLimit({ windowMs: 60 * 1000, max: 120 });
-const exportLimiter = rateLimit({ windowMs: 60 * 1000, max: 30 });
+const writeLimiter = userRateLimit({ windowMs: 60 * 1000, max: 120 });
+const exportLimiter = userRateLimit({ windowMs: 60 * 1000, max: 30 });
 const param = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const idOf = (req: Request, name: string) => (UUID.test(param(req.params[name])) ? param(req.params[name]) : "00000000-0000-0000-0000-000000000000");

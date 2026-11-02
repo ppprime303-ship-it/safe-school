@@ -42,6 +42,7 @@ export function createApiRouter() {
 
 const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof AppError) {
+    if (err.status === 429 && typeof err.details?.retryAfterSec === "number") res.setHeader("Retry-After", String(err.details.retryAfterSec));
     res.status(err.status).json({ code: err.code, message: err.message, ...(err.details ? { details: err.details } : {}) });
     return;
   }

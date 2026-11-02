@@ -73,8 +73,15 @@ export function rateLimit(options: { windowMs: number; max: number; key?: (req: 
     }
     entry.count++;
     if (entry.count > options.max) {
-      return next(new AppError(429, "too_many_requests", "요청이 너무 많습니다. 잠시 후 다시 시도하세요."));
+      const retryAfterSec = Math.max(1, Math.ceil((entry.resetAt - now) / 1000));
+      return next(new AppError(429, "too_many_requests", `요청이 너무 많습니다. ${retryAfterSec}초 뒤 다시 시도하세요.`, { retryAfterSec }));
     }
     next();
   };
+}
+
+// 로그인 사용자별 제한: 학교처럼 많은 교직원이 공인 IP 하나를 함께 쓰는 곳에서 재난 때 서로의 보고를 막지 않게 합니다.
+// 한 계정의 과도한 요청은 계속 막습니다. requireVerified 뒤에 두세요(세션이 없으면 IP 기준).
+export function userRateLimit(options: { windowMs: number; max: number }) {
+  return rateLimit({ ...options, key: (req) => req.auth?.userId ?? req.ip ?? "unknown" });
 }

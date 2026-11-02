@@ -5,7 +5,7 @@ import { prisma } from "../db.js";
 import { AppError } from "../errors.js";
 import { parse } from "../validate.js";
 import { requireVerified } from "../auth/session.js";
-import { rateLimit } from "../middleware/security.js";
+import { userRateLimit } from "../middleware/security.js";
 import { resolveSchoolAccess } from "../services/membership.js";
 import { resolveAccess } from "../services/access.js";
 import type { Capability } from "../../../shared/permissions.js";
@@ -22,9 +22,9 @@ import {
 } from "../../../shared/schemas.js";
 
 export const eventsRouter = Router();
-// 보고는 재시도가 잦으므로 넉넉하게, 발령·종료는 남용 방지용
-const reportLimiter = rateLimit({ windowMs: 60 * 1000, max: 120 });
-const issueLimiter = rateLimit({ windowMs: 60 * 1000, max: 20 });
+// 보고는 재시도가 잦으므로 넉넉하게, 발령·종료는 남용 방지용(계정별 — 같은 공인 IP의 다른 교직원을 막지 않음)
+const reportLimiter = userRateLimit({ windowMs: 60 * 1000, max: 120 });
+const issueLimiter = userRateLimit({ windowMs: 60 * 1000, max: 20 });
 
 const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value) ?? "";
 const ids = (req: Request) => ({ schoolId: param(req.params.schoolId), eventId: param(req.params.eventId) });

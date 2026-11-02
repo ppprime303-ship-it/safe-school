@@ -7,7 +7,7 @@ import { prisma } from "../db.js";
 import { AppError } from "../errors.js";
 import { parse } from "../validate.js";
 import { requireVerified } from "../auth/session.js";
-import { concurrencyLimit, rateLimit } from "../middleware/security.js";
+import { concurrencyLimit, userRateLimit } from "../middleware/security.js";
 import { resolveAccess } from "../services/access.js";
 import { addIncidentUpdate, changeIncidentStatus, createIncident, getIncident, listIncidents, similarIncidents, type Viewer } from "../services/incidents.js";
 import { addIncidentPhoto, deleteIncidentPhoto, readIncidentPhoto } from "../services/incidentPhotos.js";
@@ -16,7 +16,7 @@ import { idempotencyKeySchema } from "../../../shared/schemas.js";
 import { incidentCreateSchema, incidentStatusSchema, incidentUpdateSchema, similarQuerySchema } from "../../../shared/incident.js";
 
 export const incidentsRouter = Router();
-const writeLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
+const writeLimiter = userRateLimit({ windowMs: 60 * 1000, max: 60 });
 
 const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value) ?? "";
 const schoolOf = (req: Request) => param(req.params.schoolId);
@@ -76,8 +76,8 @@ incidentsRouter.post("/schools/:schoolId/incidents/:incidentId/status", requireV
 // Caddy 예시(deploy/caddy/beta.caddy.example)의 경로·한도와 같아야 합니다(테스트로 고정).
 export const PHOTO_UPLOAD_PATH = /^\/api\/schools\/[^/]+\/incidents\/[^/]+\/photos$/;
 export const PHOTO_BODY_LIMIT_BYTES = 7 * 1024 * 1024;
-const photoLimiter = rateLimit({ windowMs: 60 * 1000, max: 20 });
-const photoSlots = concurrencyLimit({ max: 4 });
+const photoLimiter = userRateLimit({ windowMs: 60 * 1000, max: 20 });
+const photoSlots = concurrencyLimit({ max: 8 }); // 건당 최대 약 20MB(본문·문자열·디코딩) × 8 ≈ 160MB — Beta MemoryMax 400M 안(실측 전 추정)
 const photoJson = express.json({ limit: PHOTO_BODY_LIMIT_BYTES, inflate: false });
 const photoBody = (body: unknown) => parse(z.object({ data: z.string().min(1).max(7_100_000) }).strict(), body);
 
