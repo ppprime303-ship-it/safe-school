@@ -14,7 +14,7 @@ $env:MAIL_PROVIDER = "gmail"
 $env:GMAIL_SMTP_USER = "발신계정@gmail.com"
 $p = Read-Host "앱 비밀번호" -AsSecureString
 $env:GMAIL_SMTP_APP_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($p))
-npm run mail:test -- 본인시험주소@example.com
+npx tsx scripts/mail-test.ts 본인시험주소@example.com
 Remove-Item Env:MAIL_PROVIDER, Env:GMAIL_SMTP_USER, Env:GMAIL_SMTP_APP_PASSWORD
 ```
 **"접수했습니다"는 수신 성공이 아닙니다.** 받은 편지함과 스팸함에서 실제로 메일을 확인해야 완료입니다.

@@ -23,8 +23,8 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    const data = JSON.parse(body) as { header?: { resultCode?: unknown }; totalCount?: unknown; body?: unknown };
-    console.log(`  최상위 필드: ${Object.keys(data).join(", ")} / 결과 코드 ${String(data.header?.resultCode ?? "-").slice(0, 10)} / 전체 ${String(data.totalCount ?? "?").slice(0, 10)}건`);
+    const data = JSON.parse(body) as { header?: { resultCode?: unknown; resultMsg?: unknown }; totalCount?: unknown; body?: unknown };
+    console.log(`  최상위 필드: ${Object.keys(data).join(", ")} / 결과 코드 ${String(data.header?.resultCode ?? "-").slice(0, 10)} ${String(data.header?.resultMsg ?? "").split(key).join("***").slice(0, 120)} / 전체 ${String(data.totalCount ?? "?").slice(0, 10)}건`);
     const rows = Array.isArray(data.body) ? (data.body as MoisCbsRecord[]) : [];
     console.log(`  항목 필드: ${rows[0] ? Object.keys(rows[0]).join(", ") : "(항목 없음)"}`);
     const ok = rows.map((r) => normalizeMoisCbs(r)).filter((n) => n !== null);

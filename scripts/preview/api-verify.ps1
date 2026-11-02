@@ -19,10 +19,11 @@ Set-Item "Env:$name" ((Get-Content $file -Raw).Trim())
 Set-Location $repo
 try {
   switch ($Api) {
-    'schoolinfo' { $env:SCHOOLINFO_SGG_REQUIRED = 'true'; npm run --silent schoolinfo:verify -- --kind 02 --sgg 28155 }
-    'neis' { npm run --silent neis:verify -- --name 인천영종초등학교 }
-    'mois' { npm run --silent mois:verify }
-    'kma' { npm run --silent kma:verify }
+    # npm 실행기는 PowerShell 에서 '--' 뒤 인자를 잃으므로 tsx 를 직접 씁니다. 호출 수는 각 줄의 도구 설명 참고
+    'schoolinfo' { $env:SCHOOLINFO_SGG_REQUIRED = 'true'; npx tsx scripts/verify-schoolinfo.ts --kind 02 --sgg 28155 --basic-only }
+    'neis' { npx tsx scripts/verify-neis.ts --office E10 }
+    'mois' { npx tsx scripts/verify-mois.ts }
+    'kma' { npx tsx scripts/verify-kma-warnings.ts }
   }
 } finally {
   Remove-Item "Env:$name" -ErrorAction SilentlyContinue

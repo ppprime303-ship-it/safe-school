@@ -43,6 +43,11 @@ async function main() {
   const sido = flag("sido", "11");
   const sgg = process.argv.includes("--sgg") ? flag("sgg", "") || undefined : undefined;
   const basicOk = await check("학교기본정보", API_TYPE_BASIC_INFO, EXPECTED_BASIC_FIELDS, kind, sido, sgg);
+  // --basic-only: 승인된 호출 수를 넘기지 않도록 기본정보 1회만
+  if (process.argv.includes("--basic-only")) {
+    console.log(`\n결론\n  학교 검색(기본정보): ${basicOk ? "사용 가능" : "확인 필요"}`);
+    return;
+  }
   const gradeOk = await check("학년별·학급별 학생수", API_TYPE_GRADE_CLASS_STUDENTS, EXPECTED_GRADE_FIELDS, kind, sido, sgg);
   console.log("\n결론");
   console.log(`  학교 검색(기본정보): ${basicOk ? "사용 가능" : "확인 필요 — 위 '없는 기대 필드'를 Claude에게 전달"}`);
