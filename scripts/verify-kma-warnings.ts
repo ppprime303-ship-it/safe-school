@@ -14,7 +14,7 @@ async function main() {
   try {
     const res = await fetch(buildKmaWarningUrl(key, 1, now), { signal: AbortSignal.timeout(20_000), headers: { Accept: "application/json" } });
     const body = await res.text();
-    console.log(`[기상특보] ${now.toISOString()} HTTP ${res.status}`);
+    console.log(`[기상특보] ${now.toISOString()} HTTP ${res.status} · 형식 ${body.trimStart().startsWith("<") ? "XML" : "JSON"} · ${(res.headers.get("content-type") ?? "?").slice(0, 40)}`);
     const parsed = parseKmaWarnings(body);
     const item = (JSON.parse(body) as { response?: { body?: { items?: { item?: unknown } } } }).response?.body?.items?.item;
     const first = Array.isArray(item) ? item[0] : item;
@@ -23,8 +23,13 @@ async function main() {
     const zones = zonesForRegion({ sido: "인천광역시", sigungu: "영종구" })!;
     const mine = summarizeWarnings(parsed.rows.filter((r) => zones.target.has(r.areaCode)), now);
     console.log(`  인천영종 기준 ${mine.length}건: ${mine.map((w) => `${w.kind}${w.level ?? ""}/${w.status}`).join(", ") || "없음"}`);
-    const status = parseKmaStatus(await (await fetch(buildKmaStatusUrl(key), { signal: AbortSignal.timeout(20_000), headers: { Accept: "application/json" } })).text());
-    console.log(`  특보 현황: ${status ? `인천 관련 ${status.lines.length}줄` : "자료 없음"}`);
+    // 목록 결과를 보존하도록 현황 실패는 따로 표시
+    await fetch(buildKmaStatusUrl(key), { signal: AbortSignal.timeout(20_000), headers: { Accept: "application/json" } })
+      .then(async (r) => {
+        const status = parseKmaStatus(await r.text());
+        console.log(`  특보 현황: HTTP ${r.status}, ${status ? `인천 관련 ${status.lines.length}줄` : "자료 없음"}`);
+      })
+      .catch((e: unknown) => console.log(`  특보 현황 실패: ${e instanceof KmaWarningError ? `${e.kind} ${e.code ?? ""}` : "연결 실패"}`));
   } catch (error) {
     console.log(`[기상특보] 실패: ${error instanceof KmaWarningError ? `${error.kind}${error.code ? ` ${error.code}` : ""} — ${error.message}` : (error as { name?: string })?.name === "TimeoutError" ? "시간 초과" : "연결 실패"}`);
     process.exitCode = 1;
