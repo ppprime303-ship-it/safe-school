@@ -4,7 +4,7 @@
 // - 확인: 비교하기 '전에' 시도 횟수를 먼저 차감하므로 동시에 여러 번 넣어도 5회를 넘겨 맞춰 볼 수 없습니다. 맞으면 한 번만 소비됩니다.
 // - 메일 발송 실패 시 revokeEmailCode 로 방금 만든 코드를 지워 발송 한도를 소모하지 않습니다.
 import type { Prisma, PrismaClient, VerificationPurpose } from "@prisma/client";
-import { createHash, randomInt, timingSafeEqual } from "node:crypto";
+import { createHmac, hkdfSync, randomInt, timingSafeEqual } from "node:crypto";
 import { AppError } from "../errors.js";
 
 const CODE_TTL_MS = 10 * 60 * 1000;
@@ -12,7 +12,19 @@ const MAX_ATTEMPTS = 5;
 const RESEND_INTERVAL_MS = 60 * 1000;
 const MAX_PER_HOUR = 5;
 
-const hashCode = (userId: string, code: string) => createHash("sha256").update(`${userId}:${code}`).digest("hex");
+// 6자리 코드는 경우의 수가 적어 DB가 유출되면 해시만으로 바로 맞춰 볼 수 있습니다. 서버 비밀키(DB 밖)로 HMAC 해 오프라인 추측을 막습니다.
+// SESSION_SECRET 을 그대로 쓰지 않고 용도별 키를 파생합니다. 운영에서 비밀키가 없으면 코드를 만들거나 확인하지 않습니다(운영자 CLI 포함).
+// 비밀키를 바꾸면 아직 쓰지 않은 코드는 무효가 되고, 사용자는 코드를 다시 받으면 됩니다.
+const DEV_ONLY_SECRET = "safe-school-dev-only-not-a-secret";
+function codeKey(env: Record<string, string | undefined>): Buffer {
+  const secret = env.SESSION_SECRET;
+  if (!secret && env.NODE_ENV === "production") throw new AppError(503, "code_secret_missing", "인증코드를 처리할 수 없습니다. 운영자에게 문의하세요.");
+  return Buffer.from(hkdfSync("sha256", secret || DEV_ONLY_SECRET, "", "safe-school/email-code/v1", 32));
+}
+
+export function hashEmailCode(params: { userId: string; purpose: string; code: string }, env: Record<string, string | undefined> = process.env): string {
+  return createHmac("sha256", codeKey(env)).update(`${params.userId}:${params.purpose}:${params.code}`).digest("hex");
+}
 
 export async function issueEmailCode(prisma: PrismaClient, params: { userId: string; purpose: VerificationPurpose; ttlMs?: number }) {
   return prisma.$transaction(async (tx) => {
@@ -34,7 +46,7 @@ export async function issueEmailCode(prisma: PrismaClient, params: { userId: str
       data: {
         userId: params.userId,
         purpose: params.purpose,
-        codeHash: hashCode(params.userId, code),
+        codeHash: hashEmailCode({ userId: params.userId, purpose: params.purpose, code }),
         expiresAt: new Date(Date.now() + (params.ttlMs ?? CODE_TTL_MS)),
       },
     });
@@ -72,7 +84,7 @@ export async function verifyEmailCode<T>(
   if (reserved.count !== 1) throw invalid;
 
   const expected = Buffer.from(record.codeHash, "hex");
-  const actual = Buffer.from(hashCode(params.userId, params.code.trim()), "hex");
+  const actual = Buffer.from(hashEmailCode({ userId: params.userId, purpose: params.purpose, code: params.code.trim() }), "hex");
   if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) throw invalid;
 
   return prisma.$transaction(async (tx) => {
