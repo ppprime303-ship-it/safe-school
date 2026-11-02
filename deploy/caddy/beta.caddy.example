@@ -1,0 +1,47 @@
+# Beta PILOT 2 사이트 블록(기존 Prototype 블록은 그대로 두고, 승인 후 메인 Caddyfile 에서 import 합니다. 전역 옵션 블록은 넣지 않습니다)
+# - <Beta 호스트명>을 Prototype과 다른 호스트명으로 바꾸세요.
+# - 요청 크기: 현장 사진 첨부 경로(POST)만 7MiB, 그 밖의 모든 요청은 기존과 같은 1MB.
+#   7MiB 는 앱의 사진 본문 한도(PHOTO_BODY_LIMIT_BYTES)와 같습니다. 원본 5MiB 의 base64 + JSON 은 약 6.67MiB 입니다.
+#   경로 정규식은 앱의 PHOTO_UPLOAD_PATH 와 같습니다(테스트로 고정).
+# - 정규식은 경로 형식만 봅니다. 로그인·권한·형식 검사는 앱이 합니다.
+<Beta 호스트명> {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), camera=(), microphone=()"
+		-Server
+	}
+	@photoUpload {
+		method POST
+		path_regexp ^/api/schools/[^/]+/incidents/[^/]+/photos$
+	}
+	handle @photoUpload {
+		request_body {
+			max_size 7MiB
+		}
+		reverse_proxy 127.0.0.1:5100
+	}
+	handle {
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy 127.0.0.1:5100
+	}
+	log {
+		output file /var/log/caddy/beta-access.log {
+			roll_size 20MiB
+			roll_keep 5
+			roll_keep_for 720h
+		}
+		format filter {
+			wrap json
+			fields {
+				request>headers delete
+				resp_headers delete
+			}
+		}
+	}
+}

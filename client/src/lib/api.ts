@@ -50,7 +50,9 @@ export async function api<T>(
     if (response.status === 401 && !path.startsWith("/auth/")) {
       window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
     }
-    throw new ApiError(response.status, err.code ?? "http_error", err.message ?? `요청을 처리하지 못했습니다(${response.status}).`, err.details);
+    // 프록시(Caddy)가 앱에 닿기 전에 거절하면 JSON 본문이 없으므로 크기 초과는 여기서 안내합니다.
+    const fallback = response.status === 413 ? "보낼 수 있는 크기를 넘었습니다. 사진이라면 더 작은 사진으로 다시 시도하세요." : `요청을 처리하지 못했습니다(${response.status}).`;
+    throw new ApiError(response.status, err.code ?? "http_error", err.message ?? fallback, err.details);
   }
   return data as T;
 }

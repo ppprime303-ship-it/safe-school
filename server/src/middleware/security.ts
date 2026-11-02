@@ -46,6 +46,19 @@ export function failureCounter(options: { windowMs: number; max: number }) {
   };
 }
 
+// 동시 처리 수 제한(서버 메모리 기준): 큰 요청이 겹쳐 앱 메모리 상한을 넘지 않게 합니다. 초과분은 503으로 돌려 다시 시도하게 합니다.
+export function concurrencyLimit(options: { max: number }) {
+  let active = 0;
+  return (_req: Request, res: Response, next: NextFunction) => {
+    if (active >= options.max) {
+      return next(new AppError(503, "server_busy", "지금 사진을 올리는 사람이 많습니다. 잠시 후 다시 시도하세요."));
+    }
+    active++;
+    res.once("close", () => active--);
+    next();
+  };
+}
+
 // 간단한 요청 횟수 제한(서버 메모리 기준, 인스턴스별). 로그인·인증코드·학교 검색에 사용.
 export function rateLimit(options: { windowMs: number; max: number; key?: (req: Request) => string }) {
   const hits = new Map<string, { count: number; resetAt: number }>();

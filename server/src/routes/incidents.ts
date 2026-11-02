@@ -2,12 +2,12 @@
 // 경로: /api/schools/:schoolId/...  — 승인된 학교 소속을 서버에서 검사(다른 학교 404, 대기·회수 403)
 // - 목록·상세·유사 제안·제보·후속 정보: board.view(승인 교직원 누구나)
 // - 처리 상태 변경: incident.manage / 사진(Phase 3-C): incident.photo
-import { Router, type Request } from "express";
+import express, { Router, type Request } from "express";
 import { prisma } from "../db.js";
 import { AppError } from "../errors.js";
 import { parse } from "../validate.js";
 import { requireVerified } from "../auth/session.js";
-import { rateLimit } from "../middleware/security.js";
+import { concurrencyLimit, rateLimit } from "../middleware/security.js";
 import { resolveAccess } from "../services/access.js";
 import { addIncidentUpdate, changeIncidentStatus, createIncident, getIncident, listIncidents, similarIncidents, type Viewer } from "../services/incidents.js";
 import { addIncidentPhoto, deleteIncidentPhoto, readIncidentPhoto } from "../services/incidentPhotos.js";
@@ -71,16 +71,33 @@ incidentsRouter.post("/schools/:schoolId/incidents/:incidentId/status", requireV
 });
 
 // ───────────── Phase 3-C 현장 사진(비공개) ─────────────
-// 본문은 JSON { data: base64 }(상태 변경 API는 JSON만 받는 CSRF 방어 유지), 이 경로만 본문 한도 7MB(app.ts)
+// 본문은 JSON { data: base64 }(상태 변경 API는 JSON만 받는 CSRF 방어 유지), 이 경로만 본문 한도 7MiB.
+// 세션·요청 제한·동시 처리 수·학교 소속을 확인한 뒤에야 본문을 읽어, 로그인하지 않은 큰 요청이 메모리를 쓰지 못하게 합니다.
+// Caddy 예시(deploy/caddy/beta.caddy.example)의 경로·한도와 같아야 합니다(테스트로 고정).
+export const PHOTO_UPLOAD_PATH = /^\/api\/schools\/[^/]+\/incidents\/[^/]+\/photos$/;
+export const PHOTO_BODY_LIMIT_BYTES = 7 * 1024 * 1024;
 const photoLimiter = rateLimit({ windowMs: 60 * 1000, max: 20 });
+const photoSlots = concurrencyLimit({ max: 4 });
+const photoJson = express.json({ limit: PHOTO_BODY_LIMIT_BYTES, inflate: false });
 const photoBody = (body: unknown) => parse(z.object({ data: z.string().min(1).max(7_100_000) }).strict(), body);
 
-incidentsRouter.post("/schools/:schoolId/incidents/:incidentId/photos", requireVerified, photoLimiter, async (req, res) => {
-  const viewer = await viewerOf(req);
-  const { data } = photoBody(req.body);
-  const r = await addIncidentPhoto(prisma, { schoolId: schoolOf(req), incidentId: param(req.params.incidentId), membershipId: viewer.membershipId, actorUserId: req.auth!.userId, dataBase64: data, ip: req.ip });
-  res.status(201).json(r);
-});
+incidentsRouter.post(
+  "/schools/:schoolId/incidents/:incidentId/photos",
+  requireVerified,
+  photoLimiter,
+  photoSlots,
+  async (req, res, next) => {
+    res.locals.viewer = await viewerOf(req);
+    next();
+  },
+  photoJson,
+  async (req, res) => {
+    const viewer = res.locals.viewer as Viewer;
+    const { data } = photoBody(req.body);
+    const r = await addIncidentPhoto(prisma, { schoolId: schoolOf(req), incidentId: param(req.params.incidentId), membershipId: viewer.membershipId, actorUserId: req.auth!.userId, dataBase64: data, ip: req.ip });
+    res.status(201).json(r);
+  },
+);
 
 incidentsRouter.get("/schools/:schoolId/incidents/:incidentId/photos/:photoId", requireVerified, async (req, res) => {
   await resolveAccess(prisma, { userId: req.auth!.userId, schoolId: schoolOf(req), need: "incident.photo" });
