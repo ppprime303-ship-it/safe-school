@@ -73,6 +73,7 @@ describe("Beta 대상 판정", () => {
   it("실제 학교 모드는 승인 표시가 있을 때만 통과, 화면 구분값도 그대로", () => {
     const env = { ...good(), BETA_DATA_MODE: "school_pilot", BETA_SCHOOL_PILOT_APPROVED: "true" };
     expect(betaEnvironmentErrors("beta", env)).toEqual([]);
+    expect(betaEnvironmentErrors("beta", { ...env, INCIDENT_PHOTO_UPLOAD: "" }).join()).toContain("INCIDENT_PHOTO_UPLOAD");
     expect(dataModeFor("beta", env)).toBe("school_pilot");
     expect(dataModeFor("beta", good())).toBe("virtual_test");
     expect(dataModeFor("dev", {})).toBe("virtual_test");

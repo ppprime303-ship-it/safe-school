@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StaffAlertBanner } from "../client/src/components/layout/StaffAlertBar";
 import { pickBannerAlert, type StaffAlertItem } from "../client/src/lib/presence";
-import { presenceSentence } from "../client/src/pages/presence/PresencePage";
+import { presenceFirst, presenceSentence } from "../client/src/pages/presence/PresencePage";
 import { navItemsFor } from "../client/src/components/layout/AppShell";
 import { StaffPresenceView } from "../client/src/pages/presence/StaffPresencePage";
 import type { PresenceDetailResponse, PresenceSummaryResponse } from "../client/src/lib/presence";
@@ -23,7 +23,7 @@ describe("교직원 알림 배너", () => {
     const html = render(alert());
     expect(html).toContain('data-testid="staff-alert-real"');
     expect(html).toContain("실제 재난 알림");
-    expect(html).toContain('href="/s/s1/presence"');
+    expect(html).toContain('href="/s/s1/presence#my-presence"');
     expect(html).toContain("교직원 소재 보고");
     expect(html).toContain("알림 확인");
     expect(html).toContain("학교 비상연락망을 함께 활용해 주세요");
@@ -102,5 +102,17 @@ describe("교직원 소재 현황 화면", () => {
     };
     const html = renderToStaticMarkup(createElement(StaffPresenceView, { data }));
     for (const t of ["미응답 1명", "가상 미응답", "교내 장소별", "운동장 2명", "개인별 소재", "교내 · 운동장", "교외", "종료된 상황", "집계에서 뺀 응답 1건"]) expect(html).toContain(t);
+  });
+});
+
+describe("소재 보고 양식 위치(Phase 7)", () => {
+  it("진행 중 실제 재난만 양식을 알림 이력보다 먼저, 종료·모의훈련·없음은 먼저 두지 않음", () => {
+    expect(presenceFirst(alert())).toBe(true);
+    expect(presenceFirst(alert({ status: "closed" }))).toBe(false);
+    expect(presenceFirst(alert({ mode: "drill" }))).toBe(false);
+    expect(presenceFirst(null)).toBe(false);
+  });
+  it("모의훈련 배너에는 양식으로 가는 링크가 없음", () => {
+    expect(render(alert({ mode: "drill" }))).not.toContain("presence#my-presence");
   });
 });

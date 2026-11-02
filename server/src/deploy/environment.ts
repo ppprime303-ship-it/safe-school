@@ -135,6 +135,8 @@ export function betaEnvironmentErrors(role: DeploymentRole, env: Record<string, 
   if (mode !== "virtual_test" && mode !== "school_pilot") errors.push("BETA_DATA_MODE 를 virtual_test 또는 school_pilot 으로 명시해야 합니다.");
   if (mode === "virtual_test" && (env.MAIL_PROVIDER === "resend" || env.MAIL_PROVIDER === "gmail")) errors.push(`가상 데이터 모드에서는 실제 메일 발송(MAIL_PROVIDER=${env.MAIL_PROVIDER})을 켤 수 없습니다.`);
   if (mode === "school_pilot" && env.BETA_SCHOOL_PILOT_APPROVED !== "true") errors.push("실제 학교 모드는 학교·개인정보 승인 후 BETA_SCHOOL_PILOT_APPROVED=true 로만 시작합니다.");
+  // 악성 파일 검사가 없으므로 실제 학교 모드에서는 사진 첨부를 켤지 끌지 명시해야 합니다
+  if (mode === "school_pilot" && env.INCIDENT_PHOTO_UPLOAD !== "enabled" && env.INCIDENT_PHOTO_UPLOAD !== "disabled") errors.push("실제 학교 모드는 INCIDENT_PHOTO_UPLOAD 를 enabled 또는 disabled 로 명시해야 합니다.");
   return errors;
 }
 

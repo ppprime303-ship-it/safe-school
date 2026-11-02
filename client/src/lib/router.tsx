@@ -8,6 +8,7 @@ export function navigate(to: string, options: { replace?: boolean } = {}) {
   else window.history.pushState(null, "", to);
   listeners.forEach((l) => l());
   window.scrollTo(0, 0);
+  if (to.includes("#")) window.dispatchEvent(new HashChangeEvent("hashchange")); // pushState 는 hashchange 를 내지 않음(같은 화면 안 이동 포함)
 }
 
 export function usePath(): string {

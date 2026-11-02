@@ -10,7 +10,7 @@ import { requireVerified } from "../auth/session.js";
 import { concurrencyLimit, userRateLimit } from "../middleware/security.js";
 import { resolveAccess } from "../services/access.js";
 import { addIncidentUpdate, changeIncidentStatus, createIncident, getIncident, listIncidents, similarIncidents, type Viewer } from "../services/incidents.js";
-import { addIncidentPhoto, deleteIncidentPhoto, readIncidentPhoto } from "../services/incidentPhotos.js";
+import { addIncidentPhoto, deleteIncidentPhoto, photoUploadEnabled, readIncidentPhoto } from "../services/incidentPhotos.js";
 import { z } from "zod";
 import { idempotencyKeySchema } from "../../../shared/schemas.js";
 import { incidentCreateSchema, incidentStatusSchema, incidentUpdateSchema, similarQuerySchema } from "../../../shared/incident.js";
@@ -88,6 +88,7 @@ incidentsRouter.post(
   photoSlots,
   async (req, res, next) => {
     res.locals.viewer = await viewerOf(req);
+    if (!photoUploadEnabled()) throw new AppError(503, "photo_upload_disabled", "사진 첨부가 꺼져 있습니다. 제보 내용은 사진 없이 보내 주세요.");
     next();
   },
   photoJson,

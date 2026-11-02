@@ -39,6 +39,9 @@ export function presenceSentence(p: { location: Location; placeCategory: Presenc
   return `${where} · ${AVAILABILITY_LABEL[p.availability]}`;
 }
 
+/** 진행 중인 실제 재난이면 소재 보고 양식을 알림 이력보다 먼저 보여 줌(모의훈련은 current 가 되지 않아 양식이 없음) */
+export const presenceFirst = (current: StaffAlertItem | null) => current?.event.mode === "real" && current.event.status === "active";
+
 export function PresencePage({ schoolId }: { schoolId: string }) {
   const { usableMemberships } = useSession();
   const membership = usableMemberships.find((m) => m.school.id === schoolId) ?? null;
@@ -67,6 +70,27 @@ export function PresencePage({ schoolId }: { schoolId: string }) {
     await load();
   };
 
+  // 배너의 '교직원 소재 보고'(#my-presence)로 왔으면 양식으로 이동하고 키보드 초점을 옮김
+  const ready = !!alerts;
+  useEffect(() => {
+    if (!ready) return;
+    const go = () => {
+      if (window.location.hash !== "#my-presence") return;
+      const heading = document.getElementById("my-presence");
+      heading?.scrollIntoView({ block: "start" });
+      heading?.focus({ preventScroll: true });
+    };
+    go();
+    window.addEventListener("hashchange", go);
+    return () => window.removeEventListener("hashchange", go);
+  }, [ready, current?.event.id]);
+
+  const presenceSection = current ? (
+    <MyPresenceSection key={current.event.id} schoolId={schoolId} alert={current} canDetail={can(membership, "presence.detail")} />
+  ) : (
+    <EmptyState icon="info" title="실제 재난 소재 보고가 없습니다" message="실제 재난이 발령되면 이곳에서 본인 소재와 대피 지원 가능 여부를 보고합니다. 모의훈련에서는 소재를 받지 않습니다." />
+  );
+
   return (
     <AppShell title="재난 알림 · 내 소재" schoolId={schoolId}>
       <p className="mb-4 rounded-control border border-line bg-page p-3 text-sm">{STAFF_ALERT_NOTICE}</p>
@@ -74,6 +98,7 @@ export function PresencePage({ schoolId }: { schoolId: string }) {
       {error && <ErrorState message={error} onRetry={() => void load()} />}
       {alerts && (
         <div className="space-y-6">
+          {presenceFirst(current) && presenceSection}
           <section aria-labelledby="my-alerts" className="rounded-card border border-line bg-card p-4 shadow-card">
             <h2 id="my-alerts" className="text-xl font-bold">
               내 알림
@@ -110,11 +135,7 @@ export function PresencePage({ schoolId }: { schoolId: string }) {
             <p className="mt-2 text-sm text-ink-muted">모의훈련 안내는 확인 여부만 기록하며, 교직원 소재는 받지 않습니다. 알림 확인은 안전이나 위치 확인을 뜻하지 않습니다.</p>
           </section>
 
-          {current ? (
-            <MyPresenceSection key={current.event.id} schoolId={schoolId} alert={current} canDetail={can(membership, "presence.detail")} />
-          ) : (
-            <EmptyState icon="info" title="실제 재난 소재 보고가 없습니다" message="실제 재난이 발령되면 이곳에서 본인 소재와 대피 지원 가능 여부를 보고합니다. 모의훈련에서는 소재를 받지 않습니다." />
-          )}
+          {!presenceFirst(current) && presenceSection}
         </div>
       )}
     </AppShell>
@@ -192,7 +213,7 @@ function MyPresenceSection({ schoolId, alert, canDetail }: { schoolId: string; a
     <section aria-labelledby="my-presence" className="rounded-card border-2 border-danger bg-card p-4 shadow-card">
       <div className="flex flex-wrap items-center gap-2">
         <span className="rounded-md bg-danger px-2 py-0.5 text-sm font-extrabold text-white">실제 재난</span>
-        <h2 id="my-presence" className="text-xl font-bold">
+        <h2 id="my-presence" tabIndex={-1} className="scroll-mt-4 text-xl font-bold focus:outline-3 focus:outline-accent">
           교직원 소재 보고 · {typesOf(alert)}
         </h2>
         {closed && <span className="rounded-md bg-neutral px-2 py-0.5 text-sm font-bold text-white">종료된 상황 · 조회만</span>}

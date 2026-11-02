@@ -30,7 +30,7 @@ export function StaffAlertBanner({ schoolId, alert, onAcknowledge, busy = false 
         </p>
         <div className="flex flex-wrap gap-2">
           {real && (
-            <Link href={`/s/${schoolId}/presence`} className="inline-flex min-h-touch items-center gap-1 rounded-control bg-danger px-4 text-base font-bold text-white">
+            <Link href={`/s/${schoolId}/presence#my-presence`} className="inline-flex min-h-touch items-center gap-1 rounded-control bg-danger px-4 text-base font-bold text-white">
               <Icon name="user" size={18} /> 교직원 소재 보고
             </Link>
           )}

@@ -116,6 +116,34 @@ describe("업로드 경계", () => {
   });
 });
 
+describe("사진 첨부 운영 통제", () => {
+  it("끄기 스위치: 첨부만 503, 다시 켜면 동작, 본문을 읽기 전에 거부", async () => {
+    process.env.INCIDENT_PHOTO_UPLOAD = "disabled";
+    try {
+      const r = await call("adminA", "POST", photoPath(), JSON.stringify({ data: "A".repeat(7_400_000) }));
+      expect(r.status).toBe(503);
+      expect(r.body.code).toBe("photo_upload_disabled");
+    } finally {
+      delete process.env.INCIDENT_PHOTO_UPLOAD;
+    }
+  });
+  it("저장 상한 초과: 507, 파일·행이 남지 않음, 상한을 올리면 다시 가능", async () => {
+    const files = (await fsp.readdir(uploadDir)).length;
+    const rows = await prisma.incidentAttachment.count();
+    process.env.INCIDENT_UPLOAD_QUOTA_MB = "0.000001";
+    try {
+      const r = await call("staffA", "POST", photoPath(), { data: fakeJpeg().toString("base64") });
+      expect(r.status).toBe(507);
+      expect(r.body.code).toBe("photo_storage_full");
+    } finally {
+      delete process.env.INCIDENT_UPLOAD_QUOTA_MB;
+    }
+    expect((await fsp.readdir(uploadDir)).length).toBe(files);
+    expect(await prisma.incidentAttachment.count()).toBe(rows);
+    expect((await call("staffA", "POST", photoPath(), { data: fakeJpeg().toString("base64") })).status).toBe(201);
+  });
+});
+
 describe("동시 처리 수 제한", () => {
   it("상한을 넘으면 503, 앞선 요청이 끝나면 다시 허용", () => {
     const mw = concurrencyLimit({ max: 1 });

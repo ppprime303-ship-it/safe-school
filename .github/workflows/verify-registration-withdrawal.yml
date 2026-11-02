@@ -35,15 +35,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install dependencies with retry and diagnostics
+      - name: Install locked dependencies with retry and diagnostics
         env:
           npm_config_registry: https://registry.npmjs.org
         shell: bash
         run: |
-          mv package-lock.json "$RUNNER_TEMP/replit-package-lock.json"
           npm config set fetch-retries 2
           for n in 1 2; do
-            if npm install --legacy-peer-deps --package-lock=false --no-audit --no-fund --loglevel warn; then exit 0; fi
+            if npm ci --legacy-peer-deps --no-audit --no-fund --loglevel warn; then exit 0; fi
             echo "Dependency installation attempt $n failed"
             if [ "$n" = 2 ]; then
               find "$HOME/.npm/_logs" -name '*debug-0.log' -type f -print -exec tail -n 50 {} \; || true

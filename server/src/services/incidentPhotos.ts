@@ -20,6 +20,15 @@ export const PHOTOS_PER_INCIDENT = 3;
 const KEY_RE = /^[0-9a-f]{32}\.(jpg|png)$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** 운영 스위치: 악성 파일 검사가 없으므로 위험을 받아들이지 않기로 하면 사진 첨부만 끌 수 있음(열람·삭제는 유지) */
+export const photoUploadEnabled = () => process.env.INCIDENT_PHOTO_UPLOAD !== "disabled";
+
+/** 전체 사진 저장 상한(삭제 표시 제외). 디스크가 차서 DB·앱까지 멈추지 않게 합니다 */
+export function photoQuotaBytes(): number {
+  const mb = Number(process.env.INCIDENT_UPLOAD_QUOTA_MB ?? 2048);
+  return (Number.isFinite(mb) && mb > 0 ? mb : 2048) * 1024 * 1024;
+}
+
 export function uploadDir(): string {
   return path.resolve(process.env.INCIDENT_UPLOAD_DIR ?? path.join(process.cwd(), "data", "incident-uploads"));
 }
@@ -68,6 +77,8 @@ export async function addIncidentPhoto(
       await tx.$queryRaw`SELECT 1 AS locked FROM "incident_reports" WHERE "id" = ${inc.id}::uuid FOR UPDATE`;
       const count = await tx.incidentAttachment.count({ where: { incidentId: inc.id, deletedAt: null } });
       if (count >= PHOTOS_PER_INCIDENT) throw conflict("photo_limit", `사진은 제보당 ${PHOTOS_PER_INCIDENT}장까지 올릴 수 있습니다.`);
+      const used = await tx.incidentAttachment.aggregate({ where: { deletedAt: null }, _sum: { sizeBytes: true } });
+      if ((used._sum.sizeBytes ?? 0) + clean.data.length > photoQuotaBytes()) throw new AppError(507, "photo_storage_full", "사진 저장 공간이 가득 찼습니다. 제보 내용은 사진 없이 보내고 운영자에게 알려 주세요.");
       const row = await tx.incidentAttachment.create({
         data: {
           incidentId: inc.id,
