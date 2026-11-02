@@ -92,6 +92,19 @@ describe("응답 해석·검증", () => {
 });
 
 describe("호출·오류 처리(가짜 HTTP)", () => {
+  it("Accept 헤더를 보내지 않음(키 없는 요청 실측: Accept: application/json 이면 HTTP 500)", async () => {
+    const seen: unknown[] = [];
+    const c = createNeisClient({
+      apiKey: "test-key-not-real",
+      fetchImpl: async (_u, init) => {
+        seen.push((init as { headers?: unknown }).headers);
+        return reply(200, ok([row()]));
+      },
+    });
+    await c.searchSchools({ officeCode: "E10" });
+    expect(seen).toHaveLength(1);
+    expect(Object.keys((seen[0] ?? {}) as object).map((h) => h.toLowerCase())).not.toContain("accept");
+  });
   it("인증키 없음 → 호출하지 않고 not_configured(샘플 5건을 실제로 오인하지 않음)", async () => {
     const calls: string[] = [];
     const c = createNeisClient({ apiKey: "  ", fetchImpl: async (u) => (calls.push(u), reply(200, ok([row()]))) });

@@ -159,7 +159,7 @@ export const redactNeisKey = (text: string, key?: string) => {
   return key ? masked.split(key).join("***") : masked; // 제공기관 메시지가 키를 그대로 되돌려 주는 경우까지
 };
 
-type FetchLike = (url: string, init: { signal: AbortSignal; headers: Record<string, string> }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown>; headers?: { get(name: string): string | null } }>;
+type FetchLike = (url: string, init: { signal: AbortSignal }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown>; headers?: { get(name: string): string | null } }>;
 
 export interface NeisClientOptions {
   apiKey: string | undefined;
@@ -206,7 +206,8 @@ export function createNeisClient(options: NeisClientOptions): NeisClient {
   const callOnce = async (url: string) => {
     let res;
     try {
-      res = await http(url, { signal: AbortSignal.timeout(timeoutMs), headers: { Accept: "application/json" } });
+      // Accept 헤더를 보내지 않음: 키 없는 요청 실측에서 Accept: application/json 이면 HTTP 500(HTML), 기본 fetch 는 HTTP 200
+      res = await http(url, { signal: AbortSignal.timeout(timeoutMs) });
     } catch (error) {
       const name = (error as { name?: string })?.name;
       if (name === "TimeoutError" || name === "AbortError") throw new NeisError("나이스 응답 시간 초과", "timeout");
