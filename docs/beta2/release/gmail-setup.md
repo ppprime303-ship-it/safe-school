@@ -19,6 +19,16 @@ Remove-Item Env:MAIL_PROVIDER, Env:GMAIL_SMTP_USER, Env:GMAIL_SMTP_APP_PASSWORD
 ```
 **"접수했습니다"는 수신 성공이 아닙니다.** 받은 편지함과 스팸함에서 실제로 메일을 확인해야 완료입니다.
 
+## 2-1. 인증번호 실제 흐름 시험(승인 후)
+운영·미리보기와 분리된 `safeschool_test` 임시 서버(포트 5003)입니다. 미리보기 모의 발송과 Beta 가상 모드의 차단은 그대로입니다.
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\preview\mail-signup-test.ps1 -From 발신계정@gmail.com
+```
+1. 숨김 입력에 앱 비밀번호를 넣습니다.
+2. `http://127.0.0.1:5003`에서 본인 시험 주소로 가입합니다.
+3. 받은 편지함에서 인증번호를 확인해 입력합니다.
+4. 로그인까지 되면 완료입니다. 창을 닫으면 비밀번호가 사라집니다.
+
 ## 3. 결과 해석
 | 출력 | 원인 |
 |---|---|
