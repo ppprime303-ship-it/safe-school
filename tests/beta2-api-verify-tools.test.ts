@@ -1,6 +1,7 @@
 // 공공 API 확인 도구의 호출 수 고정, 공식 명세 대조, 호출량 상한(가짜 응답, 실제 외부 호출 없음)
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { betaEnvironmentErrors } from "../server/src/deploy/environment";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import { createTestClient, getTestDatabaseUrl, resetTestData } from "./test-db";
@@ -203,6 +204,28 @@ describe("나이스 500 구분", () => {
   it("HTML 500은 서버 오류로, 응답 형식 기록, 본문·키 없음", async () => {
     const c = createNeisClient({ apiKey: KEY, retries: 0, fetchImpl: async () => ({ ok: false, status: 500, json: async () => { throw new Error("no"); }, headers: { get: () => "text/html;charset=ISO-8859-1" } }) });
     await expect(c.searchSchools({ officeCode: "E10" })).rejects.toMatchObject({ kind: "server", message: "나이스 서버 오류(HTTP 500, text/html)" });
+  });
+});
+
+describe("Beta 시작 검사와 키 노출", () => {
+  const school = { BETA_DATA_MODE: "school_pilot", BETA_SCHOOL_PILOT_APPROVED: "true", MAIL_PROVIDER: "gmail" };
+  it("실제 학교 모드 메일은 운영 발신 계정 승인 필요, 가상 모드는 실제 발송 거부", () => {
+    expect(betaEnvironmentErrors("beta" as never, school).join()).toContain("BETA_MAIL_SENDER_APPROVED");
+    expect(betaEnvironmentErrors("beta" as never, { ...school, BETA_MAIL_SENDER_APPROVED: "true" }).join()).not.toContain("BETA_MAIL_SENDER_APPROVED");
+    expect(betaEnvironmentErrors("beta" as never, { BETA_DATA_MODE: "virtual_test", MAIL_PROVIDER: "gmail" }).join()).toContain("실제 메일 발송");
+  });
+  it("재난문자 수집은 환경별 호출 배분량과 계약 확인이 필요", () => {
+    const errors = betaEnvironmentErrors("beta" as never, { ALERT_PROVIDERS: "mois_cbs" }).join();
+    expect(errors).toContain("MOIS_CBS_DAILY_LIMIT");
+    expect(errors).toContain("MOIS_CBS_CONTRACT");
+  });
+  it("화면 코드는 서버 비밀값 이름을 쓰지 않고 외부 API를 직접 부르지 않음", () => {
+    const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${dir}/${e.name}`) : /\.tsx?$/.test(e.name) ? [`${dir}/${e.name}`] : []));
+    for (const f of [...walk("client/src"), ...walk("shared")]) {
+      const text = readFileSync(f, "utf8");
+      expect(text, f).not.toMatch(/SCHOOLINFO_API_KEY|NEIS_API_KEY|MOIS_CBS_SERVICE_KEY|KMA_WARNING_SERVICE_KEY|GMAIL_SMTP_APP_PASSWORD|SESSION_SECRET/);
+      expect(text, f).not.toMatch(/apis\.data\.go\.kr|safetydata\.go\.kr\/V2|open\.neis\.go\.kr\/hub|schoolinfo\.go\.kr\/openApi/);
+    }
   });
 });
 

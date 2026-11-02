@@ -8,7 +8,7 @@ import { createSession, SESSION_COOKIE } from "../server/src/auth/session";
 import { collectOnce } from "../server/src/alerts/collector";
 import { MoisCbsSource } from "../server/src/alerts/moisCbs";
 import { KmaWarningSource, matchKmaZone, toKmaAlerts } from "../server/src/alerts/kmaSource";
-import { createKmaWarningClient, parseKmaStatus, parseKmaWarnings, zonesForRegion, type KmaWarningClient } from "../server/src/integrations/kmaWarnings";
+import { createKmaWarningClient, parseKmaStatus, parseKmaWarnings, SUPPORTED_ZONE_CODES, zonesForRegion, type KmaWarningClient } from "../server/src/integrations/kmaWarnings";
 import { alertProviderErrors, betaEnvironmentErrors } from "../server/src/deploy/environment";
 import { listPendingAlertNotices, weatherStatus } from "../server/src/services/alertNotices";
 import { listSchoolAlerts, markAlertRead } from "../server/src/services/alerts";
@@ -108,6 +108,42 @@ describe("경보 변환", () => {
     expect(weatherStatus({ msgType: "new", raw: { command: "1", allEndTime: kst(-H) } }, now)).toBeNull();
     expect(weatherStatus({ msgType: "new", raw: { command: "1", startTime: kst(H) } }, now)).toBe("scheduled");
     expect(weatherStatus({ msgType: "update", raw: { command: "9" } }, now)).toBe("unknown");
+  });
+});
+
+describe("실제로 아직 관측하지 못한 경우(가짜 응답 회귀)", () => {
+  it("특보구역 코드는 공식 코드표의 이름과 일치", () => {
+    // 활용가이드 특보구역코드(2026-06-01)
+    const official: Record<string, string> = { L1110000: "인천", L1110100: "인천", L1110110: "인천영종", L1110120: "인천남부", L1110130: "인천북부", L1010900: "강화", L1013600: "옹진", L1014000: "서해5도", L1014200: "백령도.대청도", L1014300: "연평도.우도" };
+    expect([...SUPPORTED_ZONE_CODES].sort()).toEqual(Object.keys(official).sort());
+  });
+  it("현황 원문: 줄바꿈 구분·예비특보 없는 응답·자료 없음", () => {
+    const wrap = (item: unknown) => JSON.stringify({ response: { header: { resultCode: "00" }, body: { items: { item } } } });
+    expect(parseKmaStatus(wrap({ tmFc: "202611020700", t6: "o 호우경보 : 인천(인천영종)\r\no 폭염주의보 : 대구" }))!.lines).toEqual(["o 호우경보 : 인천(인천영종)"]);
+    expect(parseKmaStatus(wrap({ tmFc: "202611020700", t6: "o 없음" }))!.lines).toEqual([]);
+    expect(parseKmaStatus(JSON.stringify({ response: { header: { resultCode: "03" } } }))).toBeNull();
+  });
+  it("조회 기간 밖에서 시작된 특보: 연장·정정만 보여도 발효로 안내, 해제만 보이면 안내 없음", async () => {
+    await collect([row({ command: "3", startTime: undefined })]);
+    expect((await pending()).notices.map((n) => [n.title, n.status])).toEqual([["호우경보 연장", "active"]]);
+    await resetTestData(prisma);
+    schoolA = await mkSchool("nota", "인천광역시 영종구 가상로 1");
+    teacher = await mkUser("teacher", schoolA);
+    await collect([row({ command: "2", endTime: kst(-H), startTime: undefined })]);
+    expect((await pending()).notices).toHaveLength(0);
+  });
+  it("취소된 발표는 안내하지 않고, 취소 뒤 재발표는 안내", async () => {
+    await collect([row(), row({ tmFc: kst(-90 * 60_000), tmSeq: "6", cancel: "1" })]);
+    expect((await pending()).notices).toHaveLength(0);
+    await collect([row({ tmFc: kst(-30 * 60_000), tmSeq: "7", startTime: kst(-20 * 60_000) })]);
+    expect((await pending()).notices.map((n) => n.status)).toEqual(["active"]);
+  });
+  it("발효 전 발표는 '발효 예정', 강도 상향은 별도 안내", async () => {
+    await collect([row({ startTime: kst(3 * H) })]);
+    expect((await pending()).notices[0]).toMatchObject({ status: "scheduled" });
+    await ack((await pending()).notices[0]!.matchId);
+    await collect([row({ tmFc: kst(-H), tmSeq: "7", warnStress: "2", command: "7", startTime: kst(-H) })]);
+    expect((await pending()).notices[0]).toMatchObject({ title: "호우중대경보 변경 발표", priority: "urgent", status: "active" });
   });
 });
 
