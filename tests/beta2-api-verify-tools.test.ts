@@ -1,4 +1,5 @@
 // 공공 API 확인 도구의 호출 수 고정, 공식 명세 대조, 호출량 상한(가짜 응답, 실제 외부 호출 없음)
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "@prisma/client";
@@ -80,8 +81,8 @@ describe("긴급재난문자 공식 명세", () => {
     await s.fetch();
     expect(calls).toBe(1);
   });
-  it("환경 예시에 15분 미만 간격이 없음, 수집기는 재시도 없음", () => {
-    expect(readFileSync("deploy/env/pilot.env.example", "utf8")).toMatch(/^MOIS_CBS_INTERVAL_SEC=900$/m);
+  it("환경 예시는 30분 간격, 15분 미만은 설정 불가, 수집기는 재시도 없음", () => {
+    expect(readFileSync("deploy/env/pilot.env.example", "utf8")).toMatch(/^MOIS_CBS_INTERVAL_SEC=1800$/m);
     const env = readFileSync("server/src/env.ts", "utf8");
     expect(env).toMatch(/MOIS_CBS_INTERVAL_SEC: z\.coerce\.number\(\)\.int\(\)\.min\(900\)/);
     expect(readFileSync("server/src/index.ts", "utf8")).toMatch(/retries: 0, dailyCallLimit: env\.MOIS_CBS_DAILY_LIMIT/);
@@ -114,9 +115,87 @@ describe("일일 호출 상한(수집 기록 기준, 서버 간 공유)", () => 
     await prisma.alertCollectionRun.updateMany({ data: { startedAt: new Date(kstDayStart(new Date()).getTime() - 1000) } });
     expect((await collectOnce(prisma, source(() => calls++), opts)).status).toBe("success");
   });
+  it("제공기관 호출 제한(코드 22) 뒤에는 그날 호출하지 않음, 다음 날 재개", async () => {
+    let calls = 0;
+    const limited = new MoisCbsSource(KEY, (async () => { calls++; return { ok: true, status: 200, json: async () => ({ header: { resultCode: "22", resultMsg: "LIMITED NUMBER OF SERVICE REQUESTS EXCEEDS ERROR" }, body: [] }) }; }) as never, undefined, undefined, 1);
+    const wide = { ...opts, dailyCallLimit: 50 };
+    expect((await collectOnce(prisma, limited, wide)).status).toBe("failed");
+    expect((await collectOnce(prisma, source(() => calls++), wide)).status).toBe("skipped");
+    expect(calls).toBe(1);
+    await prisma.alertCollectionRun.updateMany({ data: { startedAt: new Date(kstDayStart(new Date()).getTime() - 1000) } });
+    expect((await collectOnce(prisma, source(() => calls++), wide)).status).toBe("success");
+  });
+  it("재시작해도 수집 간격 안에서는 다시 호출하지 않음", async () => {
+    let calls = 0;
+    const spaced = { ...opts, minIntervalMs: 60_000, dailyCallLimit: 50 };
+    await collectOnce(prisma, source(() => calls++), spaced);
+    expect((await collectOnce(prisma, source(() => calls++), spaced)).status).toBe("skipped");
+    expect(calls).toBe(1);
+  });
   it("한국 날짜 0시 계산", () => {
     expect(kstDayStart(new Date("2026-11-02T14:59:00Z")).toISOString()).toBe("2026-11-01T15:00:00.000Z");
     expect(kstDayStart(new Date("2026-11-02T15:00:00Z")).toISOString()).toBe("2026-11-02T15:00:00.000Z");
+  });
+});
+
+describe("서버 일회성 재난문자 확인 도구", () => {
+  const tool = "deploy/scripts/mois-verify-once.mjs";
+  const source = readFileSync(tool, "utf8");
+  const NOW = new Date("2026-11-02T03:00:00Z");
+  const row = (o: object = {}) => ({ SN: 2, CRT_DT: "2026/11/02 10:00:00", MSG_CN: "민감할 수 있는 본문 010-0000-0000", RCPTN_RGN_NM: "인천광역시 중구", EMRG_STEP_NM: "안전안내", ...o });
+
+  it("--dry-run 은 키 입력·호출 없이 계획만", () => {
+    const out = execFileSync(process.execPath, [tool, "--dry-run"], { encoding: "utf8" });
+    expect(out).toContain("1회");
+    expect(out).toContain("/V2/api/DSSP-IF-00247");
+  });
+  it("터미널이 아니면 호출하지 않음", () => {
+    const r = spawnSync(process.execPath, [tool], { encoding: "utf8", input: "piped" });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("터미널");
+  });
+  it("호출 1곳, 재시도·저장·앱 접근·환경변수 키 없음", () => {
+    expect(source.match(/await fetch\(/g)).toHaveLength(1);
+    expect(source).not.toMatch(/writeFile|appendFile|process\.env|child_process|DATABASE_URL|setTimeout/);
+  });
+  it("요청이 공식 명세와 일치, 조회시작일은 어제", async () => {
+    const { buildUrl } = await import("../deploy/scripts/mois-verify-once.mjs");
+    const u = new URL(buildUrl("a/b", NOW));
+    expect(`${u.origin}${u.pathname}`).toBe("https://www.safetydata.go.kr/V2/api/DSSP-IF-00247");
+    expect(Object.fromEntries(u.searchParams)).toEqual({ serviceKey: "a/b", returnType: "json", pageNo: "1", numOfRows: "100", crtDt: "20261101" });
+  });
+  it("정상 응답 요약: 항목·정렬·지역 표시, 본문 미출력", async () => {
+    const { summarize } = await import("../deploy/scripts/mois-verify-once.mjs");
+    const lines = summarize(200, JSON.stringify({ header: { resultCode: "00", resultMsg: "NORMAL SERVICE" }, totalCount: 2, body: [row(), row({ SN: 1, CRT_DT: "2026/11/02 09:00:00", RCPTN_RGN_NM: "부산광역시 전체" })] })).join("\n");
+    expect(lines).toContain("정렬: 최신순");
+    expect(lines).toContain("SN 고유: 2/2");
+    expect(lines).toContain("인천광역시 중구");
+    expect(lines).toContain("판정: 정상 응답");
+    expect(lines).not.toContain("010-0000-0000");
+    expect(lines).not.toContain("민감");
+  });
+  it("코드 32·XML·비정상 구조는 정상으로 판정하지 않음", async () => {
+    const { summarize } = await import("../deploy/scripts/mois-verify-once.mjs");
+    expect(summarize(200, JSON.stringify({ header: { resultCode: "32", resultMsg: "UNREGISTERED IP ERROR" }, body: [] })).join()).toContain("정상 응답 아님");
+    expect(summarize(200, "<OpenAPI_ServiceResponse><returnReasonCode>30</returnReasonCode></OpenAPI_ServiceResponse>").join()).toContain("코드 30");
+    expect(summarize(200, JSON.stringify({ header: { resultCode: "00" }, body: {} })).join()).toContain("body 배열 아님");
+    expect(summarize(500, "oops").join()).toContain("JSON 아님");
+  });
+});
+
+describe("Gmail 시험 스크립트 안전성", () => {
+  const ps = readFileSync("scripts/preview/mail-signup-test.ps1", "utf8");
+  it("테스트 DB·포트 5003 고정, 대상 확인, 초기화·시드·마이그레이션 없음", () => {
+    expect(ps).toContain("/safeschool_test?schema=safeschool_test");
+    expect(ps).toMatch(/\$u\.AbsolutePath -ne "\/safeschool_test"/);
+    expect(ps).toContain('$env:PORT = "5003"');
+    expect(ps).toContain('$env:LISTEN_HOST = "127.0.0.1"');
+    expect(ps).not.toMatch(/migrate|db:seed|preview:setup|DROP|TRUNCATE|safeschool_preview\?|DEPLOY_PROFILE =/);
+  });
+  it("앱 비밀번호는 숨김 입력, 출력·파일 저장 없음, 종료 때 정리", () => {
+    expect(ps).toMatch(/Read-Host .* -AsSecureString/);
+    expect(ps).not.toMatch(/Set-Content|Out-File|Write-Host .*PASSWORD|Write-Output/);
+    expect(ps).toMatch(/finally \{\s*Remove-Item Env:GMAIL_SMTP_APP_PASSWORD/);
   });
 });
 

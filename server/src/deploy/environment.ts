@@ -134,6 +134,8 @@ export function betaEnvironmentErrors(role: DeploymentRole, env: Record<string, 
   if (!/^https:\/\//.test(env.APP_BASE_URL ?? "")) errors.push("Beta APP_BASE_URL 은 https 주소여야 합니다.");
   errors.push(...betaUploadDirErrors(env));
   if ((env.ALERT_PROVIDERS ?? "").includes("mois_cbs") && !MOIS_CBS_CONTRACT.verified) errors.push("공식 재난문자 수집은 활용 승인과 공식 명세 확인(MOIS_CBS_CONTRACT.verified) 전에는 켤 수 없습니다.");
+  // 재난문자 키 한도는 환경 간에 공유되지 않으므로 Beta는 배분량을 명시해야 합니다
+  if ((env.ALERT_PROVIDERS ?? "").includes("mois_cbs") && !env.MOIS_CBS_DAILY_LIMIT?.trim()) errors.push("Beta에서 공식 재난문자를 수집하려면 MOIS_CBS_DAILY_LIMIT 으로 이 환경의 일일 호출 배분량을 정해야 합니다.");
   if ((env.ALERT_PROVIDERS ?? "").includes("kma_warning") && !KMA_WARNING_CONTRACT.verified) errors.push("기상특보 수집은 활용 승인과 실제 응답 확인(KMA_WARNING_CONTRACT.verified) 전에는 켤 수 없습니다.");
   const mode = env.BETA_DATA_MODE?.trim();
   if (mode !== "virtual_test" && mode !== "school_pilot") errors.push("BETA_DATA_MODE 를 virtual_test 또는 school_pilot 으로 명시해야 합니다.");

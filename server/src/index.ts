@@ -30,7 +30,7 @@ async function main() {
   // STEP 7: 공식 긴급재난문자(설정한 경우만, 심사 환경 제외 — env.ts 에서 검사). 일일 호출 한도 때문에 별도 간격
   const official: AlertSource[] = (env.ALERT_PROVIDERS ?? "").split(",").map((s) => s.trim()).includes("mois_cbs") && env.MOIS_CBS_SERVICE_KEY ? [new MoisCbsSource(env.MOIS_CBS_SERVICE_KEY, undefined, undefined, undefined, 1)] : [];
   if (official.length) console.log(`[alerts] 공식 긴급재난문자 수집 사용(${env.MOIS_CBS_INTERVAL_SEC}초 간격, 응답 형식 확인 전이면 실패가 기록될 수 있음)`);
-  // 공유플랫폼 일일 호출량(이용 화면 100건): 주기당 1쪽, 재시도 없음, 15분 간격, 상한은 수집 기록으로 서버 간 공유
+  // 공유플랫폼 일일 호출량(이용 화면 100건, 키 전체): 주기당 1쪽, 재시도 없음, 기본 30분 간격. 상한은 같은 DB 서버끼리만 공유(docs/beta2/release/beta-deploy-plan.md)
   const stopOfficial = startCollector(prisma, official, env.MOIS_CBS_INTERVAL_SEC * 1000, console, { retries: 0, dailyCallLimit: env.MOIS_CBS_DAILY_LIMIT, callsPerAttempt: 1 });
   // 기상특보(설정한 경우만). 경보함 카드와 같은 클라이언트를 공유해 호출이 늘지 않습니다
   const kmaClient = (env.ALERT_PROVIDERS ?? "").split(",").map((s) => s.trim()).includes("kma_warning") ? getKmaWarningClient() : null;

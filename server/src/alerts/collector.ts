@@ -109,7 +109,19 @@ export async function collectOnce(prisma: PrismaClient, source: AlertSource, opt
   }
   if (options.dailyCallLimit !== undefined) {
     const perAttempt = options.callsPerAttempt ?? 1;
-    const used = await prisma.alertCollectionRun.aggregate({ where: { provider: source.provider, status: { not: "skipped" }, startedAt: { gte: kstDayStart(new Date()) } }, _sum: { attempts: true } });
+    const today = kstDayStart(new Date());
+    // 같은 키를 쓰는 다른 서버·수동 호출은 이 DB에 집계되지 않으므로, 제공기관이 호출 제한을 알리면 그날은 더 호출하지 않습니다
+    const limited = await prisma.alertCollectionRun.findFirst({
+      where: { provider: source.provider, status: "failed", startedAt: { gte: today }, OR: [{ errorMessage: { contains: "결과 코드 22" } }, { errorMessage: { contains: "LIMITED" } }, { errorMessage: { contains: "429" } }] },
+      select: { id: true },
+    });
+    if (limited) {
+      const run = await prisma.alertCollectionRun.create({
+        data: { provider: source.provider, status: "skipped", attempts: 0, finishedAt: new Date(), errorMessage: "제공기관 호출 제한 응답으로 다음 날까지 건너뜀" },
+      });
+      return { runId: run.id, status: "skipped", fetched: 0, inserted: 0, duplicates: 0, newTargetMatches: 0 };
+    }
+    const used = await prisma.alertCollectionRun.aggregate({ where: { provider: source.provider, status: { not: "skipped" }, startedAt: { gte: today } }, _sum: { attempts: true } });
     if ((used._sum.attempts ?? 0) * perAttempt + perAttempt * (retries + 1) > options.dailyCallLimit) {
       const run = await prisma.alertCollectionRun.create({
         data: { provider: source.provider, status: "skipped", attempts: 0, finishedAt: new Date(), errorMessage: "일일 호출 상한에 도달해 건너뜀" },
