@@ -18,7 +18,7 @@ import { AppShell } from "../../components/layout/AppShell";
 import { ErrorState, LoadingState } from "../../components/ui/States";
 import { PrimaryButton } from "../../components/ui/PrimaryButton";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { TIME_BASIS_NOTE, autoEvacSentence, buildDrillDoc, defaultManual, markDraft, participantCounts, summarizeClasses, whenText, type DrillManual, type DrillSnapshot, type OX } from "@shared/drillLog";
+import { autoEvacSentence, buildDrillDoc, defaultManual, editorLabels, markDraft, participantCounts, summarizeClasses, timeBasisNote, whenText, type DrillManual, type DrillSnapshot, type OX } from "@shared/drillLog";
 import { DrillDocPreview } from "./DrillDocPreview";
 import { StaffPicker, WHO_MAX, type StaffEntry } from "./StaffPicker";
 
@@ -175,9 +175,8 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
   const unsavedForExport = dirty;
   const real = (d.log.mode ?? s.event.mode) === "real";
   const active = d.log.eventStatus === "active";
-  const L = real
-    ? { page: "재난대피일지", people: "인원 현황", student: "학생 재실(명)", studentHint: "재난 당시 학교에 있던 학생 수(담당자 확인값, 시스템 대피 확인 수와 별개).", total: "총 인원(명)", overview: "상황 개요(보충 설명)", evals: "대응 평가(O/X는 담당자 판단)", improve: "문제점 및 향후 조치 사항" }
-    : { page: "훈련일지", people: "참가 인원", student: "학생 참가(명)", studentHint: "실제 훈련에 참가한 학생 수(시스템 대피 확인 수와 별개).", total: "총 참가(명)", overview: "훈련 개요(보충 설명)", evals: "평가(O/X는 담당자 판단)", improve: "추후 대피훈련 시 반영사항" };
+  const L = editorLabels(real ? "real" : "drill");
+  const missingWords = pc.missing.map((m) => (m === "학생 참가" ? L.studentWord : m));
   const privacy = d.log.privacyIssues ?? [];
 
   return (
@@ -255,7 +254,7 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
         <section className="rounded-card border border-line bg-card p-4 shadow-card print:hidden" aria-labelledby="auto-title">
           <h2 id="auto-title" className="text-lg font-bold">시스템 기록(자동 반영 · 여기서 고치지 않음)</h2>
           <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-base">
-            <dt className="font-semibold text-ink-muted">일시</dt><dd>{whenText(s.event)}{!real && <> · 발령 {s.event.issuedByName ?? "-"} · 종료 {s.event.closedByName ?? "-"}</>}<span className="block text-sm text-ink-muted">{TIME_BASIS_NOTE}</span></dd>
+            <dt className="font-semibold text-ink-muted">일시</dt><dd>{whenText(s.event)}{!real && <> · 발령 {s.event.issuedByName ?? "-"} · 종료 {s.event.closedByName ?? "-"}</>}<span className="block text-sm text-ink-muted">{timeBasisNote(real ? "real" : "drill")}</span></dd>
             <dt className="font-semibold text-ink-muted">대피 장소 기록</dt><dd>{s.event.evacPlace ?? "기록 없음(직접 입력)"}</dd>
             <dt className="font-semibold text-ink-muted">학급 보고</dt>
             <dd>
@@ -293,12 +292,12 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
             <div>
               <p className="font-bold">{L.people}</p>
               <div className="mt-1 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <label className="block font-bold">교직원 참가(명)
+                <label className="block font-bold">{L.staff}
                   <input className={input} inputMode="numeric" value={manual.staffCount} onChange={(e) => set("staffCount", e.target.value.replace(/[^\d]/g, "").slice(0, 4))} placeholder="확인 후 입력" />
                   <span className={hint}>담당자가 확인해 입력합니다.</span>
                 </label>
                 <label className="block font-bold">{L.student}
-                  <input className={input} inputMode="numeric" value={manual.studentCount} onChange={(e) => set("studentCount", e.target.value.replace(/[^\d]/g, "").slice(0, 5))} placeholder="실제 참가 학생 수" />
+                  <input className={input} inputMode="numeric" value={manual.studentCount} onChange={(e) => set("studentCount", e.target.value.replace(/[^\d]/g, "").slice(0, 5))} placeholder={L.studentPlaceholder} />
                   <span className={hint}>{L.studentHint}</span>
                   {!ro && !manual.studentCount && pc.evacComplete && pc.unconfirmed === 0 && pc.evacuated !== null && (
                     <button type="button" className="mt-1 min-h-touch rounded-control border-2 border-accent px-3 text-sm font-bold text-accent" onClick={() => set("studentCount", String(pc.evacuated))}>
@@ -319,10 +318,10 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
                 <label className="block font-bold">{L.total}
                   <input className={input} inputMode="numeric" value={manual.totalCount} onChange={(e) => set("totalCount", e.target.value.replace(/[^\d]/g, "").slice(0, 5))} placeholder={pc.totalAuto !== null ? `자동 ${pc.totalAuto}` : "확인 필요"} />
                   <span className={hint}>
-                    {pc.totalSource === "auto" && `교직원 + 학생 참가 = ${pc.totalAuto}명(자동). 직접 입력하면 그 값을 씁니다.`}
-                    {pc.totalSource === "none" && `${pc.missing.join("·")} 인원을 입력하면 자동 계산합니다. 그 전에는 문서에 빈칸으로 둡니다.`}
+                    {pc.totalSource === "auto" && `교직원 + ${L.studentWord} = ${pc.totalAuto}명(자동). 직접 입력하면 그 값을 씁니다.`}
+                    {pc.totalSource === "none" && `${missingWords.join("·")} 인원을 입력하면 자동 계산합니다. 그 전에는 문서에 빈칸으로 둡니다.`}
                     {pc.totalSource === "manual" && (pc.totalAuto !== null && pc.totalAuto !== pc.total
-                      ? <strong className="text-warning-strong">직접 입력값입니다. 교직원 + 학생 참가 합({pc.totalAuto}명)과 다릅니다 — 확인하세요.</strong>
+                      ? <strong className="text-warning-strong">직접 입력값입니다. 교직원 + {L.studentWord} 합({pc.totalAuto}명)과 다릅니다 — 확인하세요.</strong>
                       : "직접 입력값을 씁니다.")}
                   </span>
                 </label>
@@ -355,7 +354,7 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
               {manual.roles.length < 10 && <PrimaryButton className="mt-2" variant="ghost" onClick={() => set("roles", [...manual.roles, { part: "", who: "" }])}>역할 추가</PrimaryButton>}
             </div>
             <label className="block font-bold">{L.overview}
-              <textarea className={`${input} py-2`} rows={2} maxLength={300} value={manual.trainingNote} onChange={(e) => set("trainingNote", e.target.value)} placeholder="예) 사전 안전교육 후 1차 경보 대피, 2차 경보 운동장 대피" />
+              <textarea className={`${input} py-2`} rows={2} maxLength={300} value={manual.trainingNote} onChange={(e) => set("trainingNote", e.target.value)} placeholder={L.overviewPlaceholder} />
             </label>
             <label className="block font-bold">대피(집결) 장소 문장
               <input className={input} maxLength={200} value={manual.evacPlaceText} onChange={(e) => set("evacPlaceText", e.target.value)} placeholder={autoPlace || "기록된 대피 장소가 없습니다 — 직접 입력"} />

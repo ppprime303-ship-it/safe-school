@@ -186,7 +186,14 @@ export function durationLabel(sec: number): string {
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
   return h > 0 ? `${h}시간 ${m}분 ${s}초` : m > 0 ? `${m}분 ${s}초` : `${s}초`;
 }
-export const TIME_BASIS_NOTE = "일시의 총 시간은 훈련 발령~종료 기록을 초 단위로 계산한 값(1초 미만 버림, 반올림 없음)으로, 대피 소요 시간이나 보고 저장 시각과 다릅니다.";
+export const timeBasisNote = (mode: "drill" | "real") => `일시의 총 시간은 ${mode === "real" ? "재난" : "훈련"} 발령~종료 기록을 초 단위로 계산한 값(1초 미만 버림, 반올림 없음)으로, 대피 소요 시간이나 보고 저장 시각과 다릅니다.`;
+
+/** 편집 화면 표제어: 실제 재난 화면에는 훈련·참가 표현을 쓰지 않음(저장 항목은 두 서식이 같음) */
+export function editorLabels(mode: "drill" | "real") {
+  return mode === "real"
+    ? { page: "재난대피일지", people: "인원 현황", staff: "교직원(명)", student: "학생 재실(명)", studentWord: "학생 재실", studentHint: "재난 당시 학교에 있던 학생 수(담당자 확인값, 시스템 대피 확인 수와 별개).", studentPlaceholder: "재실 학생 수", total: "총 인원(명)", overview: "상황 개요(보충 설명)", overviewPlaceholder: "예) 경보 후 전교생 운동장 대피, 소방서 도착 전 초기 대응", evals: "대응 평가(O/X는 담당자 판단)", improve: "문제점 및 향후 조치 사항" }
+    : { page: "훈련일지", people: "참가 인원", staff: "교직원 참가(명)", student: "학생 참가(명)", studentWord: "학생 참가", studentHint: "실제 훈련에 참가한 학생 수(시스템 대피 확인 수와 별개).", studentPlaceholder: "실제 참가 학생 수", total: "총 참가(명)", overview: "훈련 개요(보충 설명)", overviewPlaceholder: "예) 사전 안전교육 후 1차 경보 대피, 2차 경보 운동장 대피", evals: "평가(O/X는 담당자 판단)", improve: "추후 대피훈련 시 반영사항" };
+}
 const TIME_BASIS_SHORT = "총 시간: 발령~종료 기록을 초 단위로 계산(1초 미만 버림·반올림 없음), 대피 소요 시간 아님.";
 
 export function whenText(ev: DrillSnapshot["event"]): string {

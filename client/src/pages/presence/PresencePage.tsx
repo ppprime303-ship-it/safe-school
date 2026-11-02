@@ -291,7 +291,7 @@ function MyPresenceSection({ schoolId, alert, canDetail }: { schoolId: string; a
             응답 {summary.summary.respondedCount}/{summary.summary.targetCount}명 · 미응답 {summary.summary.notRespondedCount}명 · 교내 {summary.summary.onCampus} · 교외 {summary.summary.offCampus} · 지원 가능{" "}
             {summary.summary.available}
           </p>
-          <Link href={`/s/${schoolId}/staff-presence?event=${eventId}`} className="mt-1 inline-flex items-center gap-1 text-sm font-bold text-accent underline">
+          <Link href={`/s/${schoolId}/staff-presence?event=${eventId}`} className="mt-1 inline-flex min-h-touch items-center gap-1 text-sm font-bold text-accent underline">
             <Icon name="users" size={16} /> {canDetail ? "교직원 소재 현황(개인별)" : "교직원 소재 요약"}
           </Link>
         </div>

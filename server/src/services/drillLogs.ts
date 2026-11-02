@@ -265,7 +265,7 @@ export async function createDrillLog(prisma: PrismaClient, params: { schoolId: s
   } catch (e) {
     if (!(e instanceof CreateRace)) throw e;
     const again = await prisma.drillLog.findUnique({ where: { eventId: params.eventId }, select: { id: true, schoolId: true } });
-    if (!again || again.schoolId !== params.schoolId) throw conflict("create_conflict", "훈련일지를 만들지 못했습니다. 다시 시도하세요.");
+    if (!again || again.schoolId !== params.schoolId) throw conflict("create_conflict", "보고서를 만들지 못했습니다. 다시 시도하세요.");
     return { id: again.id, created: false };
   }
 }
@@ -289,7 +289,7 @@ export async function getDrillLog(db: Db, params: { schoolId: string; logId: str
       revisions: { orderBy: { version: "desc" }, select: { version: true, status: true, changedAt: true, changedBy: { select: { displayName: true } } } },
     },
   });
-  if (!log) throw notFound("훈련일지를 찾을 수 없습니다.");
+  if (!log) throw notFound("보고서를 찾을 수 없습니다.");
   const saved = log.autoSnapshot as unknown as DrillSnapshot;
   const current = await buildSnapshot(db, params.schoolId, log.eventId);
   const manual = { ...defaultManual(), ...(log.manual as object) } as DrillManual;
@@ -335,7 +335,7 @@ export async function updateDrillLog(
 ) {
   return prisma.$transaction(async (tx) => {
     const log = await tx.drillLog.findFirst({ where: { id: params.logId, schoolId: params.schoolId } });
-    if (!log) throw notFound("훈련일지를 찾을 수 없습니다.");
+    if (!log) throw notFound("보고서를 찾을 수 없습니다.");
     if (log.version !== params.expectedVersion) {
       throw conflict("version_conflict", "다른 담당자가 먼저 저장했습니다. 최신 내용을 확인하세요.", { currentVersion: log.version });
     }
@@ -390,7 +390,7 @@ export async function updateDrillLog(
 
 export async function exportDrillLogHwpx(prisma: PrismaClient, params: { schoolId: string; logId: string; actorUserId: string; ip?: string | null }) {
   const log = await prisma.drillLog.findFirst({ where: { id: params.logId, schoolId: params.schoolId } });
-  if (!log) throw notFound("훈련일지를 찾을 수 없습니다.");
+  if (!log) throw notFound("보고서를 찾을 수 없습니다.");
   const snap = log.autoSnapshot as unknown as DrillSnapshot;
   const manual = { ...defaultManual(), ...(log.manual as object) } as DrillManual;
   // Phase 4: 개인정보 검사에 걸리면 내려받지 않음. 최종본이 아니면 '작성 중 초안' 표시를 넣어 내려받음
@@ -410,7 +410,7 @@ export async function exportDrillLogHwpx(prisma: PrismaClient, params: { schoolI
     buf = buildDrillLogHwpx(doc);
   } catch (e) {
     console.error("[drilllog] 문서 생성 실패", e instanceof Error ? e.message : e);
-    throw new AppError(500, "doc_generation_failed", "훈련일지 파일을 만들지 못했습니다. 입력 내용은 저장되어 있으니 잠시 후 다시 시도하세요.");
+    throw new AppError(500, "doc_generation_failed", "보고서 파일을 만들지 못했습니다. 입력 내용은 저장되어 있으니 잠시 후 다시 시도하세요.");
   }
   await writeAudit(prisma, { schoolId: params.schoolId, actorUserId: params.actorUserId, action: "drilllog.exported", targetType: "drill_log", targetId: log.id, after: { version: log.version, format: "hwpx", bytes: buf.length }, ip: params.ip });
   const d = new Date(new Date(snap.event.startedAt).getTime() + 9 * 3600 * 1000);
