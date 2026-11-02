@@ -179,7 +179,7 @@ describe("모의훈련: 비상대피훈련일지", () => {
     expect(g.status).toBe(200);
     expect(g.body.log).toMatchObject({ formKey: "evacuation_drill", final: true });
     const doc = buildDrillDoc(g.body.snapshot as DrillSnapshot, g.body.manual as DrillManual);
-    expect(doc.pages.map((p) => p.title)).toEqual(["비상대피훈련일지(화재)", "붙임 1. 학급별 대피 현황", "붙임 2. 현장 제보·조치 현황"]);
+    expect(doc.pages.map((p) => p.title)).toEqual(["비상대피훈련일지(화재)", "붙임. 학급별 대피 현황"]);
     const labels = doc.pages[0]!.table.cells.filter((c) => c.kind !== "value").map((c) => c.text);
     expect(labels).toEqual(expect.arrayContaining(["참가인원", "훈련 개요"]));
     expect(labels.join("|")).not.toMatch(/학생 재실|상황 개요|대응 평가/);

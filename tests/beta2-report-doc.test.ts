@@ -45,17 +45,18 @@ const allText = (d: ReturnType<typeof buildDrillDoc>) => d.pages.flatMap((p) => 
 
 describe("모의훈련 일지(새 스냅숏)", () => {
   const d = buildDrillDoc(snap("drill"), defaultManual());
-  it("본문 + 붙임 1 학급별 + 붙임 2 현장 제보, 배치 검사 통과, 제목·표제어는 기존 승인 서식 그대로", () => {
-    expect(d.pages.map((p) => p.title)).toEqual(["비상대피훈련일지(화재)", "붙임 1. 학급별 대피 현황", "붙임 2. 현장 제보·조치 현황"]);
+  it("본문 + 붙임 학급별만(스냅숏에 제보가 있어도 제보 붙임 없음), 배치 검사 통과, 제목·표제어는 기존 승인 서식 그대로", () => {
+    expect(d.pages.map((p) => p.title)).toEqual(["비상대피훈련일지(화재)", "붙임. 학급별 대피 현황"]);
+    expect(allText(d)).not.toMatch(/현장 제보|복도에 연기|붙임 2/);
     expect(checkDoc(d)).toEqual([]);
     const main = d.pages[0]!.table.cells.map((c) => c.text);
     for (const t of ["참가인원", "학생 참가", "총 참가", "훈    련    내    용", "훈련 개요", "평    가", "추후 대피훈련 시\n반영사항"]) expect(main).toContain(t);
-    expect(d.pages[0]!.footnote).toContain("붙임  1. 학급별 대피 현황  2. 현장 제보·조치 현황 각 1부.");
+    expect(d.pages[0]!.footnote).toContain("붙임  학급별 대피 현황 1부.");
     expect(d.pages[0]!.footnote).toContain("※ 집계 기준 시각 2026. 10. 30. 10:40 (사건 종료 2026. 10. 30. 10:30).");
   });
   it("교직원 소재 붙임·숫자는 절대 없음(스냅숏에 소재 값이 잘못 들어와도)", () => {
     const leaked = buildDrillDoc(snap("drill", { presence: { targetCount: 10, respondedCount: 7, notRespondedCount: 3, onCampus: 5, offCampus: 2, available: 4, unavailable: 1, unsure: 2, alertsRead: 8, latestRespondedAt: null } }), defaultManual());
-    expect(leaked.pages).toHaveLength(3);
+    expect(leaked.pages).toHaveLength(2);
     expect(allText(leaked)).not.toMatch(/소재|교내|교외|대피 지원|미응답/);
   });
 });
@@ -97,19 +98,22 @@ describe("실제 재난의 재난대피일지", () => {
 
 describe("붙임 2 현장 제보·조치", () => {
   it("제보 없으면 '현장 제보 없음', 많으면 쪽 나눔·쪽마다 머리글·마지막 쪽에만 안내", () => {
-    const empty = buildDrillDoc(snap("drill", { incidents: [] }), defaultManual());
+    const empty = buildDrillDoc(snap("real", { incidents: [] }), defaultManual());
     expect(empty.pages[2]!.table.cells.map((c) => c.text)).toContain("현장 제보 없음");
     const many = buildDrillDoc(snap("real", { incidents: Array.from({ length: INCIDENT_ROWS_PER_PAGE + 4 }, (_, i) => incident(i + 1)) }), defaultManual());
     const p2 = many.pages.filter((p) => p.title.startsWith("붙임 2."));
     expect(p2.map((p) => p.title)).toEqual(["붙임 2. 현장 제보·조치 현황 (1/2)", "붙임 2. 현장 제보·조치 현황 (2/2)"]);
-    for (const p of p2) expect(p.table.cells[0]!.text).toBe("번호");
+    for (const p of p2) expect(p.table.cells[0]!.text).toBe("시각");
     expect(p2[0]!.footnote).toBe("※ 다음 쪽에 이어집니다.");
     expect(checkDoc(many)).toEqual([]);
   });
-  it("처리 상태·추가/조치 건수·최근 조치가 그대로", () => {
-    const d = buildDrillDoc(snap("drill"), defaultManual());
-    const row = d.pages[2]!.table.cells.filter((c) => c.r === 1).map((c) => c.text);
-    expect(row).toEqual(["1", "위험 발견", "복도 / 본관 1층", "10:05", "조치 중", "2 / 1", "복도에 연기\n└ 조치: 출입 통제"]);
+  it("간소화한 표: 시각·장소·제보 내용·처리 상태, 이전 저장본의 세부 상태는 조치 대기, 완료는 조치 완료", () => {
+    const d = buildDrillDoc(snap("real", { incidents: [incident(1), incident(2, { statusLabel: "조치 완료" })] }), defaultManual());
+    const rows = (r: number) => d.pages[2]!.table.cells.filter((c) => c.r === r).map((c) => c.text);
+    expect(rows(0)).toEqual(["시각", "장소", "현장 제보 내용", "처리 상태"]);
+    expect(rows(1)).toEqual(["10:05", "복도 / 본관 1층", "위험 발견: 복도에 연기\n└ 조치: 출입 통제", "조치 대기"]);
+    expect(rows(2)[3]).toBe("조치 완료");
+    expect(allText(d)).not.toContain("조치 중");
   });
 });
 
@@ -169,7 +173,7 @@ describe("A4 인쇄 품질(Phase 4-C)", () => {
   });
   it("긴 제보 요약은 행 높이를 늘리고 쪽을 높이 합으로 나눔(어느 쪽도 A4 높이를 넘지 않음)", () => {
     const long = Array.from({ length: 14 }, (_, i) => incident(i + 1, { summary: "가".repeat(60), lastAction: "나".repeat(40), placeLabel: "급식실 / 본관 뒤편 출입구 옆" }));
-    const d = buildDrillDoc(snap("drill", { incidents: long }), defaultManual());
+    const d = buildDrillDoc(snap("real", { incidents: long }), defaultManual());
     const p2 = d.pages.filter((p) => p.title.startsWith("붙임 2."));
     expect(p2.length).toBeGreaterThan(1);
     expect(checkDoc(d)).toEqual([]);

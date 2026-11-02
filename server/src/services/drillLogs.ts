@@ -60,7 +60,8 @@ export async function buildSnapshot(db: Db, schoolId: string, eventId: string): 
 
   // Phase 4: 현장 제보·조치(두 서식). 제보자·작성자 이름은 고르지 않고, 자유 기재는 개인정보를 가린 요약만
   const staffNames = (await db.schoolMembership.findMany({ where: { schoolId }, select: { user: { select: { displayName: true } } } })).map((m) => m.user.displayName);
-  const incRows = await db.incidentReport.findMany({
+  // 2026-11-02: 현장 제보는 실제 재난의 재난대피일지에만 싣습니다(모의훈련 제보는 제보 화면에 그대로 보존)
+  const incRows = !real ? [] : await db.incidentReport.findMany({
     where: { schoolId, eventId },
     orderBy: { createdAt: "asc" },
     select: { type: true, placeCategory: true, placeDetail: true, description: true, status: true, createdAt: true, updates: { orderBy: { createdAt: "desc" }, select: { kind: true, note: true } } },

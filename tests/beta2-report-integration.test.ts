@@ -162,12 +162,13 @@ describe("모의훈련 → 훈련일지 최종본(출력물 검사)", () => {
     expect((await call("admin", "POST", S(`/events/${drill}/close`), {})).status).toBe(200);
     expect((await save("safety", drillLog, 1, { status: "completed", refreshAuto: true })).status).toBe(200);
     const { doc, html } = await printHtml("safety", drillLog);
-    expect(doc.pages.map((p) => p.title)).toEqual(["비상대피훈련일지(화재)", "붙임 1. 학급별 대피 현황", "붙임 2. 현장 제보·조치 현황"]);
+    expect(doc.pages.map((p) => p.title)).toEqual(["비상대피훈련일지(화재)", "붙임. 학급별 대피 현황"]);
+    expect(html).not.toContain("현장 제보");
     expect(checkDoc(doc, { height: true })).toEqual([]);
     expect(html).toContain("비상대피훈련일지(화재)");
     expect(html).not.toContain("작성 중 초안");
     expect(html).not.toMatch(/교직원 소재|미응답/);
-    expect(html.match(/<section/g)).toHaveLength(3); // 문서 쪽 수 = 인쇄 쪽 수(쪽마다 A4 한 장)
+    expect(html.match(/<section/g)).toHaveLength(2); // 문서 쪽 수 = 인쇄 쪽 수(쪽마다 A4 한 장)
     const hw = await exportHwpx("safety", drillLog);
     expect(hw.status).toBe(200);
     expect(hw.name).not.toContain("초안");

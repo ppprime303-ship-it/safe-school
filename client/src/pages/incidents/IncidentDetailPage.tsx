@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   INCIDENT_PRIVACY_HINT,
-  INCIDENT_STATUSES,
+  INCIDENT_STATUS_CHOICES,
   INCIDENT_STATUS_LABEL,
   INCIDENT_TYPE_LABEL,
   INCIDENT_UPDATE_KINDS,
   INCIDENT_UPDATE_LABEL,
+  incidentStatusChangeText,
   incidentUpdateSchema,
   type IncidentStatus,
   type IncidentUpdateKind,
@@ -55,20 +56,23 @@ export function IncidentDetailView({ schoolId, incident, canManage, onStatus, st
             처리 상태(대응 담당자)
           </h2>
           {active ? (
-            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {INCIDENT_STATUSES.map((s) => (
+            <>
+            <p className="mt-1 text-sm text-ink-muted">실제 조치가 끝난 것을 확인한 뒤 조치 완료를 고르세요. 재난대피일지에는 이 상태가 반영되며, 상황이 종료되면 바꿀 수 없습니다.</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {INCIDENT_STATUS_CHOICES.map((s) => (
                 <button
                   key={s}
                   type="button"
-                  aria-pressed={incident.status === s}
-                  disabled={incident.status === s || statusBusy}
+                  aria-pressed={INCIDENT_STATUS_LABEL[incident.status] === INCIDENT_STATUS_LABEL[s]}
+                  disabled={INCIDENT_STATUS_LABEL[incident.status] === INCIDENT_STATUS_LABEL[s] || statusBusy}
                   onClick={() => onStatus?.(s)}
-                  className={`min-h-touch rounded-control border-2 px-3 text-base font-bold ${incident.status === s ? "border-brand bg-brand text-white" : "border-line-strong bg-card"}`}
+                  className={`min-h-touch rounded-control border-2 px-3 text-base font-bold ${INCIDENT_STATUS_LABEL[incident.status] === INCIDENT_STATUS_LABEL[s] ? "border-brand bg-brand text-white" : "border-line-strong bg-card"}`}
                 >
                   {INCIDENT_STATUS_LABEL[s]}
                 </button>
               ))}
             </div>
+            </>
           ) : (
             <p className="mt-1 text-sm text-ink-muted">종료된 상황이라 처리 상태를 바꿀 수 없습니다. 정정이 필요하면 플랫폼 운영자에게 정정 절차를 요청하세요(기록은 보존).</p>
           )}
@@ -94,7 +98,7 @@ export function IncidentDetailView({ schoolId, incident, canManage, onStatus, st
             ) })),
             ...incident.statusHistory.map((h, i) => ({ at: h.createdAt, key: `s-${i}`, node: (
               <>
-                <span className="font-bold">상태 변경</span> {INCIDENT_STATUS_LABEL[h.from]} → {INCIDENT_STATUS_LABEL[h.to]}
+                <span className="font-bold">상태 변경</span> {incidentStatusChangeText(h.from, h.to)}
                 <span className="block text-sm text-ink-muted">
                   {formatDateTime(h.createdAt)}
                   {h.changedByName && ` · ${h.changedByName}`}

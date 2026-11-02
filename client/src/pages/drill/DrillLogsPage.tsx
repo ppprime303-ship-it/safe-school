@@ -54,7 +54,7 @@ export function DrillLogsPage({ schoolId }: { schoolId: string }) {
     <AppShell title="훈련일지·재난대피일지" schoolId={schoolId}>
       <div className="mx-auto max-w-3xl space-y-4">
         <p className="rounded-control border border-line bg-card px-3 py-2 text-sm text-ink-muted">
-          모의훈련은 <strong>비상대피훈련일지</strong>, 실제 재난은 같은 서식의 <strong>재난대피일지</strong>를 대피 보고·현장 제보로 자동 작성하고, 담당자가 확인·보완한 뒤
+          모의훈련은 대피 보고로 <strong>비상대피훈련일지</strong>를, 실제 재난은 대피 보고·현장 제보로 같은 서식의 <strong>재난대피일지</strong>를 자동 작성하고, 담당자가 확인·보완한 뒤
           한글(HWPX)·PDF(인쇄)로 출력합니다. 진행 중에는 작성 중 초안만, 최종본은 종료 후 만듭니다. 결재는 K-에듀파인에서 파일을 직접 첨부해 진행하세요(자동 상신 없음).
         </p>
         {!data && !err && <LoadingState label="훈련 기록을 불러오는 중…" />}

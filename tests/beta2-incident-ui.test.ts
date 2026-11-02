@@ -56,7 +56,7 @@ describe("현장 제보 화면", () => {
     expect(general).toContain("난간도 흔들림");
     expect(general).toContain("내가 추가");
     const manager = html(createElement(IncidentDetailView, { schoolId: "s1", incident: detail({ reporterName: "가상 교사" }), canManage: true }));
-    for (const t of ["처리 상태(대응 담당자)", "접수", "확인 중", "조치 중", "조치 완료", "가상 교사"]) expect(manager).toContain(t);
+    for (const t of ["처리 상태(대응 담당자)", "조치 대기", "조치 완료", "세부 기록: 접수 → 확인 중", "가상 교사"]) expect(manager).toContain(t);
   });
 
   it("상세: 종료된 상황은 대응 담당자도 상태 버튼 없음(정정 절차 안내)", () => {

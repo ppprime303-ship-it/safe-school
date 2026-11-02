@@ -125,17 +125,14 @@ describe("모의훈련 일지", () => {
     expect(snap).not.toHaveProperty("presence");
     expect(g.raw).not.toMatch(/targetCount|respondedCount|onCampus|offCampus|presence/);
     expect(await prisma.staffPresence.count({ where: { eventId: drill } })).toBe(0);
-    expect(buildDrillDoc(snap, defaultManual()).pages.map((p) => p.title)).toEqual(["비상대피훈련일지(화재)", "붙임 1. 학급별 대피 현황", "붙임 2. 현장 제보·조치 현황"]);
+    expect(buildDrillDoc(snap, defaultManual()).pages.map((p) => p.title)).toEqual(["비상대피훈련일지(화재)", "붙임. 학급별 대피 현황"]);
   });
 
-  it("현장 제보·조치: 제보자 이름 없음, 자유 기재 속 교직원 이름은 ○○○, 조치 건수·최근 조치 반영", async () => {
+  it("현장 제보·조치는 모의훈련 일지에 싣지 않음(제보 원본은 제보 화면에 보존)", async () => {
     const snap = (await call("safetyA", "GET", A(`/drill-logs/${drillLog}`))).body.snapshot as DrillSnapshot;
-    expect(snap.incidents).toHaveLength(1);
-    expect(snap.incidents![0]).toMatchObject({ typeLabel: "위험 발견", placeLabel: "복도 / 본관 1층", statusLabel: "접수", updateCount: 1, actionCount: 1 });
-    expect(snap.incidents![0]!.summary).toContain("○○○ 선생님");
-    expect(snap.incidents![0]!.lastAction).toContain("○○○ 담당이 출입을 통제함");
-    expect(JSON.stringify(snap.incidents)).not.toMatch(new RegExp(allNames().join("|")));
-    expect(snap.maskedCount).toBe(2);
+    expect(snap.incidents).toEqual([]);
+    expect(snap.maskedCount).toBe(0);
+    expect(JSON.stringify(snap)).not.toMatch(/출입을 통제함/);
   });
 
   it("완료: 진행 중 409 → 종료 후 다시 불러오지 않으면 409 → 다시 불러오며 완료 200(최종본)", async () => {

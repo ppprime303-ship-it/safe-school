@@ -18,7 +18,14 @@ export const INCIDENT_TYPE_LABEL: Record<IncidentType, string> = {
 
 export const INCIDENT_STATUSES = ["received", "checking", "in_progress", "resolved"] as const;
 export type IncidentStatus = (typeof INCIDENT_STATUSES)[number];
-export const INCIDENT_STATUS_LABEL: Record<IncidentStatus, string> = { received: "접수", checking: "확인 중", in_progress: "조치 중", resolved: "조치 완료" };
+// 화면에는 두 가지만 표시합니다. 저장값·이력은 그대로 두며, 접수·확인 중·조치 중은 모두 미완료입니다.
+export const INCIDENT_STATUS_LABEL: Record<IncidentStatus, string> = { received: "조치 대기", checking: "조치 대기", in_progress: "조치 대기", resolved: "조치 완료" };
+/** 담당자가 고르는 상태(되돌리면 접수 상태로) */
+export const INCIDENT_STATUS_CHOICES = ["received", "resolved"] as const satisfies readonly IncidentStatus[];
+const INCIDENT_STATUS_DETAIL: Record<IncidentStatus, string> = { received: "접수", checking: "확인 중", in_progress: "조치 중", resolved: "조치 완료" };
+/** 이력 표시: 이전 기록의 세부 변경(접수→확인 중 등)도 사실대로 보이게 함 */
+export const incidentStatusChangeText = (from: IncidentStatus, to: IncidentStatus) =>
+  INCIDENT_STATUS_LABEL[from] === INCIDENT_STATUS_LABEL[to] ? `${INCIDENT_STATUS_LABEL[to]}(세부 기록: ${INCIDENT_STATUS_DETAIL[from]} → ${INCIDENT_STATUS_DETAIL[to]})` : `${INCIDENT_STATUS_LABEL[from]} → ${INCIDENT_STATUS_LABEL[to]}`;
 
 export const INCIDENT_UPDATE_KINDS = ["info", "change", "action"] as const;
 export type IncidentUpdateKind = (typeof INCIDENT_UPDATE_KINDS)[number];

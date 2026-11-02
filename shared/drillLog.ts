@@ -339,6 +339,8 @@ export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDo
   // Phase 4: 실제 재난은 같은 칸·같은 순서에 표제어만 바꿈. 새 스냅숏(v2)만 붙임 2·3과 집계 기준 주석이 붙음(이전 저장본은 그대로)
   const real = ev.mode === "real";
   const v2 = snap.incidents !== undefined;
+  // 2026-11-02 사용자 검증: 모의훈련 일지에는 현장 제보 붙임을 두지 않음(저장본에 제보가 있어도 출력하지 않음, 원본 제보는 보존)
+  const numbered = v2 && real;
   const W = real
     ? { people: "인원현황", student: "학생 재실", total: "총 인원", band: "대    응    내    용", overview: "상황 개요", evals: "대응 평가", improve: "문제점 및\n향후 조치 사항" }
     : { people: "참가인원", student: "학생 참가", total: "총 참가", band: "훈    련    내    용", overview: "훈련 개요", evals: "평    가", improve: "추후 대피훈련 시\n반영사항" };
@@ -430,7 +432,7 @@ export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDo
   if (v2) {
     if (!ev.closedAt) notes.push("※ 진행 중 기록(최종본 아님) — 종료 후 '다시 불러오기'로 확정하세요.");
     notes.push(`※ 집계 기준 시각 ${kstStamp(snap.takenAt)}${ev.closedAt ? ` (사건 종료 ${kstStamp(ev.closedAt)})` : ""}.`);
-    notes.push(real ? "붙임  1. 학급별 대피 현황  2. 현장 제보·조치 현황  3. 교직원 소재 응답 통계(익명) 각 1부." : "붙임  1. 학급별 대피 현황  2. 현장 제보·조치 현황 각 1부.");
+    notes.push(real ? "붙임  1. 학급별 대피 현황  2. 현장 제보·조치 현황  3. 교직원 소재 응답 통계(익명) 각 1부." : "붙임  학급별 대피 현황 1부.");
   } else notes.push("붙임  학급별 대피 현황 1부.");
   const footnote = notes.join("\n");
 
@@ -482,7 +484,7 @@ export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDo
     const pageNo = chunks.length > 1 ? ` (${pi + 1}/${chunks.length})` : "";
     const last = pi === chunks.length - 1;
     pages.push({
-      title: `${v2 ? "붙임 1." : "붙임."} 학급별 대피 현황${pageNo}`,
+      title: `${numbered ? "붙임 1." : "붙임."} 학급별 대피 현황${pageNo}`,
       titleKind: "appendix",
       // 부제는 한 줄로(학교명 · 훈련일 · 구분 · 기록 시점) — 줄바꿈으로 제목과 표 사이가 벌어지지 않게
       subtitle: `${snap.schoolName} · ${dateText(ev.startedAt)} ${mode} · 시스템 대피 보고 기준(기록 시점 ${kstStamp(snap.takenAt)})`,
@@ -492,8 +494,7 @@ export function buildDrillDoc(snap: DrillSnapshot, manual: DrillManual): DrillDo
         : "※ 다음 쪽에 이어집니다.",
     });
   });
-  if (v2) pages.push(...incidentPages(snap, mode));
-  if (v2 && real) pages.push(presencePage(snap, mode)); // 모의훈련에는 소재 붙임을 절대 만들지 않음
+  if (numbered) pages.push(...incidentPages(snap, mode), presencePage(snap, mode)); // 모의훈련에는 제보·소재 붙임을 만들지 않음
   return { pages };
 }
 
@@ -509,14 +510,16 @@ export function textLines(text: string, widthMm: number, pt = 10): number {
 const rowHeightFor = (texts: { text: string; widthMm: number }[], min: number, pt = 10) => Math.max(min, Math.ceil((Math.max(...texts.map((t) => textLines(t.text, t.widthMm, pt))) * pt * 0.3528 * 1.3 + 1.6) * 10) / 10);
 
 /** 붙임 2. 현장 제보·조치 현황(제보자 이름 없음, 자유 기재는 가린 요약). 행 높이는 글 길이에 맞추고, 쪽은 높이 합으로 나눔(쪽마다 머리글 반복) */
-export const INCIDENT_COLS = [6.0, 12.0, 18.0, 8.0, 12.0, 9.0, 35.0]; // 유형·처리 상태(최대 5자)가 한 줄에 들어가는 폭
+export const INCIDENT_COLS = [9.0, 21.0, 56.0, 14.0]; // 시각·장소·제보 내용·처리 상태
+/** 보고서 처리 상태는 두 가지. 이전 저장본의 세부 상태(접수·확인 중·조치 중)는 미완료이므로 조치 대기로 표시 */
+export const reportStatusLabel = (label: string) => (label === "조치 완료" ? "조치 완료" : "조치 대기");
 export const INCIDENT_ROWS_PER_PAGE = 16; // 짧은 제보 기준 최대 행 수(긴 제보가 있으면 높이 합으로 더 일찍 나눔)
 const INCIDENT_ROW_MIN = 10.0;
 const INCIDENT_FOOT_LAST = 17.5; // 마지막 쪽 주석(2줄+여백) 높이 여유
-const incidentText = (it: DrillIncidentSnap) => clean(it.lastAction ? `${it.summary}\n└ 조치: ${it.lastAction}` : it.summary, 120);
+const incidentText = (it: DrillIncidentSnap) => clean(`${it.typeLabel}: ${it.summary}${it.lastAction ? `\n└ 조치: ${it.lastAction}` : ""}`, 140);
 function incidentRowHeight(it: DrillIncidentSnap): number {
   const w = (i: number) => (TABLE_W * INCIDENT_COLS[i]!) / 100;
-  return rowHeightFor([{ text: incidentText(it), widthMm: w(6) }, { text: clean(it.placeLabel, 50), widthMm: w(2) }, { text: clean(it.typeLabel, 20), widthMm: w(1) }], INCIDENT_ROW_MIN);
+  return rowHeightFor([{ text: incidentText(it), widthMm: w(2) }, { text: clean(it.placeLabel, 50), widthMm: w(1) }], INCIDENT_ROW_MIN);
 }
 function incidentPages(snap: DrillSnapshot, mode: string): LPage[] {
   const list = snap.incidents ?? [];
@@ -539,20 +542,18 @@ function incidentPages(snap: DrillSnapshot, mode: string): LPage[] {
   return chunks.map((chunk, pi) => {
     const a = new TB();
     const hr = a.row(ROW_H);
-    ["번호", "유형", "장소", "시각", "처리 상태", "추가/조치(건)", "제보 내용·최근 조치(요약)"].forEach((h, i) => a.put(hr, i, h, { kind: "head", bold: true }));
+    ["시각", "장소", "현장 제보 내용", "처리 상태"].forEach((h, i) => a.put(hr, i, h, { kind: "head", bold: true }));
     if (chunk.length === 0) {
       const rr = a.row(ROW_H);
-      a.put(rr, 0, "현장 제보 없음", { cs: 7 });
+      a.put(rr, 0, "현장 제보 없음", { cs: 4 });
     }
     for (const it of chunk) {
       const rr = a.row(incidentRowHeight(it));
-      a.put(rr, 0, String(it.no));
-      a.put(rr, 1, clean(it.typeLabel, 20));
-      a.put(rr, 2, clean(it.placeLabel, 50));
-      a.put(rr, 3, hhmm(kst(it.createdAt)));
-      a.put(rr, 4, clean(it.statusLabel, 20), { bold: it.statusLabel !== "조치 완료" });
-      a.put(rr, 5, `${it.updateCount} / ${it.actionCount}`);
-      a.put(rr, 6, incidentText(it), { align: "L" });
+      const status = reportStatusLabel(it.statusLabel);
+      a.put(rr, 0, hhmm(kst(it.createdAt)));
+      a.put(rr, 1, clean(it.placeLabel, 50));
+      a.put(rr, 2, incidentText(it), { align: "L" });
+      a.put(rr, 3, status, { bold: status !== "조치 완료" });
     }
     const pageNo = chunks.length > 1 ? ` (${pi + 1}/${chunks.length})` : "";
     const last = pi === chunks.length - 1;
@@ -562,7 +563,7 @@ function incidentPages(snap: DrillSnapshot, mode: string): LPage[] {
       subtitle: `${snap.schoolName} · ${dateText(snap.event.startedAt)} ${mode} · 제보 ${list.length}건(기록 시점 ${kstStamp(snap.takenAt)})`,
       table: { colPct: INCIDENT_COLS, rowsMm: a.rowsMm, cells: a.cells, headerRows: 1 },
       footnote: last
-        ? "※ 제보자 이름은 싣지 않습니다. 자유 기재 내용은 전화번호·주민등록번호 형태와 교직원 이름을 '○○○'으로 가렸습니다(학생 이름 등은 자동으로 모두 가릴 수 없으니 출력 전 확인).\n※ 추가/조치 = 추가 정보 건수 / 그중 조치 기록 건수. 처리 상태는 기록 시점 기준입니다."
+        ? "※ 제보자 이름은 싣지 않습니다. 자유 기재 내용은 전화번호·주민등록번호 형태와 교직원 이름을 '○○○'으로 가렸습니다(학생 이름 등은 자동으로 모두 가릴 수 없으니 출력 전 확인).\n※ 처리 상태는 담당자가 현장 제보 화면에서 확인한 내용의 기록 시점 기준입니다."
         : "※ 다음 쪽에 이어집니다.",
     };
   });
@@ -642,9 +643,10 @@ export function diffSnapshots(saved: DrillSnapshot, current: DrillSnapshot): str
   if (saved.event.evacPlace !== current.event.evacPlace) out.push(`대피 장소 기록 변경: ${saved.event.evacPlace ?? "없음"} → ${current.event.evacPlace ?? "없음"}`);
   if (saved.schoolName !== current.schoolName) out.push(`학교명 변경: ${saved.schoolName} → ${current.schoolName}`);
   // Phase 4(새 스냅숏만): 현장 제보·조치, 실제 재난 소재 익명 집계가 바뀌었는지
-  if (saved.incidents !== undefined) {
-    if (stableKey(saved.incidents) !== stableKey(current.incidents ?? [])) out.push(`현장 제보·조치 기록이 바뀜(제보 ${saved.incidents.length}건 → ${(current.incidents ?? []).length}건)`);
-    if (saved.event.mode === "real" && stableKey(saved.presence ?? null) !== stableKey(current.presence ?? null)) out.push("교직원 소재 응답 집계가 바뀜");
+  if (saved.incidents !== undefined && saved.event.mode === "real") {
+    const norm = (l: DrillIncidentSnap[] | undefined) => (l ?? []).map((i) => ({ ...i, statusLabel: reportStatusLabel(i.statusLabel) }));
+    if (stableKey(norm(saved.incidents)) !== stableKey(norm(current.incidents))) out.push(`현장 제보·조치 기록이 바뀜(제보 ${saved.incidents.length}건 → ${(current.incidents ?? []).length}건)`);
+    if (stableKey(saved.presence ?? null) !== stableKey(current.presence ?? null)) out.push("교직원 소재 응답 집계가 바뀜");
   }
   return out;
 }

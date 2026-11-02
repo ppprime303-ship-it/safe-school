@@ -18,7 +18,7 @@ import { AppShell } from "../../components/layout/AppShell";
 import { ErrorState, LoadingState } from "../../components/ui/States";
 import { PrimaryButton } from "../../components/ui/PrimaryButton";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { autoEvacSentence, buildDrillDoc, defaultManual, editorLabels, markDraft, participantCounts, summarizeClasses, timeBasisNote, whenText, type DrillManual, type DrillSnapshot, type OX } from "@shared/drillLog";
+import { autoEvacSentence, buildDrillDoc, defaultManual, editorLabels, markDraft, participantCounts, reportStatusLabel, summarizeClasses, timeBasisNote, whenText, type DrillManual, type DrillSnapshot, type OX } from "@shared/drillLog";
 import { DrillDocPreview } from "./DrillDocPreview";
 import { StaffPicker, WHO_MAX, type StaffEntry } from "./StaffPicker";
 
@@ -261,11 +261,23 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
               {sum.reportedCount} / {sum.total}학급 보고 · 대피 확인 {sum.evacuated}명 · 사전 파악 부재 {sum.absentKnown}명 · 미확인 {sum.unconfirmed}명 · 부상 {sum.injured}명
               {sum.unreported.length > 0 && <span className="font-bold text-danger"> · 미보고: {sum.unreported.join(", ")}</span>}
             </dd>
-            {s.incidents !== undefined && (
+            {real && s.incidents !== undefined && (
               <>
                 <dt className="font-semibold text-ink-muted">현장 제보</dt>
                 <dd>
-                  {s.incidents.length}건 · 조치 완료 {s.incidents.filter((i) => i.statusLabel === "조치 완료").length}건 · 조치 기록 {s.incidents.reduce((n, i) => n + i.actionCount, 0)}건
+                  {s.incidents.length}건 · 조치 대기 {s.incidents.filter((i) => reportStatusLabel(i.statusLabel) === "조치 대기").length}건 · 조치 완료 {s.incidents.filter((i) => reportStatusLabel(i.statusLabel) === "조치 완료").length}건
+                  {s.incidents.length > 0 && (
+                    <ul className="mt-1 space-y-1 text-sm">
+                      {s.incidents.map((i) => (
+                        <li key={i.no} className="flex flex-wrap gap-2">
+                          <span className={`font-bold ${reportStatusLabel(i.statusLabel) === "조치 완료" ? "text-success" : "text-warning-strong"}`}>{reportStatusLabel(i.statusLabel)}</span>
+                          <span className="min-w-0 flex-1">{i.placeLabel} · {i.summary}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <Link href={`/s/${schoolId}/incidents?event=${d.log.eventId}`} className="mt-1 inline-flex min-h-touch items-center text-sm font-bold text-accent underline">현장 제보 화면에서 처리 상태 확인·변경</Link>
+                  <span className="block text-sm text-ink-muted">보고서에서는 상태를 바꾸지 않습니다. 진행 중에 원본 제보의 상태를 고친 뒤 시스템 기록을 다시 불러오면 반영됩니다.</span>
                   <span className="block text-sm text-ink-muted">제보자 이름 없이, 자유 기재의 교직원 이름·전화번호는 가려서 붙임 2에 들어갑니다{s.maskedCount ? `(가림 ${s.maskedCount}곳)` : ""}.</span>
                 </dd>
               </>
