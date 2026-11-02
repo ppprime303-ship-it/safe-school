@@ -1,6 +1,7 @@
 // 학급 대피 보고 화면(표시 전용 — 데이터는 props로 받음, 디자인 미리보기에서도 사용)
 // 업무경감 설계: ① 화면을 열면 담당 학급·재적이 자동 표시 ② '전원 대피 확인' 한 번 또는 대피 확인 인원만 조정
 // ③ 보고. 미확인 인원은 자동 계산. 결석·부상·메모는 필요할 때만 펼쳐서 입력.
+import { FREE_TEXT_PRIVACY_NOTICE } from "@shared/privacy";
 import { useState } from "react";
 import { ENROLLED_CHANGE_REASONS } from "@shared/constants";
 import { computeUnconfirmed, validateReport, type ClassReportView, type ReportInput } from "../../lib/disaster";
@@ -146,6 +147,7 @@ export function ReportFormView({
                 placeholder="예: 화장실에 있던 학생 1명 확인 중"
                 className="mt-1.5 block w-full rounded-control border-2 border-line-strong bg-card p-3 text-base"
               />
+              <span className="mt-1 block text-sm font-normal text-ink-muted">{FREE_TEXT_PRIVACY_NOTICE}</span>
             </label>
             <p className="text-sm text-ink-muted">학생 이름 등 개인정보는 적지 마세요.</p>
           </div>

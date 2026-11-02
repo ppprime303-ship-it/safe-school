@@ -10,6 +10,7 @@
 // Beta PILOT 2 Phase 4: 같은 화면으로 실제 재난 '재난대피일지'도 작성(서식은 서버가 사건 mode 로 결정)
 // - 실제 재난: 같은 칸·순서, 표제어만 다름. 교직원 이름을 적지 않음(명단 선택 없음, 개인정보 검사), 교직원 소재는 익명 집계만 표시
 // - 진행 중 사건은 '작성 중'만, 완료(최종본)는 종료 후 종료 기록으로 다시 불러온 뒤. 최종본이 아니면 미리보기·인쇄에 '작성 중 초안' 표시
+import { FREE_TEXT_PRIVACY_NOTICE } from "@shared/privacy";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, describeError } from "../../lib/api";
 import { formatDateTime } from "../../lib/format";
@@ -378,6 +379,7 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
             </div>
             <label className="block font-bold">{L.overview}
               <textarea className={`${input} py-2`} rows={2} maxLength={300} value={manual.trainingNote} onChange={(e) => set("trainingNote", e.target.value)} placeholder={L.overviewPlaceholder} />
+              <span className="mt-1 block text-sm font-normal text-ink-muted">{FREE_TEXT_PRIVACY_NOTICE}</span>
             </label>
             <label className="block font-bold">대피(집결) 장소 문장
               <input className={input} maxLength={200} value={manual.evacPlaceText} onChange={(e) => set("evacPlaceText", e.target.value)} placeholder={autoPlace || "기록된 대피 장소가 없습니다 — 직접 입력"} />
@@ -415,6 +417,7 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
             </div>
             <label className="block font-bold">{L.improve}
               <textarea className={`${input} py-2`} rows={4} maxLength={1000} value={manual.improvements} onChange={(e) => set("improvements", e.target.value)} />
+              <span className="mt-1 block text-sm font-normal text-ink-muted">{FREE_TEXT_PRIVACY_NOTICE}</span>
             </label>
             <p className="text-sm text-ink-muted">활동 사진은 내려받은 한글 파일의 사진 칸에 직접 넣으세요(앱에 저장하지 않음).</p>
           </fieldset>

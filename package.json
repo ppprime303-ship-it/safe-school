@@ -29,6 +29,7 @@
     "schoolinfo:verify": "tsx scripts/verify-schoolinfo.ts",
     "neis:verify": "tsx scripts/verify-neis.ts",
     "kma:verify": "tsx scripts/verify-kma-warnings.ts",
+    "privacy:preview": "tsx scripts/privacy-preview.ts",
     "mois:verify": "tsx scripts/verify-mois.ts",
     "e2e:step2": "tsx scripts/e2e-step2.ts",
     "e2e:step3": "tsx scripts/e2e-step3.ts",

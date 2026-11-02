@@ -140,6 +140,10 @@ export function betaEnvironmentErrors(role: DeploymentRole, env: Record<string, 
   const mode = env.BETA_DATA_MODE?.trim();
   if (mode !== "virtual_test" && mode !== "school_pilot") errors.push("BETA_DATA_MODE 를 virtual_test 또는 school_pilot 으로 명시해야 합니다.");
   if (mode === "virtual_test" && (env.MAIL_PROVIDER === "resend" || env.MAIL_PROVIDER === "gmail")) errors.push(`가상 데이터 모드에서는 실제 메일 발송(MAIL_PROVIDER=${env.MAIL_PROVIDER})을 켤 수 없습니다.`);
+  // 가상 모드는 시드 계정만 씁니다. 수동 전달도 실제 교직원 가입 경로가 되므로 허용하지 않습니다(메일 미설정이면 가입 503)
+  if (mode === "virtual_test" && env.MAIL_PROVIDER === "manual") errors.push("가상 데이터 모드에서는 가입 경로를 열 수 없습니다(MAIL_PROVIDER=manual 금지).");
+  // 사진은 악성 파일 검사·암호화가 없고 학생 얼굴·이름이 찍힐 수 있어 실제 학교 모드에서 별도 승인이 필요합니다
+  if (mode === "school_pilot" && env.INCIDENT_PHOTO_UPLOAD === "enabled" && env.BETA_PHOTO_UPLOAD_APPROVED !== "true") errors.push("실제 학교 모드의 사진 첨부는 별도 승인 후 BETA_PHOTO_UPLOAD_APPROVED=true 로만 켤 수 있습니다.");
   // 개인 Gmail 시험 계정이 실제 학교 발신으로 넘어가지 않도록 운영 발신 계정 승인을 따로 확인합니다
   if (mode === "school_pilot" && (env.MAIL_PROVIDER === "gmail" || env.MAIL_PROVIDER === "resend") && env.BETA_MAIL_SENDER_APPROVED !== "true") errors.push("실제 학교 모드의 메일 발송은 운영 발신 계정 확정 후 BETA_MAIL_SENDER_APPROVED=true 로만 시작합니다.");
   if (mode === "school_pilot" && env.BETA_SCHOOL_PILOT_APPROVED !== "true") errors.push("실제 학교 모드는 학교·개인정보 승인 후 BETA_SCHOOL_PILOT_APPROVED=true 로만 시작합니다.");
