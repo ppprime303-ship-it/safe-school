@@ -12,6 +12,7 @@ import { EmptyState, ErrorState, LoadingState } from "../../components/ui/States
 import { PrimaryButton } from "../../components/ui/PrimaryButton";
 import { FormField } from "../../components/ui/FormField";
 import { Icon } from "../../components/ui/Icon";
+import { WeatherWarningsCard } from "./WeatherWarningsCard";
 
 const POLL_MS = 30_000;
 
@@ -67,6 +68,8 @@ export function AlertsPage({ schoolId, isAdmin }: { schoolId: string; isAdmin: b
         <p className="rounded-control border border-line bg-card px-3 py-2 text-sm text-ink-muted">
           공식 경보 원문을 그대로 보여 줍니다. 이 앱은 공식 재난 경보·대응 시스템, 119·112 신고, 공식 비상연락망, 교육청 공문을 대신하지 않습니다.
         </p>
+
+        <WeatherWarningsCard schoolId={schoolId} />
 
         {load.kind === "loading" && <LoadingState label="경보를 불러오는 중…" />}
         {load.kind === "error" && <ErrorState message={load.message} onRetry={() => void fetchAlerts()} />}

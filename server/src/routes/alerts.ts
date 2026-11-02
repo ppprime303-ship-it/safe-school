@@ -6,6 +6,8 @@ import { requireVerified } from "../auth/session.js";
 import { resolveAccess } from "../services/access.js";
 import { getAlertFeedStatus } from "../alerts/feedStatus.js";
 import { confirmSchoolRegion, getSchoolRegion, listSchoolAlerts, markAlertRead } from "../services/alerts.js";
+import { getKmaWarningClient } from "../integrations/client.js";
+import { getSchoolWeatherWarnings } from "../services/weatherWarnings.js";
 import { regionSchema } from "../../../shared/schemas.js";
 
 export const alertsRouter = Router();
@@ -20,6 +22,12 @@ alertsRouter.get("/schools/:schoolId/alerts", requireVerified, async (req, res) 
     getAlertFeedStatus(prisma), // STEP A: 수집 상태(공식/모의, 마지막 성공·실패) — 경보 없음과 수집 장애를 구분
   ]);
   res.json({ ...list, feed });
+});
+
+// 기상특보(읽기 전용 참고 정보). 소속 교직원 열람, 저장·발령 없음
+alertsRouter.get("/schools/:schoolId/weather-warnings", requireVerified, async (req, res) => {
+  await resolveAccess(prisma, { userId: req.auth!.userId, schoolId: schoolOf(req) });
+  res.json(await getSchoolWeatherWarnings(prisma, schoolOf(req), getKmaWarningClient()));
 });
 
 alertsRouter.post("/schools/:schoolId/alerts/:matchId/read", requireVerified, async (req, res) => {

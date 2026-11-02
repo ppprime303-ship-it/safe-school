@@ -1,5 +1,6 @@
 import { createSchoolinfoClient, type SchoolinfoClient } from "./schoolinfo.js";
 import { createNeisClient, type NeisClient } from "./neis.js";
+import { createKmaWarningClient, type KmaWarningClient } from "./kmaWarnings.js";
 
 let cached: SchoolinfoClient | null | undefined;
 
@@ -19,4 +20,13 @@ export function getNeisClient(): NeisClient | null {
   const dailyLimit = Number(process.env.NEIS_DAILY_LIMIT ?? "");
   neisCached = apiKey ? createNeisClient({ apiKey, ...(Number.isInteger(dailyLimit) && dailyLimit > 0 ? { dailyLimit } : {}) }) : null;
   return neisCached;
+}
+
+// 기상청 기상특보. KMA_WARNING_SERVICE_KEY 가 없으면 null(호출하지 않음)
+let kmaCached: KmaWarningClient | null | undefined;
+export function getKmaWarningClient(): KmaWarningClient | null {
+  if (kmaCached !== undefined) return kmaCached;
+  const serviceKey = process.env.KMA_WARNING_SERVICE_KEY?.trim();
+  kmaCached = serviceKey ? createKmaWarningClient({ serviceKey }) : null;
+  return kmaCached;
 }
