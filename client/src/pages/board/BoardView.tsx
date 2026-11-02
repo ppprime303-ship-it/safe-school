@@ -7,6 +7,7 @@ import { Icon } from "../../components/ui/Icon";
 import { PrimaryButton } from "../../components/ui/PrimaryButton";
 import { StatCard } from "../../components/ui/StatCard";
 import { CLASS_STATUS_META } from "../../components/ui/StatusBadge";
+import { EvacuationChart } from "./EvacuationChart";
 
 export interface Connection {
   lastSuccessAt: Date | null;
@@ -151,6 +152,8 @@ export function BoardView({
           </ul>
         </section>
       )}
+
+      <EvacuationChart classes={data.classes} connection={connection} />
 
       {/* 학급별 상태 */}
       <section aria-labelledby="classes">

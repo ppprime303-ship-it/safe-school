@@ -38,6 +38,8 @@
   --color-success-soft: #e6f2f5;
   --color-neutral: #3d4b63; /* 미보고(중립 회색, 완료처럼 보이지 않게) */
   --color-neutral-soft: #e8ecf2;
+  --color-evac-done: #1a7f37; /* 전교 대피 현황: 대피 완료(초록) */
+  --color-evac-unknown: #7c8698; /* 전교 대피 현황: 확인되지 않음(회색) */
 
   /* 모서리·그림자 */
   --radius-card: 0.75rem;

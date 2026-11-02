@@ -92,6 +92,69 @@ export interface BoardSummary {
   classesWithInjured: number;
 }
 
+// ───────────── 전교 대피 현황 차트 ─────────────
+// 상황판과 같은 학급 보고값만 씁니다. 대피 완료 = 보고된 대피 확인, 대피 미완료 = 보고된 미확인 인원,
+// 확인되지 않음 = 미보고 학급의 재적. 미보고를 완료나 미완료로 치지 않고, 사전 부재는 대상에서 뺍니다.
+// 재적을 모르는 미보고 학급이 있으면 대상을 믿을 수 없으므로 완료율을 내지 않습니다(rate=null).
+export interface EvacuationRow {
+  key: string;
+  label: string;
+  evacuated: number;
+  notEvacuated: number;
+  unknown: number;
+  absentKnown: number;
+  target: number; // 대피 완료 + 대피 미완료 + 확인되지 않음
+  enrolled: number; // 대상 + 사전 부재(상황판의 재적 합과 같음)
+  reportedClasses: number;
+  totalClasses: number;
+  enrolledUnknownClasses: number;
+  rate: number | null; // 학생 대피 완료율(내림). 학급 보고율과 다름
+}
+
+function evacuationRow(key: string, label: string, classes: ClassReportView[]): EvacuationRow {
+  const row: EvacuationRow = { key, label, evacuated: 0, notEvacuated: 0, unknown: 0, absentKnown: 0, target: 0, enrolled: 0, reportedClasses: 0, totalClasses: classes.length, enrolledUnknownClasses: 0, rate: null };
+  for (const c of classes) {
+    if (c.report) {
+      row.reportedClasses++;
+      row.evacuated += c.report.evacuated;
+      row.notEvacuated += c.report.unconfirmed;
+      row.absentKnown += c.report.absentKnown;
+      row.enrolled += c.report.enrolledCount;
+    } else if (c.enrolledCount !== null) {
+      row.unknown += c.enrolledCount;
+      row.enrolled += c.enrolledCount;
+    } else {
+      row.enrolledUnknownClasses++;
+    }
+  }
+  row.target = row.evacuated + row.notEvacuated + row.unknown;
+  // 반올림으로 100%가 되지 않게 내림. 보고가 한 건도 없으면 0%가 대피 실패로 읽히므로 내지 않음
+  if (row.enrolledUnknownClasses === 0 && row.target > 0 && row.reportedClasses > 0) row.rate = Math.floor((row.evacuated * 100) / row.target);
+  return row;
+}
+
+/** 완료율 표시: 보고를 기다리는 행은 확인 중, 대상을 믿을 수 없는 행은 집계 불가 */
+export function evacuationRateText(row: EvacuationRow): string {
+  if (row.rate !== null) return `${row.rate}%`;
+  return row.reportedClasses === 0 && row.enrolledUnknownClasses === 0 && row.target > 0 ? "확인 중" : "집계 불가";
+}
+
+/** 전교 행 + 실제 있는 학년 행(학년을 지어내지 않음) + 학년을 알 수 없는 학급 행. 같은 학급이 두 번 오면 한 번만 셉니다 */
+export function evacuationRows(classes: ClassReportView[]): EvacuationRow[] {
+  const unique = [...new Map(classes.map((c) => [c.classId, c])).values()];
+  const byGrade = new Map<number, ClassReportView[]>();
+  const noGrade: ClassReportView[] = [];
+  for (const c of unique) {
+    if (Number.isInteger(c.grade) && c.grade > 0) byGrade.set(c.grade, [...(byGrade.get(c.grade) ?? []), c]);
+    else noGrade.push(c);
+  }
+  return [
+    evacuationRow("all", "전교 전체", unique),
+    ...[...byGrade.entries()].sort((a, b) => a[0] - b[0]).map(([grade, list]) => evacuationRow(`grade-${grade}`, `${grade}학년`, list)),
+    ...(noGrade.length ? [evacuationRow("no-grade", "기타 / 학년 미확인", noGrade)] : []),
+  ];
+}
+
 export function summarizeBoard(classes: ClassReportView[]): BoardSummary {
   let reported = 0;
   let enrolledTotal = 0;
