@@ -159,7 +159,7 @@ export const redactNeisKey = (text: string, key?: string) => {
   return key ? masked.split(key).join("***") : masked; // 제공기관 메시지가 키를 그대로 되돌려 주는 경우까지
 };
 
-type FetchLike = (url: string, init: { signal: AbortSignal; headers: Record<string, string> }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
+type FetchLike = (url: string, init: { signal: AbortSignal; headers: Record<string, string> }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown>; headers?: { get(name: string): string | null } }>;
 
 export interface NeisClientOptions {
   apiKey: string | undefined;
@@ -213,7 +213,8 @@ export function createNeisClient(options: NeisClientOptions): NeisClient {
       throw new NeisError("나이스에 연결할 수 없습니다.", "network");
     }
     if (res.status === 429) throw new NeisError("나이스 호출 한도 초과(HTTP 429)", "rate_limited");
-    if (res.status >= 500) throw new NeisError(`나이스 서버 오류(HTTP ${res.status})`, "server");
+    // 제공기관 장애(HTML)와 나이스 결과 코드(JSON)를 구분하도록 응답 형식만 기록(본문은 넣지 않음)
+    if (res.status >= 500) throw new NeisError(`나이스 서버 오류(HTTP ${res.status}${res.headers?.get("content-type") ? `, ${res.headers.get("content-type")!.split(";")[0]!.slice(0, 40)}` : ""})`, "server");
     if (!res.ok) throw new NeisError(`나이스 응답 오류(HTTP ${res.status})`, "http");
     const body = await res.json().catch(() => {
       throw new NeisError("나이스 응답을 해석할 수 없습니다(JSON 아님).", "format");

@@ -10,3 +10,6 @@ backups/
 coverage/
 e2e-output/
 data/
+secrets/
+*.key
+*.pw

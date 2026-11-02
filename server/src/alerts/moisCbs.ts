@@ -1,10 +1,12 @@
 // STEP 7 공식 긴급재난문자(행정안전부, 재난안전데이터 공유플랫폼) 공급자 어댑터
 //
-// ⚠ 응답 형식 미확정: 공개 페이지에는 요청 주소·응답 필드 명세가 없어(활용 신청 후 열람), 아래 값은 공개된 제3자 코드에서
-//   확인된 이름을 기준으로 한 '가정'입니다. 인증키 발급 후 실제 응답으로 확인하고 CONTRACT 를 고친 뒤에만 연동 완료로 봅니다.
-//   - 주소: https://www.safetydata.go.kr/V2/api/DSSP-IF-00247 (제3자 자료)
-//   - 요청: serviceKey(대문자 K), returnType=json, pageNo, numOfRows, 조회 시작일(이름 미확정 — DATE_PARAM)
-//   - 응답: { header?: {resultCode, resultMsg}, numOfRows?, pageNo?, totalCount?, body: [ {SN, CRT_DT, MSG_CN, RCPTN_RGN_NM, EMRG_STEP_NM?, DST_SE_NM?, ...} ] }
+// 공식 명세(공유플랫폼 데이터 228 '오픈 API', 2026-11-02 확인)
+//   - GET https://www.safetydata.go.kr/V2/api/DSSP-IF-00247
+//   - 요청: serviceKey(필수), numOfRows, pageNo, returnType(json·xml), crtDt(조회시작일자 YYYYMMDD), rgnNm(시도·시군구명)
+//   - 응답 항목: SN, CRT_DT, MSG_CN, RCPTN_RGN_NM, EMRG_STEP_NM(긴급재난·안전안내·위급재난), DST_SE_NM, REG_YMD, MDFCN_YMD, RCPTN_RGN_ID, EMRG_STEP_ID, DST_SE_ID
+//   - 오류: 32 UNREGISTERED IP ERROR(등록되지 않은 IP), 30 등록되지 않은 서비스키, 31 기한 만료, 22 호출 제한, 33 서비스키 없음, 34 여러 서비스키 등
+// 실제 응답 확인 전(verified=false): 감싸는 구조(2026-11-02 실제 응답으로 header·body 는 확인, 정상 body 는 미확인), 정렬 순서, rgnNm 일치 방식(전국 문자 포함 여부)
+// 명세에 정정·재송출·취소 구분 항목은 없습니다. 재송출은 내용 해시로 묶고, 정정·취소는 본문으로 사람이 판단합니다.
 //
 // 원칙
 // - 공식 원문은 raw 로 그대로 보존(수정하지 않음). 발송 시각(CRT_DT)과 수집 시각(received_at, DB 기본값)을 구분합니다.
@@ -17,7 +19,7 @@ import type { AlertSource, FetchResult, NormalizedAlert } from "./providers.js";
 
 export const MOIS_CBS_CONTRACT = {
   endpoint: "https://www.safetydata.go.kr/V2/api/DSSP-IF-00247",
-  /** 조회 시작일 매개변수 이름(명세 확인 전 가정) */
+  /** 조회시작일자(공식 명세) */
   dateParam: "crtDt",
   numOfRows: 100,
   maxPages: 5,
@@ -171,6 +173,8 @@ export class MoisCbsSource implements AlertSource {
     private readonly http: FetchLike = fetch as unknown as FetchLike,
     private readonly now: () => Date = () => new Date(),
     private readonly timeoutMs = 10_000,
+    /** 주기당 최대 쪽 수. 운영 수집은 일일 호출 한도 때문에 1쪽(index.ts) */
+    private readonly maxPages: number = MOIS_CBS_CONTRACT.maxPages,
   ) {
     if (!serviceKey.trim()) throw new Error("MOIS_CBS_SERVICE_KEY 가 비어 있습니다.");
   }
@@ -179,7 +183,7 @@ export class MoisCbsSource implements AlertSource {
     const from = kstYmd(this.now(), 1); // 어제부터(자정 전후 누락 방지). 중복은 collector 가 (공급자, SN)으로 거름
     const alerts: NormalizedAlert[] = [];
     let rejected = 0;
-    for (let page = 1; page <= MOIS_CBS_CONTRACT.maxPages; page++) {
+    for (let page = 1; page <= this.maxPages; page++) {
       const res = await this.http(buildRequestUrl(this.serviceKey, page, from), { signal: AbortSignal.timeout(this.timeoutMs), headers: { Accept: "application/json" } });
       if (res.status === 429) throw new Error("공식 재난문자 API 호출 제한(429) — 다음 주기에 다시 시도");
       if (!res.ok) {

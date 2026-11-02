@@ -23,8 +23,10 @@ const schema = z.object({
   ALERT_PROVIDERS: z.string().optional(),
   // 공식 긴급재난문자 API 인증키(재난안전데이터 공유플랫폼). 로그·화면에 출력 금지
   MOIS_CBS_SERVICE_KEY: z.string().optional(),
-  // 공식 API 최소 수집 간격(초). 일일 호출 한도를 넘지 않게 기본 300초
-  MOIS_CBS_INTERVAL_SEC: z.coerce.number().int().min(120).max(3600).default(300),
+  // 공식 API 수집 간격(초). 이용 화면의 일일 호출량 100건 기준 15분 미만은 허용하지 않음(하루 96회)
+  MOIS_CBS_INTERVAL_SEC: z.coerce.number().int().min(900).max(3600).default(900),
+  // 이 DB를 쓰는 서버들의 공식 재난문자 일일 호출 상한(수동 확인 호출 여유 5건)
+  MOIS_CBS_DAILY_LIMIT: z.coerce.number().int().min(1).max(100000).default(95),
   // 기상특보 수집(ALERT_PROVIDERS 에 kma_warning 일 때)
   KMA_WARNING_SERVICE_KEY: z.string().optional(),
   KMA_WARNING_INTERVAL_SEC: z.coerce.number().int().min(120).max(3600).default(300),

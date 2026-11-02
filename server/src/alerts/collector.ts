@@ -73,7 +73,14 @@ export interface CollectOptions {
   retries?: number;
   retryDelayMs?: number;
   sleep?: (ms: number) => Promise<void>;
+  /** 공급자 일일 호출 상한(한국 날짜). 수집 기록으로 세므로 같은 DB를 쓰는 서버들이 함께 지킵니다 */
+  dailyCallLimit?: number;
+  /** 시도 1회의 최대 호출 수. 기본 1 */
+  callsPerAttempt?: number;
 }
+
+/** 한국 날짜 오늘 0시 */
+export const kstDayStart = (now: Date) => new Date(Math.floor((now.getTime() + 9 * 3600_000) / 86_400_000) * 86_400_000 - 9 * 3600_000);
 
 export interface CollectResult {
   runId: string;
@@ -99,6 +106,16 @@ export async function collectOnce(prisma: PrismaClient, source: AlertSource, opt
       data: { provider: source.provider, status: "skipped", attempts: 0, finishedAt: new Date(), errorMessage: "최소 수집 간격 전이라 건너뜀" },
     });
     return { runId: run.id, status: "skipped", fetched: 0, inserted: 0, duplicates: 0, newTargetMatches: 0 };
+  }
+  if (options.dailyCallLimit !== undefined) {
+    const perAttempt = options.callsPerAttempt ?? 1;
+    const used = await prisma.alertCollectionRun.aggregate({ where: { provider: source.provider, status: { not: "skipped" }, startedAt: { gte: kstDayStart(new Date()) } }, _sum: { attempts: true } });
+    if ((used._sum.attempts ?? 0) * perAttempt + perAttempt * (retries + 1) > options.dailyCallLimit) {
+      const run = await prisma.alertCollectionRun.create({
+        data: { provider: source.provider, status: "skipped", attempts: 0, finishedAt: new Date(), errorMessage: "일일 호출 상한에 도달해 건너뜀" },
+      });
+      return { runId: run.id, status: "skipped", fetched: 0, inserted: 0, duplicates: 0, newTargetMatches: 0 };
+    }
   }
   const lastSuccess = await prisma.alertCollectionRun.findFirst({
     where: { provider: source.provider, status: "success" },
@@ -188,7 +205,7 @@ export async function collectOnce(prisma: PrismaClient, source: AlertSource, opt
 }
 
 /** 서버 안 주기 수집(기본 꺼짐). 공급자가 하나도 없으면 시작하지 않습니다. */
-export function startCollector(prisma: PrismaClient, sources: AlertSource[], intervalMs: number, log = console) {
+export function startCollector(prisma: PrismaClient, sources: AlertSource[], intervalMs: number, log = console, collect: CollectOptions = {}) {
   if (sources.length === 0) return () => {};
   let running = false;
   const tick = async () => {
@@ -196,7 +213,7 @@ export function startCollector(prisma: PrismaClient, sources: AlertSource[], int
     running = true;
     try {
       for (const source of sources) {
-        const r = await collectOnce(prisma, source, { minIntervalMs: Math.max(0, intervalMs - 1000) });
+        const r = await collectOnce(prisma, source, { minIntervalMs: Math.max(0, intervalMs - 1000), ...collect });
         if (r.status === "failed") log.warn(`[alerts] ${source.provider} 수집 실패: ${r.error}`);
         else if (r.inserted > 0) log.log(`[alerts] ${source.provider} 새 경보 ${r.inserted}건, 학교 알림 ${r.newTargetMatches}건`);
       }
