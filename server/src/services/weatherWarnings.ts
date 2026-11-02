@@ -21,7 +21,7 @@ export async function getSchoolWeatherWarnings(prisma: PrismaClient, schoolId: s
     region: region ? { sido: region.sido, sigungu: region.sigungu } : null,
     regionSupported: zones !== null,
   };
-  if (!client) return { ...base, state: "not_configured", fetchedAt: null, stale: false, errorKind: null, partial: false, warnings: [] };
+  if (!client) return { ...base, state: "not_configured", fetchedAt: null, stale: false, errorKind: null, partial: false, statusText: null, warnings: [] };
 
   const snap = await client.latest();
   const fetched = snap.fetchedAt !== null;
@@ -46,6 +46,7 @@ export async function getSchoolWeatherWarnings(prisma: PrismaClient, schoolId: s
     stale: fetched && (snap.error !== null || now.getTime() - snap.fetchedAt!.getTime() > WEATHER_STALE_MS),
     errorKind: snap.error?.kind ?? null,
     partial: snap.partial,
+    statusText: zones && snap.status ? { at: snap.status.at?.toISOString() ?? null, lines: snap.status.lines } : null,
     warnings,
   };
 }

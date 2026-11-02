@@ -1,6 +1,7 @@
 ﻿# SAFE SCHOOL 로컬 미리보기 시작: 웹앱을 켜고 브라우저를 엽니다. 끝내려면 이 창에서 Ctrl+C(또는 preview-stop).
 # -WithApiKeys: 호출 승인·응답 확인 후에만. 학교알리미·기상특보 키를 저장소 밖 파일에서 이 프로세스에만 넣습니다(재난문자 수집은 켜지 않음).
-param([switch]$WithApiKeys)
+# -CollectKma: -WithApiKeys 와 함께, 호출 승인·마이그레이션 20261103000000 적용 후에만. 미리보기 DB에 기상특보를 저장하고 교직원 안내를 켭니다.
+param([switch]$WithApiKeys, [switch]$CollectKma)
 . (Join-Path $PSScriptRoot "preview-common.ps1")
 Initialize-PreviewEnv
 
@@ -16,6 +17,7 @@ if ($WithApiKeys) {
     }
   }
   $env:SCHOOLINFO_SGG_REQUIRED = "true"
+  if ($CollectKma) { $env:ALERT_PROVIDERS = "kma_warning" }
 }
 
 $busy = Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue

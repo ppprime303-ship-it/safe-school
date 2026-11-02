@@ -25,6 +25,7 @@ export interface SchoolWeatherWarnings {
   errorKind: WeatherErrorKind | null;
   windowDays: number; // 이 기간에 발표된 자료만 조회
   partial: boolean; // 건수가 많아 일부만 받음
+  statusText: { at: string | null; lines: string[] } | null; // 기상청 특보 현황 원문 중 인천 관련 줄(7일보다 먼저 발표된 특보 확인용)
   region: { sido: string; sigungu: string | null } | null;
   regionSupported: boolean;
   warnings: WeatherWarningView[];

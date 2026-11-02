@@ -10,6 +10,7 @@
 import path from "node:path";
 import type { DataMode } from "../../../shared/release.js";
 import { MOIS_CBS_CONTRACT } from "../alerts/moisCbs.js";
+import { KMA_WARNING_CONTRACT } from "../integrations/kmaWarnings.js";
 
 export const JUDGE_SCHEMA = "safeschool_prod_judge";
 export const PILOT_SCHEMA = "safeschool_prod_pilot";
@@ -46,7 +47,9 @@ export function alertProviderErrors(role: DeploymentRole, env: Record<string, st
   const errors: string[] = [];
   const wanted = (env.ALERT_PROVIDERS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   const mockFeed = !!env.ALERT_MOCK_FEED?.trim();
-  for (const p of wanted) if (p !== "mock" && p !== "mois_cbs") errors.push(`ALERT_PROVIDERS 에 알 수 없는 값: ${p.slice(0, 20)}`);
+  for (const p of wanted) if (p !== "mock" && p !== "mois_cbs" && p !== "kma_warning") errors.push(`ALERT_PROVIDERS 에 알 수 없는 값: ${p.slice(0, 20)}`);
+  if (wanted.includes("kma_warning") && !officialAlertsAllowed(role)) errors.push("심사 환경에서는 기상특보 API를 사용하지 않습니다(모의 자료만).");
+  if (wanted.includes("kma_warning") && !env.KMA_WARNING_SERVICE_KEY?.trim()) errors.push("기상특보 수집을 쓰려면 KMA_WARNING_SERVICE_KEY 가 필요합니다.");
   if ((wanted.includes("mock") || mockFeed) && !mockAlertsAllowed(role)) errors.push(`이 환경(${role})에서는 모의 경보를 사용할 수 없습니다.`);
   if (wanted.includes("mock") && !mockFeed) errors.push("모의 경보를 쓰려면 ALERT_MOCK_FEED(모의 경보 파일 경로)가 필요합니다.");
   if (wanted.includes("mois_cbs") && !officialAlertsAllowed(role)) errors.push("심사 환경에서는 공식 재난문자 API를 사용하지 않습니다(모의 자료만).");
@@ -131,6 +134,7 @@ export function betaEnvironmentErrors(role: DeploymentRole, env: Record<string, 
   if (!/^https:\/\//.test(env.APP_BASE_URL ?? "")) errors.push("Beta APP_BASE_URL 은 https 주소여야 합니다.");
   errors.push(...betaUploadDirErrors(env));
   if ((env.ALERT_PROVIDERS ?? "").includes("mois_cbs") && !MOIS_CBS_CONTRACT.verified) errors.push("공식 재난문자 수집은 활용 승인과 공식 명세 확인(MOIS_CBS_CONTRACT.verified) 전에는 켤 수 없습니다.");
+  if ((env.ALERT_PROVIDERS ?? "").includes("kma_warning") && !KMA_WARNING_CONTRACT.verified) errors.push("기상특보 수집은 활용 승인과 실제 응답 확인(KMA_WARNING_CONTRACT.verified) 전에는 켤 수 없습니다.");
   const mode = env.BETA_DATA_MODE?.trim();
   if (mode !== "virtual_test" && mode !== "school_pilot") errors.push("BETA_DATA_MODE 를 virtual_test 또는 school_pilot 으로 명시해야 합니다.");
   if (mode === "virtual_test" && (env.MAIL_PROVIDER === "resend" || env.MAIL_PROVIDER === "gmail")) errors.push(`가상 데이터 모드에서는 실제 메일 발송(MAIL_PROVIDER=${env.MAIL_PROVIDER})을 켤 수 없습니다.`);

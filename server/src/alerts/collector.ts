@@ -50,7 +50,7 @@ async function matchAlertToSchools(prisma: PrismaClient, alertId: string, alert:
   let targets = 0;
   for (const school of schools) {
     const region = await ensureSchoolRegion(prisma, school);
-    const { result, reason } = matchRegion(region, alert.areas);
+    const { result, reason } = alert.matchRegion ? alert.matchRegion(region) : matchRegion(region, alert.areas);
     try {
       await prisma.schoolAlertMatch.create({ data: { schoolId: school.id, alertId, result, reason } });
     } catch (error) {

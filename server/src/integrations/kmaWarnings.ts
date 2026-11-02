@@ -13,6 +13,7 @@ import type { WeatherErrorKind, WeatherWarningStatus } from "../../../shared/wea
 
 export const KMA_WARNING_CONTRACT = {
   endpoint: "https://apis.data.go.kr/1360000/WthrWrnInfoService/getPwnCd",
+  statusEndpoint: "https://apis.data.go.kr/1360000/WthrWrnInfoService/getPwnStatus",
   source: "기상청 기상특보 조회서비스",
   numOfRows: 500,
   maxPages: 3,
@@ -31,8 +32,8 @@ export class KmaWarningError extends Error {
 }
 
 /** 공식 표: warnVar·warningType */
-const WARN_VAR: Record<string, string> = { "1": "강풍", "2": "호우", "3": "한파", "4": "건조", "5": "폭풍해일", "6": "풍랑", "7": "태풍", "8": "대설", "9": "황사", "12": "폭염", "13": "열대야" };
-const WARN_STRESS: Record<string, string> = { "0": "주의보", "1": "경보", "2": "중대경보" };
+export const WARN_VAR: Record<string, string> = { "1": "강풍", "2": "호우", "3": "한파", "4": "건조", "5": "폭풍해일", "6": "풍랑", "7": "태풍", "8": "대설", "9": "황사", "12": "폭염", "13": "열대야" };
+export const WARN_STRESS: Record<string, string> = { "0": "주의보", "1": "경보", "2": "중대경보" };
 
 export interface KmaWarningRow {
   areaCode: string;
@@ -46,6 +47,7 @@ export interface KmaWarningRow {
   endTime: Date | null;
   allEndTime: Date | null;
   cancelled: boolean;
+  raw: unknown;
 }
 
 const text = (v: unknown): string => (typeof v === "string" ? v.trim() : typeof v === "number" ? String(v) : "");
@@ -116,6 +118,7 @@ export function parseKmaWarnings(raw: string): { rows: KmaWarningRow[]; rejected
       endTime: time(o.endTime),
       allEndTime: time(o.allEndTime),
       cancelled: text(o.cancel) === "1",
+      raw: o,
     });
   }
   if (list.length > 0 && rows.length === 0) throw new KmaWarningError("기상특보 항목의 형식이 예상과 다릅니다(필수 필드 없음).", "format");
@@ -168,34 +171,58 @@ export function summarizeWarnings(rows: KmaWarningRow[], now: Date): KmaWarningS
   return out.sort((a, b) => order[a.status] - order[b.status] || b.issuedAt.getTime() - a.issuedAt.getTime());
 }
 
-/** 특보구역 코드는 공식 코드표 기준. 학교 지역 → 구역. 시군구와 인천남부·북부의 경계는 공식 자료에 없어 '미판정'으로 둡니다. */
+// 구역 경계 근거: 기상청 보도자료 2026-05-12 '지역별 특보구역 세분화'(2026-06-01 시행)
+//   인천영종 = 중구 운북·중산·운남·운서·을왕·남북·덕교·무의동 / 인천남부 = 동·미추홀·연수·남동구, 중구(영종 제외) / 인천북부 = 서·부평·계양구
+//   백령도.대청도 = 옹진군 백령·대청면 / 연평도.우도 = 옹진군 연평면, 강화군 서도면 우도
+// 2026-07-01 개편 이름: 영종구(옛 중구 영종), 제물포구(옛 중구 내륙·동구), 서해구·검단구(옛 서구). 실제 응답 구역명은 확인 전입니다.
+const INCHEON_ZONE: Record<string, string> = {
+  영종구: "L1110110",
+  동구: "L1110120", 제물포구: "L1110120", 미추홀구: "L1110120", 연수구: "L1110120", 남동구: "L1110120",
+  서구: "L1110130", 서해구: "L1110130", 검단구: "L1110130", 부평구: "L1110130", 계양구: "L1110130",
+  강화군: "L1010900", 옹진군: "L1013600",
+};
+const INCHEON_WHOLE = ["L1110000", "L1110100"];
+const INCHEON_MAINLAND = ["L1110110", "L1110120", "L1110130"];
+const WEST_SEA = ["L1014000", "L1014200", "L1014300"]; // 서해5도·백령도.대청도·연평도.우도
+
+/** 수집·저장 대상 구역 코드(전국 자료를 저장하지 않음) */
+export const SUPPORTED_ZONE_CODES: ReadonlySet<string> = new Set([...INCHEON_WHOLE, ...INCHEON_MAINLAND, "L1010900", "L1013600", ...WEST_SEA]);
+
+/** 학교 지역 → 특보구역. 주소가 시군구까지만이라 단정할 수 없는 구역은 undetermined(추측하지 않음) */
 export function zonesForRegion(region: { sido: string; sigungu: string | null } | null): { target: Set<string>; undetermined: Set<string> } | null {
   if (region?.sido !== "인천광역시") return null;
-  const target = new Set(["L1110000", "L1110100"]); // 인천 전체
+  const target = new Set(INCHEON_WHOLE);
   const undetermined = new Set<string>();
-  const add = (set: Set<string>, ...codes: string[]) => codes.forEach((c) => set.add(c));
-  const WEST_SEA = ["L1014000", "L1014200", "L1014300"]; // 서해5도·백령도.대청도·연평도.우도
-  switch (region.sigungu) {
-    case "영종구":
-      add(target, "L1110110");
-      break;
-    case "강화군":
-      add(target, "L1010900");
-      break;
-    case "옹진군":
-      add(target, "L1013600");
-      add(undetermined, ...WEST_SEA);
-      break;
-    case "중구": // 개편 전 이름: 영종 포함 여부를 주소만으로 알 수 없음
-      add(undetermined, "L1110110", "L1110120", "L1110130");
-      break;
-    case null:
-      add(undetermined, "L1110110", "L1110120", "L1110130", "L1010900", "L1013600", ...WEST_SEA);
-      break;
-    default:
-      add(undetermined, "L1110120", "L1110130"); // 인천남부·인천북부
-  }
+  const zone = region.sigungu ? INCHEON_ZONE[region.sigungu] : undefined;
+  if (zone) target.add(zone);
+  if (region.sigungu === "옹진군") WEST_SEA.forEach((c) => undetermined.add(c));
+  else if (region.sigungu === "강화군") ["L1014000", "L1014300"].forEach((c) => undetermined.add(c)); // 서도면 우도
+  else if (region.sigungu === "중구") ["L1110110", "L1110120"].forEach((c) => undetermined.add(c)); // 개편 전 이름: 영종 여부를 알 수 없음
+  else if (!zone) [...INCHEON_MAINLAND, "L1010900", "L1013600", ...WEST_SEA].forEach((c) => undetermined.add(c));
   return { target, undetermined };
+}
+
+/** getPwnStatus 특보발효현황 원문 중 인천 관련 구역이 언급된 줄(수정하지 않음). 7일보다 먼저 발표되어 이어지는 특보 확인용 */
+const STATUS_KEYWORDS = /인천|강화|옹진|서해5도|백령|대청|연평|우도/;
+export function parseKmaStatus(raw: string): { at: Date | null; lines: string[] } | null {
+  if (raw.trimStart().startsWith("<")) throwFromXml(raw);
+  let data: { response?: { header?: { resultCode?: unknown }; body?: { items?: unknown } } };
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new KmaWarningError("기상특보 현황 응답을 해석할 수 없습니다.", "format");
+  }
+  const code = text(data.response?.header?.resultCode);
+  if (!code) throw new KmaWarningError("기상특보 현황 응답에 결과 코드가 없습니다(형식 확인 필요).", "format");
+  const kind = kmaCodeKind(code);
+  if (kind) throw new KmaWarningError(`기상특보 현황 결과 코드 ${code.slice(0, 4)}`, kind, code);
+  const items = data.response?.body?.items;
+  const item = items && typeof items === "object" ? (items as { item?: unknown }).item : undefined;
+  const list = (Array.isArray(item) ? item : item ? [item] : []) as Record<string, unknown>[];
+  const latest = list.map((o) => ({ o, t: time(o.tmFc) })).filter((x) => x.t).sort((a, b) => b.t!.getTime() - a.t!.getTime())[0];
+  if (!latest) return null;
+  const lines = text(latest.o.t6).split(/\s*(?=\bo\s)/).map((l) => l.trim()).filter((l) => STATUS_KEYWORDS.test(l)).map((l) => l.slice(0, 500));
+  return { at: time(latest.o.tmEf) ?? latest.t, lines };
 }
 
 type FetchLike = (url: string, init: { signal: AbortSignal; headers: Record<string, string> }) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
@@ -215,6 +242,7 @@ export interface KmaWarningSnapshot {
   partial: boolean;
   fetchedAt: Date | null;
   error: KmaWarningError | null;
+  status: { at: Date | null; lines: string[] } | null; // 특보 현황 원문. 조회 실패면 null(구역별 자료 표시에는 영향 없음)
 }
 
 export interface KmaWarningClient {
@@ -228,22 +256,27 @@ export function buildKmaWarningUrl(serviceKey: string, pageNo: number, now: Date
   return `${KMA_WARNING_CONTRACT.endpoint}?${q.join("&")}`;
 }
 
+export function buildKmaStatusUrl(serviceKey: string): string {
+  const key = serviceKey.includes("%") ? serviceKey : encodeURIComponent(serviceKey);
+  return `${KMA_WARNING_CONTRACT.statusEndpoint}?serviceKey=${key}&numOfRows=5&pageNo=1&dataType=JSON`;
+}
+
 /** 조회 결과를 짧게 캐시합니다. 실패하면 재시도하지 않고 마지막 정상 자료와 오류를 함께 돌려줍니다. */
 export function createKmaWarningClient(options: KmaWarningClientOptions): KmaWarningClient {
   const key = options.serviceKey?.trim();
   const http = options.fetchImpl ?? (fetch as unknown as FetchLike);
   const timeoutMs = options.timeoutMs ?? 10_000;
-  const ttl = options.cacheTtlMs ?? 5 * 60_000;
+  const ttl = options.cacheTtlMs ?? 270_000; // 수집 주기(기본 5분)보다 조금 짧게
   const backoff = options.failureBackoffMs ?? 60_000;
   const now = options.now ?? (() => new Date());
-  let snapshot: KmaWarningSnapshot = { rows: [], rejected: 0, partial: false, fetchedAt: null, error: null };
+  let snapshot: KmaWarningSnapshot = { rows: [], rejected: 0, partial: false, fetchedAt: null, error: null, status: null };
   let lastAttempt = 0;
   let running: Promise<KmaWarningSnapshot> | null = null;
 
-  const page = async (pageNo: number) => {
+  const request = async (url: string) => {
     let res;
     try {
-      res = await http(buildKmaWarningUrl(key!, pageNo, now()), { signal: AbortSignal.timeout(timeoutMs), headers: { Accept: "application/json" } });
+      res = await http(url, { signal: AbortSignal.timeout(timeoutMs), headers: { Accept: "application/json" } });
     } catch (error) {
       const name = (error as { name?: string })?.name;
       if (name === "TimeoutError" || name === "AbortError") throw new KmaWarningError("기상특보 응답 시간 초과", "timeout");
@@ -255,7 +288,7 @@ export function createKmaWarningClient(options: KmaWarningClientOptions): KmaWar
     if (res.status === 401 || res.status === 403) throw new KmaWarningError(`기상특보 접근 거부(HTTP ${res.status})`, "auth");
     if (res.status >= 500) throw new KmaWarningError(`기상특보 서버 오류(HTTP ${res.status})`, "server");
     if (!res.ok) throw new KmaWarningError(`기상특보 응답 오류(HTTP ${res.status})`, "params");
-    return parseKmaWarnings(body);
+    return body;
   };
 
   const refresh = async (): Promise<KmaWarningSnapshot> => {
@@ -264,7 +297,7 @@ export function createKmaWarningClient(options: KmaWarningClientOptions): KmaWar
       let rejected = 0;
       let partial = false;
       for (let p = 1; ; p++) {
-        const r = await page(p);
+        const r = parseKmaWarnings(await request(buildKmaWarningUrl(key!, p, now())));
         rows.push(...r.rows);
         rejected += r.rejected;
         const seen = (p - 1) * KMA_WARNING_CONTRACT.numOfRows + r.received;
@@ -275,7 +308,10 @@ export function createKmaWarningClient(options: KmaWarningClientOptions): KmaWar
           break;
         }
       }
-      snapshot = { rows, rejected, partial, fetchedAt: now(), error: null };
+      const status = await request(buildKmaStatusUrl(key!))
+        .then(parseKmaStatus)
+        .catch(() => null);
+      snapshot = { rows, rejected, partial, fetchedAt: now(), error: null, status };
     } catch (error) {
       const safe = error instanceof KmaWarningError ? error : new KmaWarningError("기상특보 조회 중 알 수 없는 오류", "network");
       snapshot = { ...snapshot, error: safe };

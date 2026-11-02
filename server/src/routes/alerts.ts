@@ -8,6 +8,7 @@ import { getAlertFeedStatus } from "../alerts/feedStatus.js";
 import { confirmSchoolRegion, getSchoolRegion, listSchoolAlerts, markAlertRead } from "../services/alerts.js";
 import { getKmaWarningClient } from "../integrations/client.js";
 import { getSchoolWeatherWarnings } from "../services/weatherWarnings.js";
+import { listPendingAlertNotices } from "../services/alertNotices.js";
 import { regionSchema } from "../../../shared/schemas.js";
 
 export const alertsRouter = Router();
@@ -22,6 +23,12 @@ alertsRouter.get("/schools/:schoolId/alerts", requireVerified, async (req, res) 
     getAlertFeedStatus(prisma), // STEP A: 수집 상태(공식/모의, 마지막 성공·실패) — 경보 없음과 수집 장애를 구분
   ]);
   res.json({ ...list, feed });
+});
+
+// 외부 경보 교직원 안내: 저장된 자료만 읽음(외부 API 호출 없음)
+alertsRouter.get("/schools/:schoolId/alerts/pending", requireVerified, async (req, res) => {
+  const a = await resolveAccess(prisma, { userId: req.auth!.userId, schoolId: schoolOf(req) });
+  res.json(await listPendingAlertNotices(prisma, { schoolId: schoolOf(req), userId: req.auth!.userId, canManageRegion: a.can("region.manage") }));
 });
 
 // 기상특보(읽기 전용 참고 정보). 소속 교직원 열람, 저장·발령 없음

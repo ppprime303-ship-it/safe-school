@@ -19,7 +19,7 @@ function Initialize-PreviewEnv {
   $s = Get-Content $secretsPath -Raw | ConvertFrom-Json
 
   # 운영·배포·외부 발송 관련 변수는 이 창에서 지움(혹시 설정되어 있어도 쓰지 않음)
-  foreach ($n in "DEPLOY_PROFILE", "DEPLOY_DB_SCHEMA", "DEPLOY_ALLOW_NEW_SCHEMA", "MAIL_API_KEY", "MAIL_FROM", "GMAIL_SMTP_USER", "GMAIL_SMTP_APP_PASSWORD", "MOIS_CBS_SERVICE_KEY", "NEIS_API_KEY", "SCHOOLINFO_API_KEY", "KMA_WARNING_SERVICE_KEY", "ALERT_PROVIDERS", "APP_BASE_URL", "TEST_DATABASE_URL", "ALLOW_DEMO_SEED") {
+  foreach ($n in "DEPLOY_PROFILE", "DEPLOY_DB_SCHEMA", "DEPLOY_ALLOW_NEW_SCHEMA", "MAIL_API_KEY", "MAIL_FROM", "GMAIL_SMTP_USER", "GMAIL_SMTP_APP_PASSWORD", "MOIS_CBS_SERVICE_KEY", "NEIS_API_KEY", "SCHOOLINFO_API_KEY", "KMA_WARNING_SERVICE_KEY", "ALERT_PROVIDERS", "ALERT_MOCK_FEED", "APP_BASE_URL", "TEST_DATABASE_URL", "ALLOW_DEMO_SEED") {
     Remove-Item "Env:$n" -ErrorAction SilentlyContinue
   }
   $pw = [Uri]::EscapeDataString($s.appPassword)

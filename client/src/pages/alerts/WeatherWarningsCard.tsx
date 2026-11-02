@@ -64,7 +64,17 @@ export function WeatherWarningsCard({ schoolId }: { schoolId: string }) {
           {!data.regionSupported && <p className="mt-1 text-sm font-semibold text-warning-strong">이 학교 지역은 아직 특보구역과 연결되어 있지 않아 표시할 수 없습니다. 기상청 등 공식 경로로 확인하세요.</p>}
           {data.stale && <p role="status" className="mt-1 text-sm font-bold text-warning-strong">이전 조회 자료입니다{data.errorKind ? `(새 조회 실패: ${WEATHER_ERROR_LABEL[data.errorKind]})` : ""}. 현재 상황과 다를 수 있습니다.</p>}
           {data.partial && <p className="mt-1 text-sm font-semibold text-warning-strong">자료가 많아 일부만 받았습니다.</p>}
-          {data.regionSupported && active.length === 0 && <p className="mt-1 text-base">최근 {data.windowDays}일 발표분 중 우리 학교 지역에 발효 중인 특보가 없습니다.</p>}
+          {data.regionSupported && active.length === 0 && !data.statusText?.lines.length && <p className="mt-1 text-base">최근 {data.windowDays}일 발표분 중 우리 학교 지역에 발효 중인 특보가 없습니다.</p>}
+          {!!data.statusText?.lines.length && (
+            <div className="mt-2 rounded-control border border-line bg-page p-3 text-sm">
+              <p className="font-bold">기상청 특보 현황 원문(인천 관련 줄){data.statusText.at && ` · ${formatDateTime(data.statusText.at)} 기준`}</p>
+              <ul className="mt-1 space-y-0.5">
+                {data.statusText.lines.map((l) => (
+                  <li key={l}>{l}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {active.length + released.length > 0 && (
             <ul className="mt-2 space-y-2">
               {[...active, ...released].map((w) => (

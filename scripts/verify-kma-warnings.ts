@@ -1,7 +1,7 @@
 // 기상특보 실제 응답 확인(승인 후 실행): npm run kma:verify
-// - getPwnCd 1쪽만 호출합니다. 인증키·요청 주소는 출력하지 않습니다. 건수·응답 필드 이름·인천 구역 결과만 보여 줍니다.
+// - getPwnCd 1쪽과 getPwnStatus 1회만 호출합니다. 인증키·요청 주소는 출력하지 않습니다. 건수·응답 필드 이름·인천 구역 결과만 보여 줍니다.
 // - 형식이 맞으면 KMA_WARNING_CONTRACT.verified 갱신을 검토하고 docs/integrations 에 기록합니다.
-import { buildKmaWarningUrl, KmaWarningError, parseKmaWarnings, summarizeWarnings, zonesForRegion } from "../server/src/integrations/kmaWarnings.js";
+import { buildKmaStatusUrl, buildKmaWarningUrl, KmaWarningError, parseKmaStatus, parseKmaWarnings, summarizeWarnings, zonesForRegion } from "../server/src/integrations/kmaWarnings.js";
 
 async function main() {
   const key = process.env.KMA_WARNING_SERVICE_KEY?.trim();
@@ -23,6 +23,8 @@ async function main() {
     const zones = zonesForRegion({ sido: "인천광역시", sigungu: "영종구" })!;
     const mine = summarizeWarnings(parsed.rows.filter((r) => zones.target.has(r.areaCode)), now);
     console.log(`  인천영종 기준 ${mine.length}건: ${mine.map((w) => `${w.kind}${w.level ?? ""}/${w.status}`).join(", ") || "없음"}`);
+    const status = parseKmaStatus(await (await fetch(buildKmaStatusUrl(key), { signal: AbortSignal.timeout(20_000), headers: { Accept: "application/json" } })).text());
+    console.log(`  특보 현황: ${status ? `인천 관련 ${status.lines.length}줄` : "자료 없음"}`);
   } catch (error) {
     console.log(`[기상특보] 실패: ${error instanceof KmaWarningError ? `${error.kind}${error.code ? ` ${error.code}` : ""} — ${error.message}` : (error as { name?: string })?.name === "TimeoutError" ? "시간 초과" : "연결 실패"}`);
     process.exitCode = 1;

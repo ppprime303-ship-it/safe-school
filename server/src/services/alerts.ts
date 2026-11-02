@@ -6,6 +6,7 @@ import { AppError, notFound } from "../errors.js";
 import { writeAudit } from "./audit.js";
 import { ensureSchoolRegion } from "../alerts/collector.js";
 import { regroupRebroadcasts } from "../alerts/grouping.js";
+import { seriesKeyOf } from "../alerts/kmaSource.js";
 import { noticeCountsByAlert } from "./notices.js";
 import { matchRegion, normalizeSido, NATIONWIDE, type Area } from "../alerts/region.js";
 
@@ -64,6 +65,14 @@ export async function listSchoolAlerts(prisma: PrismaClient, params: { schoolId:
   const cancelledRefs = new Set(
     matches.filter((m) => m.alert.msgType === "cancel" && m.alert.refExternalId).map((m) => `${m.alert.provider}:${m.alert.refExternalId}`),
   );
+  // 기상특보: 같은 묶음(구역·종류·강도)의 최신 발표가 해제면 앞선 발표도 모두 '해제됨'
+  const latestKma = new Map<string, { at: number; cancel: boolean }>();
+  for (const m of matches) {
+    if (m.alert.provider !== "kma_warning") continue;
+    const key = seriesKeyOf(m.alert.externalId);
+    const cur = latestKma.get(key);
+    if (!cur || m.alert.issuedAt.getTime() >= cur.at) latestKma.set(key, { at: m.alert.issuedAt.getTime(), cancel: m.alert.msgType === "cancel" });
+  }
   const noticeCounts = await noticeCountsByAlert(prisma, params.schoolId, ids);
   const now = Date.now();
   const items: AlertItem[] = matches.map((m) => ({
@@ -72,7 +81,7 @@ export async function listSchoolAlerts(prisma: PrismaClient, params: { schoolId:
     reason: m.reason,
     read: group.get(m.alertId)!.read,
     rebroadcastCount: group.get(m.alertId)!.count,
-    cancelled: group.get(m.alertId)!.keys.some((k) => cancelledRefs.has(k)),
+    cancelled: group.get(m.alertId)!.keys.some((k) => cancelledRefs.has(k)) || (m.alert.provider === "kma_warning" && m.alert.msgType !== "cancel" && latestKma.get(seriesKeyOf(m.alert.externalId))?.cancel === true),
     expired: m.alert.expiresAt ? m.alert.expiresAt.getTime() < now : false,
     noticeCount: noticeCounts.get(m.alertId) ?? 0,
     alert: {

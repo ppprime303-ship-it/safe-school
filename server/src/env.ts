@@ -25,6 +25,9 @@ const schema = z.object({
   MOIS_CBS_SERVICE_KEY: z.string().optional(),
   // 공식 API 최소 수집 간격(초). 일일 호출 한도를 넘지 않게 기본 300초
   MOIS_CBS_INTERVAL_SEC: z.coerce.number().int().min(120).max(3600).default(300),
+  // 기상특보 수집(ALERT_PROVIDERS 에 kma_warning 일 때)
+  KMA_WARNING_SERVICE_KEY: z.string().optional(),
+  KMA_WARNING_INTERVAL_SEC: z.coerce.number().int().min(120).max(3600).default(300),
   // STEP A: 나이스 교육정보 개방 포털 인증키(공개 교육정보 조회 전용). 로그·화면 출력 금지. 없으면 호출하지 않음
   NEIS_API_KEY: z.string().optional(),
   // 이 서버의 나이스 하루 호출 상한(공식 한도 수치 확인 전 — 기본 900)

@@ -13,6 +13,7 @@ import { PrimaryButton } from "../../components/ui/PrimaryButton";
 import { FormField } from "../../components/ui/FormField";
 import { Icon } from "../../components/ui/Icon";
 import { WeatherWarningsCard } from "./WeatherWarningsCard";
+import { ALERT_SOURCE_LABEL } from "@shared/externalAlerts";
 
 const POLL_MS = 30_000;
 
@@ -140,11 +141,11 @@ function AlertCard({ item, open, onToggle, schoolId, isAdmin }: { item: AlertIte
       </button>
       {open && (
         <div className="border-t border-line px-4 pb-4 pt-3">
-          <p className="text-sm font-bold text-ink-muted">{a.isMock ? "모의 경보 내용(시연용 가상 — 공식 경보 아님)" : "공식 경보 원문(수정되지 않음)"}</p>
+          <p className="text-sm font-bold text-ink-muted">{a.isMock ? "모의 경보 내용(시연용 가상 — 공식 경보 아님)" : a.provider === "kma_warning" ? "기상청 특보 코드 내용(문구는 코드에서 구성)" : "공식 경보 원문(수정되지 않음)"}</p>
           <blockquote className="mt-1 whitespace-pre-wrap rounded-control border-l-4 border-line-strong bg-page px-3 py-2 text-base">{a.body}</blockquote>
           <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
             <dt className="font-semibold text-ink-muted">출처</dt>
-            <dd>{a.isMock ? "모의 공급자(시연용 가상 경보)" : a.provider}</dd>
+            <dd>{ALERT_SOURCE_LABEL[a.provider] ?? a.provider}</dd>
             <dt className="font-semibold text-ink-muted">수신</dt>
             <dd>{formatDateTime(a.receivedAt)}</dd>
             {a.expiresAt && (

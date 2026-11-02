@@ -4,7 +4,7 @@
 // - 모의 공급자는 is_mock = true 로 저장되어 화면에 '모의 경보'로 표시되고, 운영 환경에서는 쓸 수 없습니다.
 import fs from "node:fs";
 import type { AlertKind, AlertMsgType, AlertProvider, AlertSeverity } from "@prisma/client";
-import { parseAreas, type Area } from "./region.js";
+import { parseAreas, type Area, type MatchResult, type Region } from "./region.js";
 import { mockAlertsAllowed, type DeploymentRole } from "../deploy/environment.js";
 
 export interface NormalizedAlert {
@@ -21,6 +21,8 @@ export interface NormalizedAlert {
   issuedAt: Date;
   expiresAt: Date | null;
   raw: unknown;
+  /** 지역 이름이 아닌 공급자 고유 구역으로 판정할 때(기상특보). 없으면 areas 로 판정 */
+  matchRegion?: (region: Region | null) => MatchResult;
 }
 
 export interface FetchResult {

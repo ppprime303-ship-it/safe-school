@@ -90,10 +90,11 @@ describe("학교 지역 구역", () => {
     expect(z.target.has("L1110000")).toBe(true);
     expect(z.target.has("L1110120") || z.undetermined.has("L1110120")).toBe(false);
   });
-  it("공식 경계가 없는 구는 남부·북부를 대상으로 단정하지 않음, 강화·옹진은 자체 구역", () => {
+  it("연수구는 인천남부, 옛 중구는 단정하지 않음, 강화·옹진은 자체 구역", () => {
     const z = zonesForRegion({ sido: "인천광역시", sigungu: "연수구" })!;
-    expect(z.undetermined.has("L1110120") && z.undetermined.has("L1110130")).toBe(true);
-    expect(z.target.has("L1110120")).toBe(false);
+    expect(z.target.has("L1110120")).toBe(true);
+    expect(z.target.has("L1110130") || z.undetermined.has("L1110130")).toBe(false);
+    expect(zonesForRegion({ sido: "인천광역시", sigungu: "중구" })!.undetermined.has("L1110120")).toBe(true);
     expect(zonesForRegion({ sido: "인천광역시", sigungu: "강화군" })!.target.has("L1010900")).toBe(true);
     expect(zonesForRegion({ sido: "인천광역시", sigungu: "옹진군" })!.target.has("L1013600")).toBe(true);
   });
@@ -113,7 +114,7 @@ describe("조회 클라이언트", () => {
   it("캐시 시간 안에는 다시 호출하지 않음, 지나면 호출", async () => {
     let calls = 0;
     let t = NOW.getTime();
-    const c = createKmaWarningClient({ serviceKey: KEY, now: () => new Date(t), fetchImpl: async () => { calls++; return { ok: true, status: 200, text: async () => ok([row()]) }; } });
+    const c = createKmaWarningClient({ serviceKey: KEY, now: () => new Date(t), fetchImpl: async (u) => { if (u.includes("getPwnCd")) calls++; return { ok: true, status: 200, text: async () => ok([row()]) }; } });
     await c.latest();
     await c.latest();
     expect(calls).toBe(1);
@@ -123,7 +124,7 @@ describe("조회 클라이언트", () => {
   });
   it("여러 쪽을 받고, 상한을 넘으면 일부 표시", async () => {
     const seen: string[] = [];
-    const c = createKmaWarningClient({ serviceKey: KEY, now: () => NOW, fetchImpl: async (u) => { seen.push(/pageNo=(\d+)/.exec(u)![1]!); return { ok: true, status: 200, text: async () => ok(Array.from({ length: 500 }, () => row()), 2000) }; } });
+    const c = createKmaWarningClient({ serviceKey: KEY, now: () => NOW, fetchImpl: async (u) => { if (u.includes("getPwnCd")) seen.push(/pageNo=(\d+)/.exec(u)![1]!); return { ok: true, status: 200, text: async () => ok(Array.from({ length: 500 }, () => row()), 2000) }; } });
     const s = await c.latest();
     expect(seen).toEqual(["1", "2", "3"]);
     expect(s.partial).toBe(true);
@@ -189,7 +190,7 @@ describe("학교별 표시(테스트 DB)", () => {
     expect(await prisma.disasterEvent.count()).toBe(before);
   });
   it("경계 미확정 구는 미판정으로 표시", async () => {
-    const id = await make("인천광역시 연수구 가상로 2");
+    const id = await make("인천광역시 중구 가상로 2");
     const r = await getSchoolWeatherWarnings(prisma, id, client(ok([row({ areaCode: "L1110120", areaName: "인천남부" }), row({ areaCode: "L1110100", areaName: "인천" })])), NOW);
     expect(Object.fromEntries(r.warnings.map((w) => [w.areaName, w.relevance]))).toEqual({ 인천남부: "undetermined", 인천: "target" });
   });

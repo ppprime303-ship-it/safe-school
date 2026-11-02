@@ -6,6 +6,8 @@ import { safeErrorSummary } from "./security/safeLog.js";
 import { startCollector } from "./alerts/collector.js";
 import { assertMockAllowed, mockFileSource, type AlertSource } from "./alerts/providers.js";
 import { MoisCbsSource } from "./alerts/moisCbs.js";
+import { KmaWarningSource } from "./alerts/kmaSource.js";
+import { getKmaWarningClient } from "./integrations/client.js";
 import { setConfiguredAlertSources } from "./alerts/feedStatus.js";
 
 async function main() {
@@ -29,10 +31,16 @@ async function main() {
   const official: AlertSource[] = (env.ALERT_PROVIDERS ?? "").split(",").map((s) => s.trim()).includes("mois_cbs") && env.MOIS_CBS_SERVICE_KEY ? [new MoisCbsSource(env.MOIS_CBS_SERVICE_KEY)] : [];
   if (official.length) console.log(`[alerts] 공식 긴급재난문자 수집 사용(${env.MOIS_CBS_INTERVAL_SEC}초 간격, 응답 형식 확인 전이면 실패가 기록될 수 있음)`);
   const stopOfficial = startCollector(prisma, official, env.MOIS_CBS_INTERVAL_SEC * 1000);
+  // 기상특보(설정한 경우만). 경보함 카드와 같은 클라이언트를 공유해 호출이 늘지 않습니다
+  const kmaClient = (env.ALERT_PROVIDERS ?? "").split(",").map((s) => s.trim()).includes("kma_warning") ? getKmaWarningClient() : null;
+  const weather: AlertSource[] = kmaClient ? [new KmaWarningSource(kmaClient)] : [];
+  if (weather.length) console.log(`[alerts] 기상특보 수집 사용(${env.KMA_WARNING_INTERVAL_SEC}초 간격)`);
+  const stopWeather = startCollector(prisma, weather, env.KMA_WARNING_INTERVAL_SEC * 1000);
   // STEP A: 경보함 수집 상태 표시용 — 실제로 켠 공급자만 등록(꺼져 있으면 경보함에 '공식 수집 미연결')
   setConfiguredAlertSources([
     ...sources.map((s) => ({ provider: s.provider, isMock: s.isMock, intervalMs: env.ALERT_COLLECT_INTERVAL_SEC * 1000 })),
     ...official.map((s) => ({ provider: s.provider, isMock: s.isMock, intervalMs: env.MOIS_CBS_INTERVAL_SEC * 1000 })),
+    ...weather.map((s) => ({ provider: s.provider, isMock: s.isMock, intervalMs: env.KMA_WARNING_INTERVAL_SEC * 1000 })),
   ]);
 
   // Replit이 서버를 멈출 때 DB 연결을 깔끔하게 닫습니다.
@@ -40,6 +48,7 @@ async function main() {
     console.log(`[SAFE SCHOOL] ${signal} 수신, 종료합니다.`);
     stopCollector();
     stopOfficial();
+    stopWeather();
     httpServer.close();
     await prisma.$disconnect();
     process.exit(0);

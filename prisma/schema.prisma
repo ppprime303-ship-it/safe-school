@@ -618,6 +618,7 @@ model AuditLog {
 enum AlertProvider {
   mock
   mois_cbs
+  kma_warning
 }
 
 enum AlertKind {
