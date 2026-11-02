@@ -6,13 +6,17 @@
 //
 // 원칙
 // - 배포 프로필(DEPLOY_PROFILE)과 대상 스키마(DEPLOY_DB_SCHEMA)를 반드시 명시해야 합니다(기본값 없음).
-// - 프로필별 허용 스키마만 통과: demo → safeschool_browser_demo, production → safeschool_prod(_이름)
+// - 프로필별 허용 스키마만 통과: demo → safeschool_browser_demo, production → safeschool_prod(_이름), beta → safeschool_beta
 // - public, 이름에 test가 들어간 스키마, 형식이 틀린 이름은 언제나 거부
 // - DATABASE_URL에 이미 schema가 있으면 DEPLOY_DB_SCHEMA와 같아야 함(다르면 거부)
 // - 검증을 통과한 URL 하나를 마이그레이션과 서버 시작에 똑같이 씁니다.
 // - 오류·로그에는 비밀번호·전체 주소를 넣지 않고 호스트/DB 이름/스키마만 씁니다.
 
-export type DeployProfile = "demo" | "production";
+import { BETA_SCHEMA } from "./environment.js";
+
+export type DeployProfile = "demo" | "production" | "beta";
+
+const isProfile = (p: string | undefined): p is DeployProfile => p === "demo" || p === "production" || p === "beta";
 
 export const DEMO_SCHEMA = "safeschool_browser_demo";
 const PROD_SCHEMA = /^safeschool_prod(_[a-z0-9]{1,20})?$/;
@@ -42,6 +46,7 @@ export function describeDbUrl(raw: string | undefined): string {
 }
 
 export function allowedSchema(profile: DeployProfile, schema: string): boolean {
+  if (profile === "beta") return schema === BETA_SCHEMA;
   return profile === "demo" ? schema === DEMO_SCHEMA : PROD_SCHEMA.test(schema);
 }
 
@@ -60,8 +65,8 @@ export function resolveDeployTarget(env: Record<string, string | undefined>): De
   const schema = env.DEPLOY_DB_SCHEMA?.trim();
 
   if (!raw) errors.push("DATABASE_URL이 없습니다.");
-  if (!profileRaw) errors.push("DEPLOY_PROFILE이 없습니다(demo 또는 production을 명시).");
-  else if (profileRaw !== "demo" && profileRaw !== "production") errors.push(`DEPLOY_PROFILE 값이 올바르지 않습니다: ${JSON.stringify(profileRaw.slice(0, 20))}(demo 또는 production)`);
+  if (!profileRaw) errors.push("DEPLOY_PROFILE이 없습니다(demo, production, beta 중 하나를 명시).");
+  else if (!isProfile(profileRaw)) errors.push(`DEPLOY_PROFILE 값이 올바르지 않습니다: ${JSON.stringify(profileRaw.slice(0, 20))}(demo, production, beta)`);
   if (!schema) errors.push("DEPLOY_DB_SCHEMA가 없습니다(배포 대상 스키마를 명시).");
 
   let url: URL | null = null;
@@ -83,11 +88,13 @@ export function resolveDeployTarget(env: Record<string, string | undefined>): De
   if (schema) {
     const why = forbiddenSchemaReason(schema);
     if (why) errors.push(why);
-    else if ((profileRaw === "demo" || profileRaw === "production") && !allowedSchema(profileRaw, schema)) {
+    else if (isProfile(profileRaw) && !allowedSchema(profileRaw, schema)) {
       errors.push(
         profileRaw === "demo"
           ? `시연(demo) 배포는 ${DEMO_SCHEMA} 스키마만 허용합니다(현재 ${schema}).`
-          : `운영(production) 배포는 safeschool_prod 또는 safeschool_prod_<이름> 스키마만 허용합니다(현재 ${schema}).`,
+          : profileRaw === "beta"
+            ? `Beta 배포는 ${BETA_SCHEMA} 스키마만 허용합니다(현재 ${schema}). 운영·Prototype 스키마에는 연결하지 않습니다.`
+            : `운영(production) 배포는 safeschool_prod 또는 safeschool_prod_<이름> 스키마만 허용합니다(현재 ${schema}).`,
       );
     }
   }
@@ -97,7 +104,7 @@ export function resolveDeployTarget(env: Record<string, string | undefined>): De
     if (inUrl !== null && inUrl !== schema) errors.push(`DATABASE_URL의 schema(${inUrl})와 DEPLOY_DB_SCHEMA(${schema})가 다릅니다. 하나로 맞추세요.`);
   }
 
-  if (errors.length || !url || !schema || (profileRaw !== "demo" && profileRaw !== "production")) return { ok: false, errors: errors.length ? errors : ["설정이 올바르지 않습니다."] };
+  if (errors.length || !url || !schema || !isProfile(profileRaw)) return { ok: false, errors: errors.length ? errors : ["설정이 올바르지 않습니다."] };
   url.searchParams.set("schema", schema);
   const target = url.toString();
   return { ok: true, profile: profileRaw, schema, url: target, summary: `${describeDbUrl(target)} · 프로필=${profileRaw}` };
@@ -110,8 +117,9 @@ export function resolveDeployTarget(env: Record<string, string | undefined>): De
 export function productionDbGuard(env: Record<string, string | undefined>): string[] {
   if (env.NODE_ENV !== "production") {
     // STEP 6: 운영 프로필을 지정했는데 개발·테스트 모드로 켜면(systemd에 NODE_ENV 누락 등) 검사를 건너뛰게 되므로 시작 거부
-    return env.DEPLOY_PROFILE?.trim() === "production"
-      ? ["DEPLOY_PROFILE=production 인데 NODE_ENV가 production이 아닙니다. 운영 서버는 NODE_ENV=production 으로 시작하세요(npm start 또는 npm run deploy:start)."]
+    const profile = env.DEPLOY_PROFILE?.trim();
+    return profile === "production" || profile === "beta"
+      ? [`DEPLOY_PROFILE=${profile} 인데 NODE_ENV가 production이 아닙니다. 운영 서버는 NODE_ENV=production 으로 시작하세요(npm start 또는 npm run deploy:start).`]
       : [];
   }
   const r = resolveDeployTarget(env);

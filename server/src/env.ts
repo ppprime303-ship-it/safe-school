@@ -1,6 +1,7 @@
+import fs from "node:fs";
 import { z } from "zod";
 import { productionDbGuard } from "./deploy/dbTarget.js";
-import { alertProviderErrors, deploymentRole, pilotNetworkErrors, pilotReadinessWarnings } from "./deploy/environment.js";
+import { alertProviderErrors, betaEnvironmentErrors, deploymentRole, pilotNetworkErrors, pilotReadinessWarnings } from "./deploy/environment.js";
 
 // 환경변수를 시작할 때 한 번 검사합니다. 값은 Replit Secrets(또는 로컬 .env)에 넣고,
 // 코드나 GitHub에는 절대 적지 않습니다.
@@ -75,3 +76,18 @@ if (pilotErrors.length) {
   process.exit(1);
 }
 for (const w of pilotReadinessWarnings(deployRole, process.env)) console.warn(`[시범운영 점검] ${w}`);
+
+// Beta PILOT 2: 기존 Prototype과 분리된 대상인지 검사하고, 사진 저장 폴더에 쓸 수 있어야 시작합니다(systemd 권한 불일치를 첫 업로드 전에 발견)
+const betaErrors = betaEnvironmentErrors(deployRole, process.env);
+if (betaErrors.length === 0 && deployRole === "beta") {
+  try {
+    fs.accessSync(process.env.INCIDENT_UPLOAD_DIR!, fs.constants.W_OK);
+  } catch {
+    betaErrors.push("INCIDENT_UPLOAD_DIR 에 쓸 수 없습니다(폴더·권한·systemd ReadWritePaths 확인).");
+  }
+}
+if (betaErrors.length) {
+  console.error("[설정 오류] Beta 환경 분리 검사 실패 — 시작하지 않습니다:");
+  for (const e of betaErrors) console.error(` - ${e}`);
+  process.exit(1);
+}

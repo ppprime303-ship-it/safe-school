@@ -11,7 +11,8 @@
 // - reset·삭제·시드는 하지 않습니다.
 import { spawn, spawnSync } from "node:child_process";
 import { PrismaClient } from "@prisma/client";
-import { newSchemaDecision, resolveDeployTarget } from "../server/src/deploy/dbTarget.js";
+import { newSchemaDecision, resolveDeployTarget, type DeployProfile } from "../server/src/deploy/dbTarget.js";
+import { betaEnvironmentErrors, betaPreflightErrors } from "../server/src/deploy/environment.js";
 import { safeErrorSummary } from "../server/src/security/safeLog.js";
 
 const mode = process.argv.includes("--check") ? "check" : process.argv.includes("--migrate-only") ? "migrate" : "start";
@@ -22,9 +23,16 @@ const fail = (msgs: string[], header = "중단 — DB를 바꾸지 않았습니�
   process.exit(1);
 };
 
-async function preflight(url: string, schema: string, profile: "demo" | "production") {
+async function preflight(url: string, schema: string, profile: DeployProfile) {
   const db = new PrismaClient({ datasourceUrl: url, log: ["error"] });
   try {
+    // Beta: 주소 문자열이 아니라 실제로 연결된 DB·계정·스키마를 다시 확인(읽기 전용). 운영 DB면 마이그레이션 전에 멈춤
+    if (profile === "beta") {
+      const who = await db.$queryRaw<{ database: string; user: string }[]>`SELECT current_database() AS database, current_user AS "user"`;
+      const schemas = await db.$queryRaw<{ name: string }[]>`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE 'safeschool%'`;
+      const errors = betaPreflightErrors({ database: who[0]!.database, user: who[0]!.user, schemas: schemas.map((s) => s.name) });
+      if (errors.length) fail(errors);
+    }
     const rows = await db.$queryRaw<{ schema_exists: boolean; has_migrations: boolean; has_schools: boolean; has_users: boolean }[]>`
       SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = ${schema}) AS schema_exists,
              to_regclass(format('%I._prisma_migrations', ${schema}::text)) IS NOT NULL AS has_migrations,
@@ -55,6 +63,10 @@ async function preflight(url: string, schema: string, profile: "demo" | "product
 async function main() {
   const target = resolveDeployTarget(process.env);
   if (!target.ok) return fail(target.errors);
+  if (target.profile === "beta") {
+    const errors = betaEnvironmentErrors("beta", process.env);
+    if (errors.length) return fail(errors);
+  }
   log(`대상: ${target.summary}`);
   await preflight(target.url, target.schema, target.profile);
   if (mode === "check") {

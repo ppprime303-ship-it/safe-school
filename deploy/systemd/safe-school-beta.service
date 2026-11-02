@@ -1,0 +1,58 @@
+# /etc/systemd/system/safe-school-beta.service — Beta PILOT 2(기존 safe-school.service 와 별개의 앱)
+#   앱 계정 ss-beta, 포트 5100, DB safeschool_beta, 코드 /srv/safe-school-beta, 사진 /var/lib/safe-school-beta/uploads
+#   마이그레이션은 재시작으로 실행되지 않습니다. 백업 후 운영자가 별도 승인을 받아 `npm run deploy:migrate` 로 실행합니다.
+[Unit]
+Description=SAFE SCHOOL Beta PILOT 2
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=ss-beta
+Group=ss-beta
+WorkingDirectory=/srv/safe-school-beta/current
+EnvironmentFile=/etc/safe-school-beta/beta.env
+Environment=NODE_ENV=production
+# 2GB 서버에서 Prototype과 같이 띄울 때의 상한(실측 전 값, docs/beta2/release/beta-environment.md 4절)
+Environment=NODE_OPTIONS=--max-old-space-size=200
+ExecStartPre=/usr/bin/node dist/deploy-start.js --check
+ExecStart=/usr/bin/node dist/server/index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+MemoryHigh=300M
+MemoryMax=400M
+TasksMax=120
+# 격리: 코드는 읽기 전용, 사진 폴더만 쓰기(StateDirectory 가 폴더를 ss-beta 소유·700 으로 만듦)
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadOnlyPaths=/srv/safe-school-beta
+StateDirectory=safe-school-beta/uploads
+StateDirectoryMode=0700
+ReadWritePaths=/var/lib/safe-school-beta/uploads
+InaccessiblePaths=-/etc/safe-school -/srv/safe-school
+UMask=0077
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectProc=invisible
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SyslogIdentifier=safe-school-beta
+
+[Install]
+WantedBy=multi-user.target

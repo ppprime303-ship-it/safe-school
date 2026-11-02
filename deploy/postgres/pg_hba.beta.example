@@ -1,0 +1,4 @@
+# Beta PILOT 2 추가 줄(기존 pg_hba.conf 의 ss_pilot 줄은 그대로 두고, 승인 후 그 아래에 추가). 외부 주소 줄은 두지 않습니다.
+# TYPE  DATABASE         USER      ADDRESS        METHOD
+host    safeschool_beta  ss_beta   127.0.0.1/32   scram-sha-256
+host    safeschool_beta  ss_beta   ::1/128        scram-sha-256

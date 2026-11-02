@@ -7,14 +7,25 @@
 //
 // 스키마 이름은 배포 검증(dbTarget)을 통과한 값이라 형식이 보장됩니다. 판정은 DEPLOY_DB_SCHEMA 를 기준으로 합니다.
 
+import path from "node:path";
+import type { DataMode } from "../../../shared/release.js";
+
 export const JUDGE_SCHEMA = "safeschool_prod_judge";
 export const PILOT_SCHEMA = "safeschool_prod_pilot";
 
-export type DeploymentRole = "judge" | "pilot" | "production" | "dev";
+// Beta PILOT 2 전용 대상(기존 Prototype과 앱·포트·DB·계정·업로드 경로를 모두 달리함 — docs/beta2/release/beta-environment.md)
+export const BETA_SCHEMA = "safeschool_beta";
+export const BETA_DATABASE = "safeschool_beta";
+export const BETA_DB_USER = "ss_beta";
+export const BETA_PORT = "5100";
+export const BETA_UPLOAD_ROOT = "/var/lib/safe-school-beta/";
+
+export type DeploymentRole = "judge" | "pilot" | "beta" | "production" | "dev";
 
 export function deploymentRole(env: Record<string, string | undefined>): DeploymentRole {
   if (env.NODE_ENV !== "production") return "dev";
   const schema = env.DEPLOY_DB_SCHEMA?.trim();
+  if (env.DEPLOY_PROFILE?.trim() === "beta" || schema === BETA_SCHEMA) return "beta";
   if (schema === JUDGE_SCHEMA) return "judge";
   if (schema === PILOT_SCHEMA) return "pilot";
   return "production";
@@ -79,5 +90,71 @@ export function pilotReadinessWarnings(role: DeploymentRole, env: Record<string,
   else if (env.MAIL_PROVIDER !== "resend" || !env.MAIL_API_KEY || !env.MAIL_FROM) w.push("메일 발송 미설정 — 교직원 가입(이메일 인증)이 503으로 거부됩니다.");
   if (!env.SCHOOLINFO_API_KEY) w.push("학교알리미 인증키 미설정 — 저장된 학교 목록으로만 검색합니다.");
   if (!(env.ALERT_PROVIDERS ?? "").includes("mois_cbs")) w.push("공식 재난문자 수집 꺼짐(승인·응답 형식 확인 전 기본값).");
+  if (!env.INCIDENT_UPLOAD_DIR) w.push("INCIDENT_UPLOAD_DIR 미설정 — 현장 사진 저장이 실패할 수 있습니다(systemd 읽기 전용 경로).");
   return w;
+}
+
+/** 현장 사진 저장 경로: 코드 릴리스 폴더 밖, Beta 전용 영구 경로만(릴리스 전환으로 사진이 사라지거나 Prototype 경로와 섞이지 않게) */
+export function betaUploadDirErrors(env: Record<string, string | undefined>): string[] {
+  const dir = env.INCIDENT_UPLOAD_DIR?.trim();
+  if (!dir) return [`Beta는 INCIDENT_UPLOAD_DIR 을 ${BETA_UPLOAD_ROOT} 아래로 지정해야 합니다.`];
+  if (path.posix.normalize(dir) !== dir.replace(/\/$/, "") || !dir.startsWith(BETA_UPLOAD_ROOT) || dir.length <= BETA_UPLOAD_ROOT.length) {
+    return [`Beta INCIDENT_UPLOAD_DIR 은 ${BETA_UPLOAD_ROOT} 아래의 영구 경로여야 합니다(릴리스·Prototype 경로 금지).`];
+  }
+  return [];
+}
+
+/**
+ * Beta 앱 시작 검사 — 하나라도 어긋나면 시작 거부. 스키마가 맞아도 DB·계정·포트가 Prototype 쪽이면 막습니다.
+ * 가상 데이터 모드에서는 실제 메일 발송을 켤 수 없고, 실제 학교 모드는 승인 표시가 있어야 합니다.
+ * 오류 문구에는 주소·비밀번호를 넣지 않습니다.
+ */
+export function betaEnvironmentErrors(role: DeploymentRole, env: Record<string, string | undefined>): string[] {
+  if (role !== "beta") return [];
+  const errors: string[] = [];
+  if (env.DEPLOY_PROFILE?.trim() !== "beta") errors.push("Beta 앱은 DEPLOY_PROFILE=beta 로 시작해야 합니다.");
+  if (env.DEPLOY_DB_SCHEMA?.trim() !== BETA_SCHEMA) errors.push(`Beta 앱은 스키마 ${BETA_SCHEMA} 만 사용합니다.`);
+  let url: URL | null = null;
+  try {
+    url = new URL(env.DATABASE_URL ?? "");
+  } catch {
+    url = null;
+  }
+  const dbHost = url?.hostname.replace(/^\[|\]$/g, "") ?? "";
+  if (!LOOPBACK.has(dbHost)) errors.push("Beta DB는 같은 서버(127.0.0.1)의 PostgreSQL만 사용합니다(DATABASE_URL 호스트 확인).");
+  if (decodeURIComponent(url?.pathname.slice(1) ?? "") !== BETA_DATABASE) errors.push(`Beta 앱은 DB ${BETA_DATABASE} 만 사용합니다(운영·Prototype DB 연결 거부).`);
+  if (decodeURIComponent(url?.username ?? "") !== BETA_DB_USER) errors.push(`Beta 앱은 DB 계정 ${BETA_DB_USER} 만 사용합니다(운영·Prototype 계정 거부).`);
+  if ((env.PORT ?? "").trim() !== BETA_PORT) errors.push(`Beta 앱 포트는 ${BETA_PORT} 입니다(기존 Prototype 포트와 분리).`);
+  if (!LOOPBACK.has((env.LISTEN_HOST ?? "0.0.0.0").trim())) errors.push("Beta 앱은 LISTEN_HOST=127.0.0.1 이어야 합니다(Caddy를 거치지 않은 직접 접속 차단).");
+  if ((env.TRUST_PROXY_HOPS ?? "1").trim() !== "1") errors.push("Beta 앱(같은 서버의 Caddy 1단)은 TRUST_PROXY_HOPS=1 이어야 합니다.");
+  if (!/^https:\/\//.test(env.APP_BASE_URL ?? "")) errors.push("Beta APP_BASE_URL 은 https 주소여야 합니다.");
+  errors.push(...betaUploadDirErrors(env));
+  const mode = env.BETA_DATA_MODE?.trim();
+  if (mode !== "virtual_test" && mode !== "school_pilot") errors.push("BETA_DATA_MODE 를 virtual_test 또는 school_pilot 으로 명시해야 합니다.");
+  if (mode === "virtual_test" && env.MAIL_PROVIDER === "resend") errors.push("가상 데이터 모드에서는 실제 메일 발송(MAIL_PROVIDER=resend)을 켤 수 없습니다.");
+  if (mode === "school_pilot" && env.BETA_SCHOOL_PILOT_APPROVED !== "true") errors.push("실제 학교 모드는 학교·개인정보 승인 후 BETA_SCHOOL_PILOT_APPROVED=true 로만 시작합니다.");
+  return errors;
+}
+
+/** Beta 앱이 실제로 연결된 DB 확인(deploy-start 사전 점검의 읽기 전용 조회 결과로 판정). 같은 DB에 운영 스키마가 보이면 거부 */
+export function betaPreflightErrors(p: { database: string; user: string; schemas: string[] }): string[] {
+  const errors: string[] = [];
+  if (p.database !== BETA_DATABASE) errors.push(`연결된 DB가 ${BETA_DATABASE} 가 아닙니다.`);
+  if (p.user !== BETA_DB_USER) errors.push(`연결된 DB 계정이 ${BETA_DB_USER} 가 아닙니다.`);
+  const foreign = p.schemas.filter((s) => s.startsWith("safeschool_prod") || s === "safeschool_browser_demo");
+  if (foreign.length) errors.push(`이 DB에 운영·시연 스키마가 있습니다(${foreign.join(", ")}). Beta 전용 DB가 아닙니다.`);
+  return errors;
+}
+
+/** 화면 안내용 데이터 구분: 개발·심사는 가상 데이터, Beta는 명시한 값(잘못된 값은 시작 거부), 그 밖의 운영은 실제 학교 */
+export function dataModeFor(role: DeploymentRole, env: Record<string, string | undefined>): DataMode {
+  if (role === "dev" || role === "judge") return "virtual_test";
+  if (role === "beta") return env.BETA_DATA_MODE?.trim() === "school_pilot" ? "school_pilot" : "virtual_test";
+  return "school_pilot";
+}
+
+/** Beta 데모 시드 거부 사유: 가상 데이터 모드에서만 허용(시범운영 스키마 금지는 seed.ts 가 따로 검사) */
+export function demoSeedRefusal(role: DeploymentRole, env: Record<string, string | undefined>): string | null {
+  if (role === "beta" && env.BETA_DATA_MODE?.trim() !== "virtual_test") return "Beta 실제 학교 모드에는 데모 데이터를 넣을 수 없습니다.";
+  return null;
 }
