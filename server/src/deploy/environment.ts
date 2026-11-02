@@ -9,6 +9,7 @@
 
 import path from "node:path";
 import type { DataMode } from "../../../shared/release.js";
+import { MOIS_CBS_CONTRACT } from "../alerts/moisCbs.js";
 
 export const JUDGE_SCHEMA = "safeschool_prod_judge";
 export const PILOT_SCHEMA = "safeschool_prod_pilot";
@@ -129,6 +130,7 @@ export function betaEnvironmentErrors(role: DeploymentRole, env: Record<string, 
   if ((env.TRUST_PROXY_HOPS ?? "1").trim() !== "1") errors.push("Beta 앱(같은 서버의 Caddy 1단)은 TRUST_PROXY_HOPS=1 이어야 합니다.");
   if (!/^https:\/\//.test(env.APP_BASE_URL ?? "")) errors.push("Beta APP_BASE_URL 은 https 주소여야 합니다.");
   errors.push(...betaUploadDirErrors(env));
+  if ((env.ALERT_PROVIDERS ?? "").includes("mois_cbs") && !MOIS_CBS_CONTRACT.verified) errors.push("공식 재난문자 수집은 활용 승인과 공식 명세 확인(MOIS_CBS_CONTRACT.verified) 전에는 켤 수 없습니다.");
   const mode = env.BETA_DATA_MODE?.trim();
   if (mode !== "virtual_test" && mode !== "school_pilot") errors.push("BETA_DATA_MODE 를 virtual_test 또는 school_pilot 으로 명시해야 합니다.");
   if (mode === "virtual_test" && (env.MAIL_PROVIDER === "resend" || env.MAIL_PROVIDER === "gmail")) errors.push(`가상 데이터 모드에서는 실제 메일 발송(MAIL_PROVIDER=${env.MAIL_PROVIDER})을 켤 수 없습니다.`);
