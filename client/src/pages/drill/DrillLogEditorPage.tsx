@@ -19,6 +19,7 @@ import { ErrorState, LoadingState } from "../../components/ui/States";
 import { PrimaryButton } from "../../components/ui/PrimaryButton";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { autoEvacSentence, buildDrillDoc, defaultManual, editorLabels, markDraft, participantCounts, reportStatusLabel, summarizeClasses, timeBasisNote, whenText, type DrillManual, type DrillSnapshot, type OX } from "@shared/drillLog";
+import { IncidentFollowupSection } from "../incidents/IncidentFollowup";
 import { DrillDocPreview } from "./DrillDocPreview";
 import { StaffPicker, WHO_MAX, type StaffEntry } from "./StaffPicker";
 
@@ -135,11 +136,18 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
     }
   };
 
-  const download = async () => {
+  // 후속 조치를 기록한 뒤: 작성 중이고 입력 변경이 없으면 시스템 기록을 다시 불러 새 판으로, 그 밖에는 알림으로 담당자가 고름(완료본을 몰래 덮어쓰지 않음)
+  const afterFollowup = async () => {
+    if (!d || !manual) return;
+    if (d.log.status === "draft" && !dirty) await save(true);
+    else await load();
+  };
+
+  const download = async (version?: number) => {
     setDownloading(true);
     setDlMsg(null);
     try {
-      const res = await fetch(`/api/schools/${schoolId}/drill-logs/${logId}/export.hwpx`, { credentials: "same-origin", headers: { "X-Requested-With": "safe-school" } });
+      const res = await fetch(`/api/schools/${schoolId}/drill-logs/${logId}/export.hwpx${version ? `?version=${version}` : ""}`, { credentials: "same-origin", headers: { "X-Requested-With": "safe-school" } });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new ApiError(res.status, j.code ?? "http_error", j.message ?? "파일을 만들지 못했습니다.");
@@ -154,7 +162,7 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 2000);
-      setDlMsg({ ok: true, text: `${name} 내려받기(판 ${d?.log.version ?? "-"})${dirty ? " — 저장하지 않은 변경은 들어가지 않았습니다" : ""}.` });
+      setDlMsg({ ok: true, text: `${name} 내려받기(판 ${version ?? d?.log.version ?? "-"})${dirty && !version ? " — 저장하지 않은 변경은 들어가지 않았습니다" : ""}.` });
     } catch (e) {
       setDlMsg({ ok: false, text: describeError(e).message });
     } finally {
@@ -241,10 +249,11 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
         {d.sourceChanges.length > 0 && (
           <section role="alert" className="rounded-card border-2 border-warning bg-warning-soft p-4 text-warning-strong print:hidden">
             <p className="font-bold">⚠ 자동작성({formatDateTime(d.log.autoTakenAt)}) 이후 원본 기록이 바뀌었습니다. 문서에는 아직 반영하지 않았습니다.</p>
+            {d.log.status === "completed" && <p className="mt-1 text-sm font-semibold">지금의 완성본은 그대로 보존됩니다. 반영하려면 새 판을 만드세요(이전 판은 수정 이력에서 내려받을 수 있습니다).</p>}
             <ul className="mt-1 list-disc pl-5 text-sm">{d.sourceChanges.map((c) => <li key={c}>{c}</li>)}</ul>
             {!ro && (
               <PrimaryButton className="mt-2" variant="secondary" disabled={saving} onClick={() => setRefreshAsk(true)}>
-                시스템 기록 다시 불러오기
+                {d.log.status === "completed" ? "변경을 반영한 새 판 만들기" : "시스템 기록 다시 불러오기"}
               </PrimaryButton>
             )}
           </section>
@@ -276,8 +285,8 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
                       ))}
                     </ul>
                   )}
-                  <Link href={`/s/${schoolId}/incidents?event=${d.log.eventId}`} className="mt-1 inline-flex min-h-touch items-center text-sm font-bold text-accent underline">현장 제보 화면에서 처리 상태 확인·변경</Link>
-                  <span className="block text-sm text-ink-muted">보고서에서는 상태를 바꾸지 않습니다. 진행 중에 원본 제보의 상태를 고친 뒤 시스템 기록을 다시 불러오면 반영됩니다.</span>
+                  <Link href={`/s/${schoolId}/incidents?event=${d.log.eventId}`} className="mt-1 inline-flex min-h-touch items-center text-sm font-bold text-accent underline">현장 제보 화면 열기</Link>
+                  <span className="block text-sm text-ink-muted">위 상태는 이 판의 자동 기록입니다. 원본 제보의 상태는 아래 후속 조치에서 따로 기록합니다.</span>
                   <span className="block text-sm text-ink-muted">제보자 이름 없이, 자유 기재의 교직원 이름·전화번호는 가려서 붙임 2에 들어갑니다{s.maskedCount ? `(가림 ${s.maskedCount}곳)` : ""}.</span>
                 </dd>
               </>
@@ -296,6 +305,8 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
           </dl>
           <p className="mt-2 text-sm text-ink-muted">학생 수는 보고된 학급의 '대피 확인' 합계입니다(재적·미보고 학급 제외). 보고 시각은 대피 완료 시각이 아닙니다. 학급별 내용은 붙임에 들어갑니다.</p>
         </section>
+
+        {real && d.canEdit && <IncidentFollowupSection key={d.log.version} schoolId={schoolId} eventId={d.log.eventId} onChanged={() => void afterFollowup()} />}
 
         {/* 4. 담당자 입력 */}
         <section className="rounded-card border-2 border-warning bg-card p-4 shadow-card print:hidden" aria-labelledby="manual-title">
@@ -466,7 +477,7 @@ export function DrillLogEditorPage({ schoolId, logId }: { schoolId: string; logI
           <p className="mt-1 text-sm text-ink-muted">내용이 바뀌어 저장될 때만 판 번호가 올라갑니다. 이전 판은 고치거나 지울 수 없습니다.</p>
           <ol className="mt-2 space-y-1 text-sm">
             {d.revisions.map((r) => (
-              <li key={r.version}>판 {r.version}{r.version === d.log.version ? " (현재 판 · 한글 파일 기준)" : ""} · {r.status === "completed" ? "작성 완료" : "작성 중"} · {formatDateTime(r.changedAt)} · {r.changedByName ?? "(알 수 없음)"}</li>
+              <li key={r.version} className="flex flex-wrap items-center gap-x-3">판 {r.version}{r.version === d.log.version ? " (현재 판 · 한글 파일 기준)" : ""} · {r.status === "completed" ? "작성 완료" : "작성 중"} · {formatDateTime(r.changedAt)} · {r.changedByName ?? "(알 수 없음)"}{r.version !== d.log.version && r.status === "completed" && <button type="button" disabled={downloading} onClick={() => void download(r.version)} className="min-h-touch font-bold text-accent underline">이 판 내려받기</button>}</li>
             ))}
           </ol>
         </details>

@@ -217,6 +217,53 @@ export async function addIncidentUpdate(
 }
 
 /** 처리 상태 변경(incident.manage — 라우트에서 검사). 화면에서 본 상태(expectedStatus)와 다르면 409 */
+/** 실제 재난의 후속 조치(종료 후에도 가능, 모의훈련 불가). 상태 변경·이력·조치 기록·감사 기록을 한 트랜잭션으로. 사건·학급 보고·소재는 건드리지 않음 */
+export async function recordIncidentFollowup(
+  prisma: PrismaClient,
+  params: { schoolId: string; incidentId: string; membershipId: string; actorUserId: string; idempotencyKey: string; input: { status: IncidentStatus; expectedStatus: IncidentStatus; note: string; completedAt?: string }; ip?: string | null },
+) {
+  const { status, expectedStatus, note, completedAt } = params.input;
+  const toDone = status === "resolved";
+  if (toDone === (expectedStatus === "resolved")) throw badRequest("지금 상태와 같습니다.");
+  if (completedAt && !toDone) throw badRequest("완료 시각은 조치 완료에만 적습니다.");
+  const inc = await loadIncident(prisma, params.schoolId, params.incidentId);
+  const key = `${inc.id}:${params.membershipId}:${params.idempotencyKey}`;
+  const prior = await prisma.incidentUpdate.findUnique({ where: { idempotencyKey: key }, select: { id: true } });
+  if (prior) return { id: inc.id, status, replayed: true };
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM "disaster_events" WHERE "id" = ${inc.eventId}::uuid AND "school_id" = ${params.schoolId}::uuid FOR SHARE`;
+      const event = await tx.disasterEvent.findFirstOrThrow({ where: { id: inc.eventId, schoolId: params.schoolId }, select: { mode: true, status: true } });
+      if (event.mode !== "real") throw conflict("followup_real_only", "후속 조치 기록은 실제 재난 제보에만 사용합니다.");
+      const row = await tx.incidentReport.findUniqueOrThrow({ where: { id: inc.id }, select: { createdAt: true } });
+      const now = new Date();
+      const when = completedAt ? new Date(completedAt) : null;
+      if (when && (when.getTime() > now.getTime() + 60_000 || when < row.createdAt)) throw badRequest("완료 시각은 제보 시각과 지금 사이여야 합니다.");
+      const { count } = await tx.incidentReport.updateMany({ where: { id: inc.id, status: expectedStatus }, data: { status, lastActivityAt: now } });
+      if (count !== 1) throw conflict("status_changed", "그사이 다른 담당자가 처리 상태를 바꿨습니다. 최신 상태를 확인하세요.");
+      await tx.incidentStatusHistory.create({ data: { incidentId: inc.id, fromStatus: expectedStatus, toStatus: status, changedByMembershipId: params.membershipId } });
+      const stamp = when ? ` (완료 시각 ${new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(when)})` : "";
+      await tx.incidentUpdate.create({ data: { incidentId: inc.id, authorMembershipId: params.membershipId, kind: "action", note: `${toDone ? "" : "[정정] "}${note}${stamp}`, idempotencyKey: key } });
+      await writeAudit(tx, {
+        schoolId: params.schoolId,
+        actorUserId: params.actorUserId,
+        action: "incident.followup_recorded",
+        targetType: "incident_report",
+        targetId: inc.id,
+        before: { status: expectedStatus },
+        after: { status, eventStatus: event.status, completedAt: when?.toISOString() ?? null }, // 내용은 기록하지 않음
+        ip: params.ip,
+      });
+      return { id: inc.id, status, replayed: false };
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) return { id: inc.id, status, replayed: true };
+    // DB에 후속 조치 마이그레이션이 없으면 트리거가 거부함
+    if (error instanceof Error && error.message.includes("종료된 사건")) throw conflict("followup_unavailable", "이 환경에서는 아직 종료 후 후속 조치를 기록할 수 없습니다. 운영자에게 문의하세요.");
+    throw error;
+  }
+}
+
 export async function changeIncidentStatus(
   prisma: PrismaClient,
   params: { schoolId: string; incidentId: string; membershipId: string; actorUserId: string; status: IncidentStatus; expectedStatus: IncidentStatus; ip?: string | null },

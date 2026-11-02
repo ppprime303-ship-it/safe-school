@@ -563,7 +563,7 @@ function incidentPages(snap: DrillSnapshot, mode: string): LPage[] {
       subtitle: `${snap.schoolName} · ${dateText(snap.event.startedAt)} ${mode} · 제보 ${list.length}건(기록 시점 ${kstStamp(snap.takenAt)})`,
       table: { colPct: INCIDENT_COLS, rowsMm: a.rowsMm, cells: a.cells, headerRows: 1 },
       footnote: last
-        ? "※ 제보자 이름은 싣지 않습니다. 자유 기재 내용은 전화번호·주민등록번호 형태와 교직원 이름을 '○○○'으로 가렸습니다(학생 이름 등은 자동으로 모두 가릴 수 없으니 출력 전 확인).\n※ 처리 상태는 담당자가 현장 제보 화면에서 확인한 내용의 기록 시점 기준입니다."
+        ? "※ 제보자 이름은 싣지 않습니다. 자유 기재 내용은 전화번호·주민등록번호 형태와 교직원 이름을 '○○○'으로 가렸습니다(학생 이름 등은 자동으로 모두 가릴 수 없으니 출력 전 확인).\n※ 처리 상태는 담당자가 확인한 내용의 기록 시점 기준이며, 사건 종료 후 기록한 후속 조치도 포함합니다."
         : "※ 다음 쪽에 이어집니다.",
     };
   });

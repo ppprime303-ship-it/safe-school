@@ -23,10 +23,11 @@ import { AppShell } from "../../components/layout/AppShell";
 import { ErrorState, LoadingState } from "../../components/ui/States";
 import { PrimaryButton } from "../../components/ui/PrimaryButton";
 import { EventModeBadge } from "./IncidentsPage";
+import { FollowupForm } from "./IncidentFollowup";
 import { IncidentPhotos } from "./IncidentPhotos";
 
 /** 표시 전용(테스트 가능) */
-export function IncidentDetailView({ schoolId, incident, canManage, onStatus, statusBusy = false }: { schoolId: string; incident: IncidentDetail; canManage: boolean; onStatus?: (to: IncidentStatus) => void; statusBusy?: boolean }) {
+export function IncidentDetailView({ schoolId, incident, canManage, canFollowup = false, onStatus, onFollowup, statusBusy = false }: { schoolId: string; incident: IncidentDetail; canManage: boolean; canFollowup?: boolean; onStatus?: (to: IncidentStatus) => void; onFollowup?: () => void; statusBusy?: boolean }) {
   const active = incident.event.status === "active";
   return (
     <div className="space-y-4">
@@ -74,8 +75,16 @@ export function IncidentDetailView({ schoolId, incident, canManage, onStatus, st
             </div>
             </>
           ) : (
-            <p className="mt-1 text-sm text-ink-muted">종료된 상황이라 처리 상태를 바꿀 수 없습니다. 정정이 필요하면 플랫폼 운영자에게 정정 절차를 요청하세요(기록은 보존).</p>
+            <p className="mt-1 text-sm text-ink-muted">{incident.event.mode === "real" ? "종료된 상황의 후속 조치는 학교 관리자·안전업무 담당이 아래에서 기록합니다." : "종료된 모의훈련이라 처리 상태를 바꿀 수 없습니다."}</p>
           )}
+        </section>
+      )}
+
+      {canFollowup && incident.event.mode === "real" && !active && (
+        <section aria-labelledby="followup" className="rounded-card border-2 border-accent bg-card p-4 shadow-card">
+          <h2 id="followup" className="text-lg font-bold">후속 조치</h2>
+          <p className="mt-1 text-sm text-ink-muted">사건을 다시 열지 않고 이 제보의 처리 상태만 기록합니다.</p>
+          <div className="mt-2"><FollowupForm schoolId={schoolId} incidentId={incident.id} status={incident.status} onDone={onFollowup ?? (() => undefined)} /></div>
         </section>
       )}
 
@@ -122,6 +131,7 @@ export function IncidentDetailPage({ schoolId, incidentId }: { schoolId: string;
   const { usableMemberships } = useSession();
   const membership = usableMemberships.find((m) => m.school.id === schoolId) ?? null;
   const canManage = can(membership, "incident.manage");
+  const canFollowup = can(membership, "realreport.edit");
   const [incident, setIncident] = useState<IncidentDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusBusy, setStatusBusy] = useState(false);
@@ -162,7 +172,7 @@ export function IncidentDetailPage({ schoolId, incidentId }: { schoolId: string;
       {incident && (
         <div className="space-y-4">
           {notice && <p className="font-semibold text-danger">{notice}</p>}
-          <IncidentDetailView schoolId={schoolId} incident={incident} canManage={canManage} onStatus={(s) => void changeStatus(s)} statusBusy={statusBusy} />
+          <IncidentDetailView schoolId={schoolId} incident={incident} canManage={canManage} canFollowup={canFollowup} onFollowup={() => void load()} onStatus={(s) => void changeStatus(s)} statusBusy={statusBusy} />
           <IncidentPhotos schoolId={schoolId} incident={incident} onChanged={() => void load()} />
           {incident.event.status === "active" ? <AddUpdateForm schoolId={schoolId} incidentId={incidentId} onAdded={() => void load()} /> : <p className="text-base text-ink-muted">종료된 상황입니다. 기록은 조회만 할 수 있습니다.</p>}
         </div>

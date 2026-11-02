@@ -9,11 +9,11 @@ import { parse } from "../validate.js";
 import { requireVerified } from "../auth/session.js";
 import { concurrencyLimit, userRateLimit } from "../middleware/security.js";
 import { resolveAccess } from "../services/access.js";
-import { addIncidentUpdate, changeIncidentStatus, createIncident, getIncident, listIncidents, similarIncidents, type Viewer } from "../services/incidents.js";
+import { addIncidentUpdate, changeIncidentStatus, createIncident, getIncident, listIncidents, recordIncidentFollowup, similarIncidents, type Viewer } from "../services/incidents.js";
 import { addIncidentPhoto, deleteIncidentPhoto, photoUploadEnabled, readIncidentPhoto } from "../services/incidentPhotos.js";
 import { z } from "zod";
 import { idempotencyKeySchema } from "../../../shared/schemas.js";
-import { incidentCreateSchema, incidentStatusSchema, incidentUpdateSchema, similarQuerySchema } from "../../../shared/incident.js";
+import { incidentCreateSchema, incidentFollowupSchema, incidentStatusSchema, incidentUpdateSchema, similarQuerySchema } from "../../../shared/incident.js";
 
 export const incidentsRouter = Router();
 const writeLimiter = userRateLimit({ windowMs: 60 * 1000, max: 60 });
@@ -62,6 +62,14 @@ incidentsRouter.post("/schools/:schoolId/incidents/:incidentId/updates", require
   const input = parse(incidentUpdateSchema, req.body);
   const r = await addIncidentUpdate(prisma, { schoolId: schoolOf(req), incidentId: param(req.params.incidentId), membershipId: viewer.membershipId, actorUserId: req.auth!.userId, idempotencyKey, input, ip: req.ip });
   res.status(r.replayed ? 200 : 201).json(r);
+});
+
+// 후속 조치(실제 재난, 종료 후 포함): 재난대피일지 작성 권한자만. 교장·교감은 종료 후 기록을 바꾸지 않음
+incidentsRouter.post("/schools/:schoolId/incidents/:incidentId/followup", requireVerified, writeLimiter, async (req, res) => {
+  const a = await resolveAccess(prisma, { userId: req.auth!.userId, schoolId: schoolOf(req), need: "realreport.edit" });
+  const idempotencyKey = keyOf(req);
+  const input = parse(incidentFollowupSchema, req.body);
+  res.json(await recordIncidentFollowup(prisma, { schoolId: schoolOf(req), incidentId: param(req.params.incidentId), membershipId: a.membership.id, actorUserId: req.auth!.userId, idempotencyKey, input, ip: req.ip }));
 });
 
 incidentsRouter.post("/schools/:schoolId/incidents/:incidentId/status", requireVerified, writeLimiter, async (req, res) => {

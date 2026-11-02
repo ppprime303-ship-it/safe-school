@@ -389,16 +389,20 @@ export async function updateDrillLog(
   });
 }
 
-export async function exportDrillLogHwpx(prisma: PrismaClient, params: { schoolId: string; logId: string; actorUserId: string; ip?: string | null }) {
+export async function exportDrillLogHwpx(prisma: PrismaClient, params: { schoolId: string; logId: string; actorUserId: string; version?: number; ip?: string | null }) {
   const log = await prisma.drillLog.findFirst({ where: { id: params.logId, schoolId: params.schoolId } });
   if (!log) throw notFound("보고서를 찾을 수 없습니다.");
-  const snap = log.autoSnapshot as unknown as DrillSnapshot;
-  const manual = { ...defaultManual(), ...(log.manual as object) } as DrillManual;
+  // 이전 판 내려받기: 판마다 저장된 내용 그대로(후속 조치로 새 판이 생겨도 이전 완성본을 다시 출력할 수 있음)
+  const rev = params.version !== undefined ? await prisma.drillLogRevision.findFirst({ where: { drillLogId: log.id, version: params.version } }) : null;
+  if (params.version !== undefined && !rev) throw notFound("해당 판을 찾을 수 없습니다.");
+  const snap = (rev?.autoSnapshot ?? log.autoSnapshot) as unknown as DrillSnapshot;
+  const manual = { ...defaultManual(), ...((rev?.manual ?? log.manual) as object) } as DrillManual;
   // Phase 4: 개인정보 검사에 걸리면 내려받지 않음. 최종본이 아니면 '작성 중 초안' 표시를 넣어 내려받음
   const ev = await prisma.disasterEvent.findUniqueOrThrow({ where: { id: log.eventId }, select: { status: true, closedAt: true, mode: true } });
   const issues = await privacyIssuesOf(prisma, params.schoolId, snap, manual, ev.mode);
   if (issues.length) throw new AppError(422, "privacy_check_failed", "출력 문서에 개인정보로 보이는 내용이 있어 내려받을 수 없습니다. 해당 칸을 고친 뒤 다시 시도하세요.", { issues });
-  const final = log.status === "completed" && ev.status === "closed" && !!ev.closedAt && log.autoTakenAt >= ev.closedAt;
+  const takenAt = rev ? new Date(snap.takenAt) : log.autoTakenAt;
+  const final = (rev?.status ?? log.status) === "completed" && ev.status === "closed" && !!ev.closedAt && takenAt >= ev.closedAt;
   let buf: Buffer;
   try {
     const built = buildDrillDoc(snap, manual);
@@ -413,8 +417,8 @@ export async function exportDrillLogHwpx(prisma: PrismaClient, params: { schoolI
     console.error("[drilllog] 문서 생성 실패", e instanceof Error ? e.message : e);
     throw new AppError(500, "doc_generation_failed", "보고서 파일을 만들지 못했습니다. 입력 내용은 저장되어 있으니 잠시 후 다시 시도하세요.");
   }
-  await writeAudit(prisma, { schoolId: params.schoolId, actorUserId: params.actorUserId, action: "drilllog.exported", targetType: "drill_log", targetId: log.id, after: { version: log.version, format: "hwpx", bytes: buf.length }, ip: params.ip });
+  await writeAudit(prisma, { schoolId: params.schoolId, actorUserId: params.actorUserId, action: "drilllog.exported", targetType: "drill_log", targetId: log.id, after: { version: rev?.version ?? log.version, format: "hwpx", bytes: buf.length }, ip: params.ip });
   const d = new Date(new Date(snap.event.startedAt).getTime() + 9 * 3600 * 1000);
   const ymd = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
-  return { buffer: buf, filename: `${docTitle(snap)}${final ? "" : "_작성중초안"}_${ymd}.hwpx`.replace(/[\\/:*?"<>|]/g, "_") };
+  return { buffer: buf, filename: `${docTitle(snap)}${final ? "" : "_작성중초안"}${rev ? `_판${rev.version}` : ""}_${ymd}.hwpx`.replace(/[\\/:*?"<>|]/g, "_") };
 }

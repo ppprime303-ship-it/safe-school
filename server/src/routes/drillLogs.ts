@@ -59,7 +59,9 @@ drillLogsRouter.patch("/schools/:schoolId/drill-logs/:logId", requireVerified, w
 
 drillLogsRouter.get("/schools/:schoolId/drill-logs/:logId/export.hwpx", requireVerified, exportLimiter, async (req, res) => {
   await resolveAccess(prisma, { userId: req.auth!.userId, schoolId: schoolOf(req), need: "drilllog.view" });
-  const { buffer, filename } = await exportDrillLogHwpx(prisma, { schoolId: schoolOf(req), logId: idOf(req, "logId"), actorUserId: req.auth!.userId, ip: req.ip });
+  const rawVersion = Number(req.query.version);
+  const version = req.query.version !== undefined && Number.isInteger(rawVersion) && rawVersion > 0 ? rawVersion : req.query.version !== undefined ? 0 : undefined;
+  const { buffer, filename } = await exportDrillLogHwpx(prisma, { schoolId: schoolOf(req), logId: idOf(req, "logId"), actorUserId: req.auth!.userId, version, ip: req.ip });
   res.setHeader("Content-Type", "application/hwp+zip");
   res.setHeader("Content-Disposition", `attachment; filename="drill-log.hwpx"; filename*=UTF-8''${encodeURIComponent(filename)}`);
   res.setHeader("Cache-Control", "no-store");

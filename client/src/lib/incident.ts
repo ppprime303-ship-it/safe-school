@@ -5,6 +5,7 @@
 //   GET  /api/schools/:schoolId/incidents/:incidentId                → { incident: IncidentDetail }
 //   POST /api/schools/:schoolId/incidents/:incidentId/updates        (Idempotency-Key) → { id }
 //   POST /api/schools/:schoolId/incidents/:incidentId/status         → { id, status }        (incident.manage)
+//   POST /api/schools/:schoolId/incidents/:incidentId/followup       (Idempotency-Key) → { id, status } (realreport.edit, 실제 재난)
 //   POST /api/schools/:schoolId/incidents/:incidentId/photos         → { id }                (Phase 3-C)
 //   GET  /api/schools/:schoolId/incidents/:incidentId/photos/:photoId → image               (incident.photo)
 import type { IncidentStatus, IncidentType, IncidentUpdateKind } from "@shared/incident";

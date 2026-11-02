@@ -57,6 +57,10 @@ export const incidentCreateSchema = z
 export type IncidentCreateInput = z.infer<typeof incidentCreateSchema>;
 
 export const incidentUpdateSchema = z.object({ kind: z.enum(INCIDENT_UPDATE_KINDS, { message: "종류를 고르세요." }), note: cleanText(INCIDENT_TEXT_MAX) }).strict();
+// 후속 조치: 조치 대기↔조치 완료, 내용(정정 사유) 필수, 실제 완료 시각은 선택
+export const incidentFollowupSchema = z
+  .object({ status: z.enum(INCIDENT_STATUS_CHOICES), expectedStatus: z.enum(INCIDENT_STATUSES), note: cleanText(280), completedAt: z.string().datetime().optional() })
+  .strict();
 export const incidentStatusSchema = z.object({ status: z.enum(INCIDENT_STATUSES), expectedStatus: z.enum(INCIDENT_STATUSES) }).strict();
 
 export const incidentPlaceLabel = (category: PresencePlace, detail: string | null) => placeLabel(category, detail)!;
