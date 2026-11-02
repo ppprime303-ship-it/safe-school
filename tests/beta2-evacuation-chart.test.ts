@@ -78,12 +78,21 @@ describe("표시", () => {
     expect((html.match(/전교 대피 현황/g) ?? []).length).toBe(1);
     expect(html.indexOf("전교 전체")).toBeLessThan(html.indexOf("1학년"));
     expect(html.indexOf("1학년")).toBeLessThan(html.indexOf("2학년"));
-    for (const t of ["대피 완료 25명", "대피 미완료 1명", "확인되지 않음 20명", "대상 46명", "학급 보고 1/2", "대피 완료율 54%", "사전 부재 2명 제외", "재적 48명"]) expect(html).toContain(t);
+    for (const t of ["대피 완료 25명", "대피 미확인 1명", "확인되지 않음 20명", "대상 46명", "학급 보고 1/2", "대피 완료율 54%", "사전 부재 2명 제외", "재적 48명"]) expect(html).toContain(t);
+    expect(html).not.toContain("대피 미완료");
+    expect(html).toContain("대피 미확인은 대피 실패를 뜻하지 않으며");
+    expect((html.match(/data-testid="evac-row-/g) ?? []).length).toBe(3);
+    expect(html).toContain("flex-col-reverse");
   });
   it("색 구간은 값이 있을 때만, 집계 불가·재적 미확인·연결 끊김·빈 자료 안내", () => {
     const html = render([cls(1, 1, null)]);
     expect(html).toContain("대피 완료율 집계 불가");
     expect(html).toContain("재적을 모르는 미보고 학급 1곳");
+    expect(html).toContain('data-part="unmeasured"'); // 100%처럼 차 보이지 않게
+    expect(html).toContain("일부 집계");
+    expect(render([cls(1, 1, 28)])).toContain("대피 완료율 확인 중");
+    expect(render([cls(1, 1, 28)])).not.toContain("대피 완료율 0%");
+    expect(render([cls(1, 1, 28)])).not.toContain('data-part="unmeasured"');
     expect(html).not.toContain('data-part="evacuated"');
     expect(render([cls(1, 1, 10, { evacuated: 10 })])).not.toContain('data-part="notEvacuated"');
     expect(render([cls(1, 1, 10)], { lastSuccessAt: connection.lastSuccessAt, failing: true })).toContain("연결 끊김");
@@ -100,6 +109,7 @@ describe("표시", () => {
   it("새 API·폴링·차트 라이브러리 없음", () => {
     const src = fs.readFileSync("client/src/pages/board/EvacuationChart.tsx", "utf8");
     expect(src).not.toMatch(/fetch\(|api\(|setInterval|useEffect/);
+    expect(src).not.toMatch(/recharts|chart\.js|d3/);
     expect(Object.keys(JSON.parse(fs.readFileSync("package.json", "utf8")).dependencies)).toEqual(["@prisma/client", "express", "zod"]);
   });
 });
