@@ -15,4 +15,6 @@ $env:SESSION_SECRET = "local-popup-demo-" + [guid]::NewGuid().ToString("N")
 $env:INCIDENT_UPLOAD_DIR = Join-Path $env:TEMP "safeschool-popup-demo-uploads"
 Set-Location $repo
 npx tsx scripts/alert-popup-demo.ts
+Write-Host "이 창이 임시 서버입니다. 점검이 끝날 때까지 닫거나 Ctrl+C를 누르지 마세요(복사는 마우스로 선택 후 오른쪽 클릭)." -ForegroundColor Yellow
 npx tsx server/src/index.ts
+Write-Host "[안내 창 확인] 임시 서버가 종료되었습니다(코드 $LASTEXITCODE, $(Get-Date -Format 'HH:mm:ss')). 이후 브라우저의 '확인'은 저장되지 않습니다." -ForegroundColor Yellow

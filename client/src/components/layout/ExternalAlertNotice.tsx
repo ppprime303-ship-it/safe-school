@@ -4,7 +4,7 @@
 // - 경보는 학교 재난을 자동 발령하지 않으며, 이 안내는 대피를 지시하지 않습니다.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NOTICE_STATUS_LABEL, type PendingAlertNotice, type PendingAlertNotices } from "@shared/externalAlerts";
-import { api } from "../../lib/api";
+import { api, describeError } from "../../lib/api";
 import { KIND_LABEL } from "../../lib/alerts";
 import { formatDateTime } from "../../lib/format";
 import { Link, usePath } from "../../lib/router";
@@ -12,7 +12,7 @@ import { Icon } from "../ui/Icon";
 
 const POLL_MS = 30_000;
 
-function NoticeDialog({ notice, remaining, schoolId, busy, failed, onConfirm, onHide }: { notice: PendingAlertNotice; remaining: number; schoolId: string; busy: boolean; failed: boolean; onConfirm: () => void; onHide: () => void }) {
+function NoticeDialog({ notice, remaining, schoolId, busy, saveError, onConfirm, onHide }: { notice: PendingAlertNotice; remaining: number; schoolId: string; busy: boolean; saveError: string | null; onConfirm: () => void; onHide: () => void }) {
   const panel = useRef<HTMLDivElement>(null);
   const confirm = useRef<HTMLButtonElement>(null);
   const urgent = notice.priority === "urgent";
@@ -77,7 +77,7 @@ function NoticeDialog({ notice, remaining, schoolId, busy, failed, onConfirm, on
           <dd className="tabular">{notice.lastCollectedAt ? formatDateTime(notice.lastCollectedAt) : "기록 없음"}</dd>
         </dl>
         <p className="mt-3 text-sm text-ink-muted">이 안내는 학교 재난을 자동 발령하지 않습니다. 학교 대응은 관리자와 공식 지침을 따르세요.</p>
-        {failed && <p role="alert" className="mt-2 text-sm font-bold text-danger">확인을 저장하지 못했습니다. 다시 눌러 주세요.</p>}
+        {saveError && <p role="alert" className="mt-2 text-sm font-bold text-danger">확인을 저장하지 못했습니다. {saveError}</p>}
         <div className="mt-3 flex gap-2">
           <button ref={confirm} type="button" disabled={busy} onClick={onConfirm} className="min-h-touch flex-1 rounded-control bg-brand px-4 text-base font-bold text-white hover:bg-brand-hover disabled:opacity-60">확인</button>
           <Link href={`/s/${schoolId}/alerts`} className="inline-flex min-h-touch flex-1 items-center justify-center rounded-control border-2 border-line-strong bg-card px-4 text-base font-bold">상세 보기</Link>
@@ -91,7 +91,7 @@ export function ExternalAlertNotice({ schoolId }: { schoolId: string }) {
   const [data, setData] = useState<PendingAlertNotices | null>(null);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const path = usePath();
 
   const load = useCallback(async () => {
@@ -127,16 +127,17 @@ export function ExternalAlertNotice({ schoolId }: { schoolId: string }) {
 
   const confirm = async () => {
     setBusy(true);
-    setFailed(false);
+    setSaveError(null);
     try {
       await api("POST", `/schools/${schoolId}/alerts/${notice.matchId}/read`, {});
       setData((d) => (d ? { ...d, notices: d.notices.filter((n) => n.matchId !== notice.matchId) } : d));
-    } catch {
-      setFailed(true);
+    } catch (e) {
+      // 서버 연결 실패와 서버 거절을 구분해 표시합니다(조회 실패는 기존 창을 유지하므로, 서버가 꺼져도 창이 남아 있을 수 있음).
+      setSaveError(describeError(e).message);
     } finally {
       setBusy(false);
     }
   };
 
-  return <NoticeDialog notice={notice} remaining={visible.length} schoolId={schoolId} busy={busy} failed={failed} onConfirm={() => void confirm()} onHide={() => setHidden((h) => new Set(h).add(notice.matchId))} />;
+  return <NoticeDialog notice={notice} remaining={visible.length} schoolId={schoolId} busy={busy} saveError={saveError} onConfirm={() => void confirm()} onHide={() => setHidden((h) => new Set(h).add(notice.matchId))} />;
 }
