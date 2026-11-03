@@ -48,7 +48,7 @@ describe("공식 명세 반영", () => {
     const u = new URL(buildSchoolInfoUrl({ name: "가상 초", officeCode: "X10" }, 1, 5000, "k&v"));
     expect(`${u.origin}${u.pathname}`).toBe("https://open.neis.go.kr/hub/schoolInfo");
     expect(Object.fromEntries(u.searchParams)).toEqual({ KEY: "k&v", Type: "json", pIndex: "1", pSize: "1000", ATPT_OFCDC_SC_CODE: "X10", SCHUL_NM: "가상 초" });
-    expect(NEIS_CONTRACT.verified).toBe(false); // 실제 응답 확인 전
+    expect(NEIS_CONTRACT.verified).toBe(true); // 정상 응답 구조 확인(2026-11-03). 행 제외 원인은 별개
   });
   it.each([
     ["INFO-000", null],

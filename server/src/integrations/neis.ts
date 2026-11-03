@@ -9,9 +9,10 @@
 // - 신청인자(모두 선택): ATPT_OFCDC_SC_CODE(시도교육청코드)·SD_SCHUL_CODE(행정표준코드)·SCHUL_NM(학교명)·SCHUL_KND_SC_NM·LCTN_SC_NM·FOND_SC_NM
 // - 결과 코드: INFO-000 정상, INFO-200 자료 없음, ERROR-290·INFO-300 인증, ERROR-337 일별 트래픽 초과, ERROR-500·600·601 서버,
 //   ERROR-300·310·333·336 요청 오류
-// 확인 필요(실제 응답으로 확인 전 — NEIS_CONTRACT.verified=false)
-// - JSON 응답의 감싸는 구조: { schoolInfo: [ { head: [ {list_total_count}, {RESULT:{CODE,MESSAGE}} ] }, { row: [...] } ] },
-//   자료 없음·오류는 { RESULT: { CODE, MESSAGE } } 로 알려져 있으나 명세서에 예시가 없어 가정입니다.
+// 2026-11-03 인증키 실호출(E10, 사용자 실행)로 확인: 정상 응답의 감싸는 구조 { schoolInfo: [ { head: [...] }, { row: [...] } ] }
+// 확인 필요(verified=true 는 정상 응답 구조까지만 뜻합니다 — docs/integrations/api-status-2026-11-02.md)
+// - 같은 호출에서 100행 중 2행이 행 형식 검사로 제외됨. 원인 미확인(건수만 기록, 호출한 첫 쪽 범위)
+// - 자료 없음·오류의 { RESULT: { CODE, MESSAGE } } 구조는 실제 응답으로 확인하지 않았습니다.
 // - 일별 트래픽 한도 수치(공개 안 됨) → NEIS_DAILY_LIMIT 로 이 서버 안에서 먼저 막습니다(기본 900회, 한국 날짜 기준).
 // - 시도교육청 코드표(전남광주통합특별시 출범 후 포함) → 하드코딩하지 않고 응답의 코드·이름 쌍만 씁니다.
 import { z } from "zod";
@@ -20,7 +21,7 @@ export const NEIS_CONTRACT = {
   endpoint: "https://open.neis.go.kr/hub",
   schoolInfo: "schoolInfo",
   maxPageSize: 1000,
-  verified: false as boolean, // 실제 응답으로 감싸는 구조를 확인하면 true 로 바꾸고 docs/integrations 에 기록
+  verified: true as boolean, // 정상 응답의 감싸는 구조 확인(2026-11-03). 행 제외 원인은 별개로 미확인(위 설명)
 } as const;
 
 export type NeisErrorKind = "not_configured" | "auth" | "rate_limited" | "server" | "params" | "http" | "timeout" | "network" | "format";

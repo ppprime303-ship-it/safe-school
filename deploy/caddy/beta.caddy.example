@@ -4,7 +4,12 @@
 #   7MiB 는 앱의 사진 본문 한도(PHOTO_BODY_LIMIT_BYTES)와 같습니다. 원본 5MiB 의 base64 + JSON 은 약 6.67MiB 입니다.
 #   경로 정규식은 앱의 PHOTO_UPLOAD_PATH 와 같습니다(테스트로 고정).
 # - 정규식은 경로 형식만 봅니다. 로그인·권한·형식 검사는 앱이 합니다.
+# - 접근 제한: 가상 Beta는 시연 계정이 같은 비밀번호를 쓰므로 앱 로그인 앞에 Caddy 인증을 둡니다. 해시는 `caddy hash-password`로 만들고, 비밀번호는 저장소에 적지 않습니다.
+#   Caddy 2.8 미만이면 지시어 이름이 basicauth 입니다. 적용 전 `caddy validate`로 확인하세요.
 <Beta 호스트명> {
+	basic_auth {
+		<시연 접속 계정> <caddy hash-password 결과>
+	}
 	encode zstd gzip
 	header {
 		Strict-Transport-Security "max-age=31536000"

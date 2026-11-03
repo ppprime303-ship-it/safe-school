@@ -16,6 +16,7 @@
 | 스키마 | `safeschool_prod_pilot` | `safeschool_beta` | 앱 시작 거부 |
 | 사진 경로 | 없음 | `/var/lib/safe-school-beta/uploads` | 앱 시작 거부, 쓰기 확인 |
 | 호스트명 | 기존 호스트 | 별도 호스트(미정) | 운영자 설정 |
+| 접근 제한 | 해당 없음 | Caddy `basic_auth` + 앱 로그인 | `beta.caddy.example`, 해시만 서버에 저장 |
 | 백업 | `pg-backup.sh`, `/srv/safe-school/backups` | `beta-backup.sh`, `/var/backups/safe-school-beta` | 스크립트 대상 고정 |
 
 같은 VPS에 올리면 PostgreSQL 서버와 Caddy는 공유합니다. 완전한 장애 격리가 필요하면 4절의 별도 VPS 안을 선택해야 합니다.

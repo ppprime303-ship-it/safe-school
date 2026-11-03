@@ -12,7 +12,7 @@ const parseEnv = (text: string) =>
     text
       .split("\n")
       .filter((l) => /^[A-Z_]+=/.test(l))
-      .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1).trim()]),
+      .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1).trim().replace(/^"(.*)"$/, "$1")]), // systemd·셸처럼 바깥 따옴표를 벗김
   ) as Record<string, string>;
 const good = (): Record<string, string> => {
   const e = parseEnv(read("deploy/env/beta.env.example"));
@@ -127,6 +127,22 @@ describe("배포 설정 파일", () => {
   const unit = read("deploy/systemd/safe-school-beta.service");
   const env = parseEnv(read("deploy/env/beta.env.example"));
   const prototypeUnit = read("deploy/systemd/safe-school.service");
+
+  it("env 예시: & 가 있는 값은 셸로 불러와도 잘리지 않게 따옴표로 감쌈", () => {
+    const risky = read("deploy/env/beta.env.example").split("\n").filter((l) => /^[A-Z_]+=/.test(l) && l.includes("&"));
+    expect(risky.length).toBeGreaterThan(0);
+    for (const l of risky) expect(l).toMatch(/^[A-Z_]+=".*"$/);
+  });
+
+  it("Caddy 예시: 앱 앞에 접근 제한이 있고 실제 비밀번호·해시는 없음", () => {
+    const caddy = read("deploy/caddy/beta.caddy.example");
+    const lines = caddy.split("\n").filter((l) => !l.startsWith("#"));
+    const auth = lines.findIndex((l) => /^\tbasic_auth \{$/.test(l));
+    expect(auth).toBeGreaterThan(-1);
+    expect(auth).toBeLessThan(lines.findIndex((l) => l.includes("reverse_proxy")));
+    expect(lines[auth + 1]).toContain("<caddy hash-password 결과>");
+    expect(caddy).not.toMatch(/\$2[aby]\$/);
+  });
 
   it("env 예시: 비밀값 없음, Prototype 값·모의 경보·실제 메일 없음", () => {
     const text = read("deploy/env/beta.env.example");
