@@ -37,10 +37,12 @@ describe("긴급재난문자 어댑터 장애 경우", () => {
 });
 
 describe("연동 안전장치", () => {
-  it("공식 명세 미확인 상태: 어댑터는 미검증으로 표시, Beta는 재난문자 수집을 켜면 시작 거부", () => {
-    expect(MOIS_CBS_CONTRACT.verified).toBe(false);
+  it("공식 명세 확인(2026-11-03 실제 응답): 검증됨 표시, Beta는 일일 배분량을 정해야 재난문자 수집 시작", () => {
+    expect(MOIS_CBS_CONTRACT.verified).toBe(true);
     const env = { DEPLOY_PROFILE: "beta", ALERT_PROVIDERS: "mois_cbs" };
-    expect(betaEnvironmentErrors("beta", env).join()).toContain("명세 확인");
+    expect(betaEnvironmentErrors("beta", env).join()).not.toContain("명세 확인");
+    expect(betaEnvironmentErrors("beta", env).join()).toContain("MOIS_CBS_DAILY_LIMIT");
+    expect(betaEnvironmentErrors("beta", { ...env, MOIS_CBS_DAILY_LIMIT: "60" }).join()).not.toMatch(/MOIS_CBS|명세/);
   });
   it("경보 수집 코드는 학교 재난 발령·교직원 알림을 만들지 않음", () => {
     for (const f of ["server/src/alerts/collector.ts", "server/src/alerts/moisCbs.ts", "server/src/alerts/providers.ts"]) {

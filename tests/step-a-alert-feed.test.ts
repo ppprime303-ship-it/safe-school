@@ -69,7 +69,7 @@ describe("공식 수집 상태", () => {
   it("켰지만 수집 기록이 없으면 never_succeeded", async () => {
     setConfiguredAlertSources([OFFICIAL]);
     const s = await getAlertFeedStatus(prisma);
-    expect(s.official).toMatchObject({ state: "never_succeeded", lastSuccessAt: null, lastFailureAt: null, contractVerified: false });
+    expect(s.official).toMatchObject({ state: "never_succeeded", lastSuccessAt: null, lastFailureAt: null, contractVerified: true }); // 2026-11-03 계약 확인
   });
 
   it("실패만 있으면 never_succeeded + 마지막 실패 종류(응답 없음·시간 초과)", async () => {

@@ -7,7 +7,7 @@ import { useSession } from "../lib/session";
 import { FormField } from "../components/ui/FormField";
 import { PrimaryButton } from "../components/ui/PrimaryButton";
 import { Icon } from "../components/ui/Icon";
-import { ReleaseNotice } from "../components/ui/ReleaseNotice";
+import { OfficialSystemNotice, ReleaseNotice } from "../components/ui/ReleaseNotice";
 
 type Mode = "login" | "signup" | "verify";
 type DeviceKind = "personal" | "shared";
@@ -177,6 +177,10 @@ export function LoginPage() {
                 <p className="mt-1 font-semibold text-ink">
                   입력한 성명, 이메일, 소속 학교 및 담당 업무 정보와 재난 대응 기록은 SAFE SCHOOL 베타 시범운영(Beta PILOT 2) 목적으로 이용하며, 2026년 12월 31일 삭제 예정입니다. 실제 학생 개인정보는 입력하지 마세요.
                 </p>
+                <p className="mt-1">
+                  <span className="font-semibold text-ink">가입에 필요한 정보:</span> 이메일(인증코드 수신), 성명, 비밀번호(복원할 수 없는 형태로 저장).{" "}
+                  <span className="font-semibold text-ink">입력하지 마세요:</span> 실제 학생 정보, 건강정보, 상담기록, 교직원 업무 개인정보. 업무 연습은 개인정보 없는 가상 사례와 인원 수치로 합니다.
+                </p>
                 <p className="mt-1">삭제 요청 등 문의는 시범운영 담당자에게 해 주세요.</p>
               </div>
             )}
@@ -259,7 +263,8 @@ export function LoginPage() {
             )}
           </div>
         </form>
-        <p className="mt-4 text-center text-sm text-ink-muted">재난 중 앱에 접속할 수 없으면 학교의 기존 비상대응 절차(방송·비상연락망)를 따르세요.</p>
+        <OfficialSystemNotice className="mt-4" />
+        <p className="mt-1 text-center text-sm text-ink-muted">재난 중 앱에 접속할 수 없으면 학교의 기존 비상대응 절차(방송·비상연락망)를 따르세요.</p>
         <p className="mt-1 text-center text-sm">
           <a href="/status" className="inline-flex min-h-touch items-center font-semibold text-accent underline underline-offset-4">
             시스템 상태 확인

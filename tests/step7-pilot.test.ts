@@ -75,7 +75,7 @@ describe("공식 긴급재난문자 어댑터 — 요청·응답 처리(가짜 H
     expect(kstYmd(NOW(), 1)).toBe("20261025");
     expect(buildRequestUrl("a+b/c", 1, "20261025")).toBe(`${MOIS_CBS_CONTRACT.endpoint}?serviceKey=a%2Bb%2Fc&returnType=json&pageNo=1&numOfRows=100&crtDt=20261025`);
     expect(buildRequestUrl("a%2Bb", 2, "20261025")).toContain("serviceKey=a%2Bb&");
-    expect(MOIS_CBS_CONTRACT.verified).toBe(false); // 실제 응답 확인 전
+    expect(MOIS_CBS_CONTRACT.verified).toBe(true); // 2026-11-03 등록 서버 IP 실제 응답으로 확인
   });
   it("새 재난문자 없음: 빈 body → 0건(오류 아님)", async () => {
     const src = new MoisCbsSource("k", async () => reply(200, { header: { resultCode: "00" }, totalCount: 0, body: [] }), NOW);

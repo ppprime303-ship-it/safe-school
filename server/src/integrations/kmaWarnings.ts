@@ -4,9 +4,11 @@
 // - 요청: serviceKey, numOfRows, pageNo(필수), dataType, fromTmFc·toTmFc(년월일 8자리), areaCode, warningType, stnId(선택)
 // - 응답: stnId, tmFc, tmSeq, areaCode, areaName, warnVar, warnStress, command, startTime, endTime, allEndTime, cancel
 // - 오류 코드: 가이드 첨부 표. 03 은 자료 없음
-// 확인 필요(실제 응답 전 — KMA_WARNING_CONTRACT.verified=false)
-// - 가이드 예시는 XML뿐입니다. JSON 감싸는 구조 response.header/body.items.item 은 XML 예시와 같다고 가정합니다.
-// - 상태 판단(마지막 발표 기준)은 코드 정의를 바탕으로 한 해석입니다.
+// 실제 응답 확인(2026-11-02 2회, 2026-11-03 4회 — docs/integrations/kma-warning-verified-2026-11-03.md)
+// - 요청 주소·JSON 감싸는 구조 response.header/body.items.item·필드 12개·결과 코드: 실제 응답과 일치(전국 236행, 버린 항목 0)
+// - 해제 판정·'특보 없음': 전국 202개 구역·종류 모두 해제로 판정, 같은 시각 공식 현황(getPwnStatus t6) '없음'과 일치
+// - 아직 관측하지 못한 것: 발효 중·연장·정정·변경 발표의 실제 응답. 상태 판단은 공식 코드 정의(1 발표·2 해제·3 연장·6 정정·7 변경발표·8 변경해제)에 따른 해석이며,
+//   화면은 공식 현황 원문을 함께 보여 줍니다(services/weatherWarnings.ts).
 // 원칙: 키가 없으면 호출하지 않음. 저장·학교 재난 발령·알림 없음. 키는 오류·로그·응답에 남기지 않음.
 import { kstYmd, parseKstDateTime } from "../alerts/moisCbs.js";
 import type { WeatherErrorKind, WeatherWarningStatus } from "../../../shared/weatherWarnings.js";
@@ -18,7 +20,7 @@ export const KMA_WARNING_CONTRACT = {
   numOfRows: 500,
   maxPages: 3,
   windowDays: 7,
-  verified: false as boolean, // 실제 응답으로 확인하면 true 로 바꾸고 docs/integrations 에 기록
+  verified: true as boolean, // 요청·응답 계약을 실제 응답으로 확인(2026-11-03). 발효 중 응답은 미관측 — 위 설명
 } as const;
 
 export class KmaWarningError extends Error {

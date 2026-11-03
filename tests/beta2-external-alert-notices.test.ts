@@ -156,9 +156,9 @@ describe("안내 흐름", () => {
     expect(activeEvent).toBe(false);
     expect(notices).toHaveLength(3);
     const weather = notices.filter((n) => n.kind === "weather");
-    expect(weather.find((n) => n.title === "호우경보 발표")).toMatchObject({ priority: "urgent", status: "active", issuer: "기상청", areasRaw: "인천영종", sourceLabel: "기상청 기상특보 조회서비스", verified: false, isMock: false });
+    expect(weather.find((n) => n.title === "호우경보 발표")).toMatchObject({ priority: "urgent", status: "active", issuer: "기상청", areasRaw: "인천영종", sourceLabel: "기상청 기상특보 조회서비스", verified: true, isMock: false }); // 2026-11-03 실제 응답으로 계약 확인
     expect(weather.find((n) => n.title === "대설주의보 발표")).toMatchObject({ priority: "normal" });
-    expect(notices.find((n) => n.kind === "disaster_text")).toMatchObject({ body: "[가상 시험 1] 호우 대비", sourceLabel: "행정안전부 긴급재난문자", status: "issued", verified: false });
+    expect(notices.find((n) => n.kind === "disaster_text")).toMatchObject({ body: "[가상 시험 1] 호우 대비", sourceLabel: "행정안전부 긴급재난문자", status: "issued", verified: true }); // 2026-11-03 계약 확인
     expect(notices.every((n) => n.lastCollectedAt)).toBe(true);
     expect(await prisma.disasterEvent.count()).toBe(before);
     expect(await prisma.staffAlert.count()).toBe(0);
@@ -274,10 +274,12 @@ describe("장애와 수집 설정", () => {
     const res = await fetch(`${base}/schools/${schoolA}/staff-alerts`, { headers: { cookie: teacher.cookie } });
     expect(res.status).toBe(200);
   });
-  it("수집 설정: 키 없으면 거부, Beta는 응답 확인 전 거부, 심사 환경 거부", () => {
+  it("수집 설정: 키 없으면 거부, Beta는 계약 확인된 기상특보만 허용(재난문자는 확인 전 거부), 심사 환경 거부", () => {
     expect(alertProviderErrors("production" as never, { ALERT_PROVIDERS: "kma_warning" }).join()).toContain("KMA_WARNING_SERVICE_KEY");
     expect(alertProviderErrors("production" as never, { ALERT_PROVIDERS: "kma_warning", KMA_WARNING_SERVICE_KEY: "x" })).toEqual([]);
     expect(alertProviderErrors("judge" as never, { ALERT_PROVIDERS: "kma_warning", KMA_WARNING_SERVICE_KEY: "x" }).join()).toContain("심사");
-    expect(betaEnvironmentErrors("beta" as never, { ALERT_PROVIDERS: "kma_warning" }).join()).toContain("KMA_WARNING_CONTRACT");
+    expect(betaEnvironmentErrors("beta" as never, { ALERT_PROVIDERS: "kma_warning" }).join()).not.toContain("KMA_WARNING_CONTRACT"); // 2026-11-03 계약 확인
+    expect(betaEnvironmentErrors("beta" as never, { ALERT_PROVIDERS: "mois_cbs", MOIS_CBS_DAILY_LIMIT: "60" }).join()).not.toContain("MOIS_CBS_CONTRACT"); // 2026-11-03 계약 확인
+    expect(betaEnvironmentErrors("beta" as never, { ALERT_PROVIDERS: "mois_cbs" }).join()).toContain("MOIS_CBS_DAILY_LIMIT");
   });
 });

@@ -7,7 +7,7 @@ import { useSession } from "../../lib/session";
 import { capsOf } from "../../lib/permissions";
 import { EmergencyBanner } from "../ui/EmergencyBanner";
 import { Icon, type IconName } from "../ui/Icon";
-import { ReleaseNotice } from "../ui/ReleaseNotice";
+import { OfficialSystemNotice, ReleaseNotice } from "../ui/ReleaseNotice";
 import { StaffAlertBar } from "./StaffAlertBar";
 import { ExternalAlertNotice } from "./ExternalAlertNotice";
 
@@ -195,7 +195,10 @@ export function AppShell({
         {membership && <ExternalAlertNotice schoolId={membership.school.id} />}
         <ReleaseNotice compact />
         <AppHeader title={title} schoolName={membership?.school.name} links={items.filter((i) => i.mobile === "header")} />
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-28 lg:pb-10">{children}</main>
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-28 lg:pb-10">
+          {children}
+          <OfficialSystemNotice className="mt-10" />
+        </main>
       </div>
       <MobileNavigation items={items} />
     </div>

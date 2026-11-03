@@ -214,10 +214,10 @@ describe("Beta 시작 검사와 키 노출", () => {
     expect(betaEnvironmentErrors("beta" as never, { ...school, BETA_MAIL_SENDER_APPROVED: "true" }).join()).not.toContain("BETA_MAIL_SENDER_APPROVED");
     expect(betaEnvironmentErrors("beta" as never, { BETA_DATA_MODE: "virtual_test", MAIL_PROVIDER: "gmail" }).join()).toContain("실제 메일 발송");
   });
-  it("재난문자 수집은 환경별 호출 배분량과 계약 확인이 필요", () => {
+  it("재난문자 수집은 환경별 호출 배분량이 필요(계약은 2026-11-03 실제 응답으로 확인)", () => {
     const errors = betaEnvironmentErrors("beta" as never, { ALERT_PROVIDERS: "mois_cbs" }).join();
     expect(errors).toContain("MOIS_CBS_DAILY_LIMIT");
-    expect(errors).toContain("MOIS_CBS_CONTRACT");
+    expect(errors).not.toContain("MOIS_CBS_CONTRACT");
   });
   it("화면 코드는 서버 비밀값 이름을 쓰지 않고 외부 API를 직접 부르지 않음", () => {
     const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${dir}/${e.name}`) : /\.tsx?$/.test(e.name) ? [`${dir}/${e.name}`] : []));

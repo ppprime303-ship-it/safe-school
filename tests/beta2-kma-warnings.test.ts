@@ -179,7 +179,7 @@ describe("학교별 표시(테스트 DB)", () => {
 
   it("키 없음: 연결 안 됨으로 표시, 호출 없음", async () => {
     const r = await getSchoolWeatherWarnings(prisma, school, null, NOW);
-    expect(r).toMatchObject({ state: "not_configured", contractVerified: false, warnings: [], region: { sido: "인천광역시", sigungu: "영종구" } });
+    expect(r).toMatchObject({ state: "not_configured", contractVerified: true, warnings: [], region: { sido: "인천광역시", sigungu: "영종구" } });
   });
   it("지역 불일치 구역은 빠지고 대상만, 조회 시각·출처 포함, 키·재난 사건 없음", async () => {
     const before = await prisma.disasterEvent.count();

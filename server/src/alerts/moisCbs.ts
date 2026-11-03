@@ -5,7 +5,10 @@
 //   - 요청: serviceKey(필수), numOfRows, pageNo, returnType(json·xml), crtDt(조회시작일자 YYYYMMDD), rgnNm(시도·시군구명)
 //   - 응답 항목: SN, CRT_DT, MSG_CN, RCPTN_RGN_NM, EMRG_STEP_NM(긴급재난·안전안내·위급재난), DST_SE_NM, REG_YMD, MDFCN_YMD, RCPTN_RGN_ID, EMRG_STEP_ID, DST_SE_ID
 //   - 오류: 32 UNREGISTERED IP ERROR(등록되지 않은 IP), 30 등록되지 않은 서비스키, 31 기한 만료, 22 호출 제한, 33 서비스키 없음, 34 여러 서비스키 등
-// 실제 응답 확인 전(verified=false): 감싸는 구조(2026-11-02 실제 응답으로 header·body 는 확인, 정상 body 는 미확인), 정렬 순서, rgnNm 일치 방식(전국 문자 포함 여부)
+// 실제 응답 확인(2026-11-03, 등록 서버 IP에서 1회 — docs/integrations/mois-cbs-verified-2026-11-03.md):
+//   HTTP 200, 결과 코드 00, 최상위 header·numOfRows·pageNo·totalCount·body(배열), 항목 필드 11개(필수 누락 없음),
+//   SN 24/24 고유, CRT_DT 'YYYY/MM/DD HH:mm:ss'. 응답 순서는 일정하지 않음 → 수집기가 발송 시각으로 정렬(collector.ts), 중복은 (공급자, SN)으로 거름
+// 아직 확인하지 못한 것: 인천 지역 표기의 실제 매칭(응답에 인천 0건), 전국 문자 표기, rgnNm 조회 방식, 실시간 전달 지연, 정정·취소 표기
 // 명세에 정정·재송출·취소 구분 항목은 없습니다. 재송출은 내용 해시로 묶고, 정정·취소는 본문으로 사람이 판단합니다.
 //
 // 원칙
@@ -24,7 +27,7 @@ export const MOIS_CBS_CONTRACT = {
   numOfRows: 100,
   maxPages: 5,
   issuer: "행정안전부(긴급재난문자)",
-  verified: false as boolean, // 실제 응답으로 확인하면 true 로 바꾸고 docs/step7 기록
+  verified: true as boolean, // 요청·인증·응답 계약을 실제 응답으로 확인(2026-11-03). 지역 매칭·지연은 미확인 — 위 설명
 } as const;
 
 export interface MoisCbsRecord {

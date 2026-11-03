@@ -2,7 +2,7 @@
 export const RELEASE = {
   product: "SAFE SCHOOL",
   devVersion: "Beta PILOT 2",
-  stage: "제한적 시범운영 준비",
+  stage: "제한적 시범운영 중",
 } as const;
 
 /** 이 서버가 다루는 데이터: 승인된 가상 데이터 테스트 / 실제 학교 시범운영 */
